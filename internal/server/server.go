@@ -48,7 +48,8 @@ type Server struct {
 	// new one never interleave.
 	defaultAccess *logging.Access
 
-	gen atomic.Pointer[generation]
+	gen    atomic.Pointer[generation]
+	genSeq atomic.Uint64
 
 	reloadMu sync.Mutex // one reload at a time
 
@@ -98,7 +99,7 @@ func New(cfg *model.Config, opts Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.gen.Store(g)
+	s.publish(g)
 
 	for _, l := range cfg.Listeners {
 		name := l.Name
@@ -133,6 +134,13 @@ func (s *Server) acquire() *generation {
 			return nil // closed and not replaced: the server is shutting down
 		}
 	}
+}
+
+// publish makes g the current generation and numbers it. Numbers count the
+// configurations that were actually used, so a failed build doesn't consume one.
+func (s *Server) publish(g *generation) {
+	g.number = s.genSeq.Add(1)
+	s.gen.Store(g)
 }
 
 // buildGeneration opens everything cfg needs. On failure nothing stays open.
@@ -281,6 +289,7 @@ func (s *Server) logWriter(g *generation, t model.LogTarget, def io.Writer) (io.
 			return nil, err
 		}
 		g.closers = append(g.closers, f)
+		g.logFiles++
 		return f, nil
 	}
 	return def, nil

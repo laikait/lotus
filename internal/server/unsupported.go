@@ -41,8 +41,8 @@ func Unsupported(cfg *model.Config) []string {
 	var out []string
 	add := func(format string, args ...any) { out = append(out, fmt.Sprintf(format, args...)) }
 
-	if cfg.Control.Socket != "" || cfg.Control.ViewerGroup != "" {
-		add("control (the local control channel is not implemented yet)")
+	if cfg.Control.ViewerGroup != "" {
+		add("control viewer_group (read-only roles need the peer's identity, which is not wired up yet; every client that can open the socket is an operator)")
 	}
 	for _, l := range cfg.Listeners {
 		if l.HTTP3 {

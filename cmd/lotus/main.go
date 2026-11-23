@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/laikait/lotus/internal/control"
 	"github.com/laikait/lotus/pkg/version"
 )
 
@@ -33,6 +34,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cmdConfig(args[1:], stdout, stderr)
 	case "start":
 		return cmdStart(args[1:], stdout, stderr)
+	case "reload":
+		return cmdReload(args[1:], stdout, stderr)
+	case "stop":
+		return cmdStop(args[1:], stdout, stderr)
+	case "status":
+		return cmdStatus(args[1:], stdout, stderr)
+	case "logs":
+		return cmdLogs(args[1:], stdout, stderr)
 	case "help", "--help", "-h":
 		printHelp(stdout)
 		return exitOK
@@ -63,7 +72,7 @@ func cmdVersion(args []string, stdout, stderr io.Writer) int {
 }
 
 func printHelp(w io.Writer) {
-	fmt.Fprint(w, `LOTUS — Laika Optimized Transport & Unified Server
+	fmt.Fprintf(w, `LOTUS — Laika Optimized Transport & Unified Server
 A next-generation, cross-platform web server.
 
 Usage:
@@ -78,11 +87,19 @@ Commands:
                               Print the effective configuration as JSON (secrets redacted)
   config explain [options] <file> <url>
                               Show which site, route and action a request would get
-  help                       Show this help
+  reload [--control SOCKET] [--config FILE]
+                              Make the running server load its configuration again
+  stop [--now] [--timeout 30s]
+                              Stop the running server, letting requests finish
+  status [--json]             Show the running server's state
+  logs reopen                 Reopen the log files (after log rotation)
+  help                        Show this help
 
-Exit codes: 0 success, 1 usage error, 2 invalid configuration, 6 uses a feature not
-implemented yet, 10 the server could not start or failed.
+The reload, stop, status and logs commands talk to the running server through its control
+socket (default %s; set another with --control or LOTUS_CONTROL).
 
-More commands (start, reload, config format, ...) arrive in Phase 1.
-`)
+Exit codes: 0 success, 1 usage error, 2 invalid configuration, 3 no running server,
+4 permission denied, 5 reload already running, 6 uses a feature not implemented yet,
+7 not found, 10 the server could not start or failed.
+`, control.DefaultSocketPath())
 }

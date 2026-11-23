@@ -16,6 +16,8 @@ import (
 // Reload builds a new one beside the old and swaps it in atomically, so a
 // request sees one consistent configuration from start to finish.
 type generation struct {
+	number   uint64 // 1 for the first configuration, +1 for each reload
+	logFiles int    // log files this generation opened
 	cfg      *model.Config
 	tables   map[string]*vhost.Table[*siteRuntime] // by listener name
 	clients  *clientip.Resolver

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -36,6 +37,11 @@ func (e *RestartRequiredError) Error() string {
 func (s *Server) Reload(cfg *model.Config) error {
 	s.reloadMu.Lock()
 	defer s.reloadMu.Unlock()
+	return s.reloadLocked(cfg)
+}
+
+// reloadLocked is Reload for callers that hold reloadMu.
+func (s *Server) reloadLocked(cfg *model.Config) error {
 	start := time.Now()
 
 	if items := Unsupported(cfg); len(items) > 0 {
@@ -50,7 +56,7 @@ func (s *Server) Reload(cfg *model.Config) error {
 	if err != nil {
 		return fmt.Errorf("reload failed, the running configuration was kept: %w", err)
 	}
-	s.gen.Store(g)
+	s.publish(g)
 	old.retire()
 	s.log.Info("configuration reloaded", "sites", len(cfg.Sites), "took", time.Since(start).Round(time.Millisecond).String())
 	return nil
@@ -75,8 +81,48 @@ func restartRequired(old, cfg *model.Config) []string {
 	if a != b {
 		out = append(out, "server-wide limits changed (max_connections, max_header_bytes or a timeout)")
 	}
+	if old.Control != cfg.Control {
+		out = append(out, "the control settings changed")
+	}
 	if old.TLS.MinVersion != cfg.TLS.MinVersion {
 		out = append(out, "tls min_version changed")
 	}
 	return out
 }
+
+// ErrReloadInProgress is returned by TryReload when another reload is running.
+var ErrReloadInProgress = errors.New("a reload is already in progress")
+
+// TryReload is Reload that fails at once, instead of waiting, when another
+// reload is running.
+func (s *Server) TryReload(cfg *model.Config) error {
+	if !s.reloadMu.TryLock() {
+		return ErrReloadInProgress
+	}
+	defer s.reloadMu.Unlock()
+	return s.reloadLocked(cfg)
+}
+
+// ReopenLogs reopens every log file, which is what log rotation needs after a
+// file was moved. It is a reload of the running configuration. It returns how
+// many log files were opened.
+func (s *Server) ReopenLogs() (int, error) {
+	s.reloadMu.Lock()
+	defer s.reloadMu.Unlock()
+	old := s.gen.Load()
+	g, err := s.buildGeneration(old.cfg)
+	if err != nil {
+		return 0, fmt.Errorf("reopening logs failed, the running configuration was kept: %w", err)
+	}
+	s.publish(g)
+	old.retire()
+	s.log.Info("log files reopened", "files", g.logFiles)
+	return g.logFiles, nil
+}
+
+// Generation numbers the configuration in use: 1 at start, plus one for each
+// reload or log reopen.
+func (s *Server) Generation() uint64 { return s.gen.Load().number }
+
+// Config returns the configuration in use. It must not be modified.
+func (s *Server) Config() *model.Config { return s.gen.Load().cfg }

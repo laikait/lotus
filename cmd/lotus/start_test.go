@@ -137,7 +137,7 @@ func TestStartRefusesAnInvalidConfiguration(t *testing.T) {
 }
 
 func TestStartRefusesUnsupportedFeatures(t *testing.T) {
-	cfgPath, _ := siteConfig(t, freePort(t), `    control { socket "/tmp/lotus-test.sock" }`)
+	cfgPath, _ := siteConfig(t, freePort(t), `    control { viewer_group "lotus-viewers" }`)
 	var stdout, stderr safeBuf
 	code := runStart(context.Background(), []string{"-config", cfgPath}, &stdout, &stderr, nil)
 	if code != exitNotSupported {

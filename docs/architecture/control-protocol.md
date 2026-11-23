@@ -1,7 +1,7 @@
 # Local Control Channel Protocol
 
 **Protocol version:** `lotus.control.v1`
-**Status:** Phase 0 draft for review
+**Status:** implemented in `internal/control` (server, client, socket handling) and `cmd/lotus` (`reload`, `stop`, `status`, `logs reopen`). §9 lists where the implementation differs from this draft.
 **Spec reference:** v1.1 §9.1
 
 The control channel is how the `lotus` CLI (and local tools such as LPA) talk to a running LOTUS instance. The optional network admin API (§9.2) exposes the same operations through the same handlers, so there is one implementation for both.
@@ -113,3 +113,25 @@ Windows service control: `SERVICE_CONTROL_STOP` → graceful stop. `SERVICE_CONT
 - Protocol tests use an in-memory `net.Pipe` transport, with golden request/response files in `internal/control/testdata/`.
 - Permission tests per platform: a connection from an unprivileged user gets `-32001` for operator methods.
 - Fuzz the line framing and the JSON decoding.
+
+## 9. Implementation notes and differences from this draft
+
+What exists today:
+
+- **Methods:** `lotus.hello`, `lotus.status`, `lotus.health`, `lotus.reload`, `lotus.stop`, `lotus.logs.reopen`, `lotus.config.inspect`, `lotus.site.list`. The others (`explain`, `upgrade`, `cert.*`, `cache.*`, `module.list`, `metrics`) arrive with the features they operate on. `lotus config explain` works offline from the configuration file, so it doesn't need the channel.
+- **CLI:** `lotus status [--json]`, `lotus reload [--config FILE]`, `lotus stop [--now] [--timeout D]`, `lotus logs reopen`. Each takes `--control SOCKET` (or `LOTUS_CONTROL`).
+- **Always on:** the channel is opened at start. Without a `control { socket }` setting it uses the platform default; if that location can't be used, the server logs a warning and runs without the channel. A socket path the administrator chose that can't be used stops the start.
+- **Stop:** the server answers `lotus.stop` before it shuts down. Closing the channel lets a request in progress finish its reply (up to 5 s) and closes idle connections at once.
+
+Differences, on purpose:
+
+| Draft | Implementation | Why |
+|---|---|---|
+| Windows: named pipe `\\.\pipe\lotus-control` | Windows: a Unix-domain socket at `%ProgramData%\LOTUS\control.sock` | Go's standard library supports Unix sockets on Windows 10 and later; a named pipe server needs a third-party package. Access control is the file ACL of the socket's directory. Checking those ACLs, and client identity, need the Windows security API and are not done yet. |
+| Socket mode `0660`, group `lotus-admin` | Mode `0600` (owner only) | Group access belongs with roles. Until the peer's identity is checked, owner-only is the safe default. |
+| Roles `operator` and `viewer` | Every client that can open the socket is `operator`; `control { viewer_group }` is refused at start | A viewer role needs the peer's identity (`SO_PEERCRED`, `getpeereid`, the Windows token). Linux reads it for the audit log; the role decision is not built. |
+| Refuse to start if the directory is writable by others | Same, on Unix: group- or world-writable directories are refused unless sticky, and a directory owned by another user (not root) is refused. Missing directories are created with mode `0750`. | Windows: see above. |
+| Default `/run/lotus/control.sock` | Same for root. Other users get `$XDG_RUNTIME_DIR/lotus/control.sock`, or `<tmp>/lotus-<uid>/control.sock`. macOS: `<tmp>/lotus/control.sock`. | A development server shouldn't need root. |
+| Config path must be re-checked by the server | Done: `lotus.reload` takes only a path and the server loads and validates it itself; a successful reload from another path makes that file the current one. | |
+
+Reload semantics: `lotus.reload` is synchronous and returns after the new configuration is published or rejected. A rejected configuration returns `-32020`, with the diagnostics for an invalid file or the reason for a change that needs a restart, and the running configuration stays. A second reload while one runs gets `-32021`. `SIGHUP` takes the same path (a busy reload is logged, not queued).

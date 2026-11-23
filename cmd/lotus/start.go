@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"net"
 	"os"
@@ -23,7 +22,7 @@ import (
 	"github.com/laikait/lotus/internal/server"
 )
 
-// Exit codes for start (docs/architecture/control-protocol.md §5).
+// Exit codes (docs/architecture/control-protocol.md §5).
 const (
 	exitNotSupported = 6  // the configuration uses a feature that isn't implemented yet
 	exitRuntime      = 10 // the server could not start, or stopped because of an error
@@ -48,15 +47,15 @@ func defaultConfigPath() string {
 }
 
 // cmdStart runs the server in the foreground until it receives SIGINT or
-// SIGTERM, and reloads its configuration on SIGHUP (Unix). Service managers
-// (systemd, the Windows service control manager, rc.d) are responsible for
-// running it in the background.
+// SIGTERM, and reloads its configuration on SIGHUP (Unix). `lotus reload` and
+// `lotus stop` do the same through the control channel, which also works on
+// Windows. Service managers (systemd, the Windows service control manager,
+// rc.d) are responsible for running it in the background.
 func cmdStart(args []string, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// SIGHUP is never delivered on Windows; reload there arrives with the
-	// control channel.
+	// SIGHUP is never delivered on Windows.
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
 	defer signal.Stop(hup)
@@ -77,9 +76,10 @@ func runStart(ctx context.Context, args []string, stdout, stderr io.Writer, read
 	return runServer(ctx, args, stdout, stderr, ready, nil)
 }
 
-// runServer starts the server and runs it until ctx ends. Each value received
-// on reloads makes it re-read the configuration file and switch to it; ready,
-// if not nil, is called once the listeners are bound.
+// runServer starts the server and runs it until ctx ends or a stop is
+// requested. Each value received on reloads makes it re-read the configuration
+// file and switch to it; ready, if not nil, is called once the listeners are
+// bound.
 func runServer(ctx context.Context, args []string, stdout, stderr io.Writer, ready func(map[string]net.Addr), reloads <-chan struct{}) int {
 	fs := flag.NewFlagSet("lotus start", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -100,6 +100,9 @@ func runServer(ctx context.Context, args []string, stdout, stderr io.Writer, rea
 	path := *cfgPath
 	if path == "" {
 		path = defaultConfigPath()
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
 	}
 
 	res, diags := config.Check(path, loader.Options{InsecureIncludes: *insecure})
@@ -129,7 +132,28 @@ func runServer(ctx context.Context, args []string, stdout, stderr io.Writer, rea
 		fmt.Fprintf(stderr, "lotus: %v\n", err)
 		return exitRuntime
 	}
+
+	a := &app{
+		path: path, insecure: *insecure, srv: srv, rt: rt, log: log, stderr: stderr,
+		started: time.Now(), res: res, stop: make(chan stopRequest, 1),
+	}
+
+	// The control socket is opened before the listeners so that a bad explicit
+	// path fails the start instead of leaving a half-working server.
+	ctl, err := a.openControl(cfg)
+	if err != nil {
+		fmt.Fprintf(stderr, "lotus: control channel: %v\n", err)
+		_ = srv.Shutdown(context.Background())
+		return exitRuntime
+	}
+	closeControl := func() {
+		if ctl != nil {
+			ctl.Close()
+		}
+	}
+
 	if err := srv.Start(); err != nil {
+		closeControl()
 		fmt.Fprintf(stderr, "lotus: cannot start: %v\n", err)
 		return exitRuntime
 	}
@@ -139,23 +163,36 @@ func runServer(ctx context.Context, args []string, stdout, stderr io.Writer, rea
 	}
 
 	code := exitOK
+	timeout := shutdownTimeout
+	graceful := true
 wait:
 	for {
 		select {
 		case <-ctx.Done():
 			log.Info("shutting down", "timeout", shutdownTimeout.String())
 			break wait
+		case req := <-a.stop:
+			graceful, timeout = req.graceful, req.timeout
+			log.Info("stop requested through the control channel", "graceful", graceful, "timeout", timeout.String())
+			break wait
 		case err := <-srv.Errors():
 			log.Error("a listener stopped unexpectedly", "error", err)
 			code = exitRuntime
 			break wait
 		case <-reloads:
-			reloadConfig(path, *insecure, srv, rt, log, stderr)
+			if _, rerr := a.reload(""); rerr != nil {
+				log.Error("reload did not complete", "reason", rerr.Message)
+			}
 		}
 	}
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+
+	closeControl() // no new commands while shutting down
+	if !graceful {
+		timeout = time.Millisecond // close the connections that are left almost at once
+	}
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
+	if err := srv.Shutdown(shutdownCtx); err != nil && graceful {
 		log.Error("shutdown did not finish cleanly", "error", err)
 		if code == exitOK {
 			code = exitRuntime
@@ -163,27 +200,6 @@ wait:
 	}
 	log.Info("stopped")
 	return code
-}
-
-// reloadConfig re-reads the configuration file and switches the running server
-// to it. If the file is invalid, uses something that needs a restart, or
-// anything fails while building the new configuration, the server keeps
-// running with the old one and the reason is logged.
-func reloadConfig(path string, insecure bool, srv *server.Server, rt *runtimeSettings, log *slog.Logger, stderr io.Writer) {
-	log.Info("reloading configuration", "config", path)
-	res, diags := config.Check(path, loader.Options{InsecureIncludes: insecure})
-	for _, d := range diags {
-		printDiagnostic(stderr, d)
-	}
-	if res == nil {
-		log.Error("reload refused: the configuration is invalid; the running configuration was kept", "config", path)
-		return
-	}
-	if err := srv.Reload(res.Config); err != nil {
-		log.Error("reload failed", "error", err)
-		return
-	}
-	rt.apply(res.Config.Runtime.MaxProcs, res.Config.Runtime.MemoryLimit)
 }
 
 // runtimeSettings applies the runtime block of the configuration, and can
