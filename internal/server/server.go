@@ -1,7 +1,8 @@
 // Package server turns a compiled configuration into running HTTP and HTTPS
 // listeners. It uses Go's net/http and crypto/tls for the protocols (HTTP/1.1,
 // HTTP/2 over TLS) and adds virtual hosting, certificate selection by SNI,
-// static file serving, access logging and connection limits.
+// routing, static file serving, access logging, connection limits and
+// configuration reload.
 package server
 
 import (
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/laikait/lotus/internal/clientip"
@@ -36,14 +38,21 @@ type Options struct {
 	Now func() time.Time
 }
 
-// Server runs the listeners of one configuration.
+// Server runs the listeners of one configuration, and can switch to a new
+// configuration without dropping connections (Reload).
 type Server struct {
-	cfg     *model.Config
 	log     *slog.Logger
+	opts    Options
 	limiter *connLimiter
+	// defaultAccess is shared by all generations so lines from the old and the
+	// new one never interleave.
+	defaultAccess *logging.Access
+
+	gen atomic.Pointer[generation]
+
+	reloadMu sync.Mutex // one reload at a time
 
 	listeners []*boundListener
-	closers   []io.Closer // log files and document roots
 
 	errc chan error
 
@@ -79,27 +88,70 @@ func New(cfg *model.Config, opts Options) (*Server, error) {
 	}
 
 	s := &Server{
-		cfg:     cfg,
-		log:     opts.Logger,
-		limiter: newConnLimiter(cfg.Limits.MaxConnections),
-		errc:    make(chan error, len(cfg.Listeners)),
+		log:           opts.Logger,
+		opts:          opts,
+		limiter:       newConnLimiter(cfg.Limits.MaxConnections),
+		defaultAccess: logging.NewAccess(opts.Stdout),
+		errc:          make(chan error, len(cfg.Listeners)),
 	}
-	fail := func(err error) (*Server, error) {
-		s.closeResources()
+	g, err := s.buildGeneration(cfg)
+	if err != nil {
 		return nil, err
 	}
+	s.gen.Store(g)
 
+	for _, l := range cfg.Listeners {
+		name := l.Name
+		srv := &http.Server{
+			Handler:           &listenerHandler{srv: s, listener: name},
+			ReadHeaderTimeout: time.Duration(cfg.Limits.HeaderTimeout),
+			ReadTimeout:       time.Duration(cfg.Limits.ReadTimeout),
+			WriteTimeout:      time.Duration(cfg.Limits.WriteTimeout),
+			IdleTimeout:       time.Duration(cfg.Limits.IdleTimeout),
+			MaxHeaderBytes:    int(cfg.Limits.MaxHeaderBytes),
+			ErrorLog:          slog.NewLogLogger(s.log.Handler(), slog.LevelWarn),
+		}
+		if l.HTTPS {
+			srv.TLSConfig = newTLSConfig(cfg.TLS.MinVersion, func() *vhost.Table[*siteRuntime] {
+				return s.gen.Load().tables[name]
+			})
+		}
+		s.listeners = append(s.listeners, &boundListener{conf: l, srv: srv, https: l.HTTPS})
+	}
+	return s, nil
+}
+
+// acquire returns the current generation with a reference held, or nil if the
+// server has shut down.
+func (s *Server) acquire() *generation {
+	for {
+		g := s.gen.Load()
+		if g.acquire() {
+			return g
+		}
+		if s.gen.Load() == g {
+			return nil // closed and not replaced: the server is shutting down
+		}
+	}
+}
+
+// buildGeneration opens everything cfg needs. On failure nothing stays open.
+func (s *Server) buildGeneration(cfg *model.Config) (*generation, error) {
+	g := &generation{
+		cfg:      cfg,
+		tables:   map[string]*vhost.Table[*siteRuntime]{},
+		clients:  clientip.New(cfg.TrustedProxies),
+		fallback: s.defaultAccess,
+	}
 	sites := make(map[string]*siteRuntime, len(cfg.Sites))
 	for i := range cfg.Sites {
-		rt, err := s.newSite(&cfg.Sites[i], opts)
+		rt, err := s.newSite(g, &cfg.Sites[i])
 		if err != nil {
-			return fail(err)
+			g.closeNow()
+			return nil, err
 		}
 		sites[cfg.Sites[i].Name] = rt
 	}
-
-	defaultAccess := logging.NewAccess(opts.Stdout)
-	clients := clientip.New(cfg.TrustedProxies)
 	for _, l := range cfg.Listeners {
 		var entries []vhost.Entry[*siteRuntime]
 		for i := range cfg.Sites {
@@ -112,23 +164,9 @@ func New(cfg *model.Config, opts Options) (*Server, error) {
 				Hosts: append([]string{site.Name}, site.Aliases...),
 			})
 		}
-		table := vhost.Build(entries)
-
-		srv := &http.Server{
-			Handler:           &listenerHandler{table: table, fallback: defaultAccess, clients: clients},
-			ReadHeaderTimeout: time.Duration(cfg.Limits.HeaderTimeout),
-			ReadTimeout:       time.Duration(cfg.Limits.ReadTimeout),
-			WriteTimeout:      time.Duration(cfg.Limits.WriteTimeout),
-			IdleTimeout:       time.Duration(cfg.Limits.IdleTimeout),
-			MaxHeaderBytes:    int(cfg.Limits.MaxHeaderBytes),
-			ErrorLog:          slog.NewLogLogger(s.log.Handler(), slog.LevelWarn),
-		}
-		if l.HTTPS {
-			srv.TLSConfig = newTLSConfig(cfg.TLS.MinVersion, table)
-		}
-		s.listeners = append(s.listeners, &boundListener{conf: l, srv: srv, https: l.HTTPS})
+		g.tables[l.Name] = vhost.Build(entries)
 	}
-	return s, nil
+	return g, nil
 }
 
 func contains(list []string, s string) bool {
@@ -140,21 +178,21 @@ func contains(list []string, s string) bool {
 	return false
 }
 
-func (s *Server) newSite(site *model.Site, opts Options) (*siteRuntime, error) {
+func (s *Server) newSite(g *generation, site *model.Site) (*siteRuntime, error) {
 	rt := &siteRuntime{
 		site:    site,
 		headers: site.SecurityHeaders,
 		maxBody: site.Limits.MaxRequestBody,
 	}
 
-	access, err := s.logWriter(site.Logs.Access, opts.Stdout)
+	access, err := s.logWriter(g, site.Logs.Access, s.opts.Stdout)
 	if err != nil {
 		return nil, fmt.Errorf("site %q: access log: %w", site.Name, err)
 	}
 	rt.access = logging.NewAccess(access)
 	// The error log is opened (so a bad path fails at start) and used for the
 	// handler's own error reports.
-	errw, err := s.logWriter(site.Logs.Error, opts.Stderr)
+	errw, err := s.logWriter(g, site.Logs.Error, s.opts.Stderr)
 	if err != nil {
 		return nil, fmt.Errorf("site %q: error log: %w", site.Name, err)
 	}
@@ -184,7 +222,7 @@ func (s *Server) newSite(site *model.Site, opts Options) (*siteRuntime, error) {
 				return fmt.Errorf("site %q: %w", site.Name, err)
 			}
 			resolvers[root] = res
-			s.closers = append(s.closers, res)
+			g.closers = append(g.closers, res)
 		}
 		rt.handlers[key] = staticfiles.New(res, staticfiles.Options{Index: index, Logger: siteLog})
 		return nil
@@ -213,7 +251,7 @@ func (s *Server) newSite(site *model.Site, opts Options) (*siteRuntime, error) {
 	rt.defaultFiles = rt.handlers[filesKey(site.Root, site.Index)]
 
 	if site.TLS == model.TLSManual {
-		cert, err := loadCertificate(site, s.log, opts.Now())
+		cert, err := loadCertificate(site, s.log, s.opts.Now())
 		if err != nil {
 			return nil, err
 		}
@@ -233,7 +271,7 @@ func symlinkPolicy(p string) fspath.SymlinkPolicy {
 }
 
 // logWriter returns where a log goes: nowhere, a file, or the default stream.
-func (s *Server) logWriter(t model.LogTarget, def io.Writer) (io.Writer, error) {
+func (s *Server) logWriter(g *generation, t model.LogTarget, def io.Writer) (io.Writer, error) {
 	switch {
 	case t.Off:
 		return io.Discard, nil
@@ -242,7 +280,7 @@ func (s *Server) logWriter(t model.LogTarget, def io.Writer) (io.Writer, error) 
 		if err != nil {
 			return nil, err
 		}
-		s.closers = append(s.closers, f)
+		g.closers = append(g.closers, f)
 		return f, nil
 	}
 	return def, nil
@@ -267,7 +305,7 @@ func (s *Server) Start() error {
 			}
 			// A server that failed to start can't be started again, so release
 			// the document roots and log files that New opened.
-			s.closeResources()
+			s.gen.Load().closeNow()
 			return fmt.Errorf("listener %q: %w", bl.conf.Name, err)
 		}
 		bl.ln = s.limiter.wrap(ln)
@@ -332,7 +370,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 	wg.Wait()
 	close(errs)
-	s.closeResources()
+	s.reloadMu.Lock() // a reload in progress finishes first
+	s.gen.Load().closeNow()
+	s.reloadMu.Unlock()
 	return errors.Join(drain(errs)...)
 }
 
@@ -342,11 +382,4 @@ func drain(c <-chan error) []error {
 		out = append(out, e)
 	}
 	return out
-}
-
-func (s *Server) closeResources() {
-	for _, c := range s.closers {
-		c.Close()
-	}
-	s.closers = nil
 }

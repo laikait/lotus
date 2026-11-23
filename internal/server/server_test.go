@@ -690,7 +690,7 @@ func TestFailedStartReleasesFiles(t *testing.T) {
 	if err := os.Remove(logPath); err != nil {
 		t.Errorf("the log file is still held open after a failed start: %v", err)
 	}
-	if len(srv.closers) != 0 {
-		t.Errorf("%d resources not released", len(srv.closers))
+	if n := len(srv.gen.Load().closers); n != 0 {
+		t.Errorf("%d resources not released", n)
 	}
 }

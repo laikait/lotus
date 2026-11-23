@@ -63,12 +63,15 @@ func tlsVersion(v string) uint16 {
 // certificate is chosen by SNI with the same rules as the Host header: exact
 // name, longest wildcard, then the listener's default site. HTTP/2 is
 // negotiated by net/http through ALPN.
-func newTLSConfig(minVersion string, table *vhost.Table[*siteRuntime]) *tls.Config {
+//
+// table returns the listener's current virtual host table, so a reload
+// changes the certificates served to new handshakes.
+func newTLSConfig(minVersion string, table func() *vhost.Table[*siteRuntime]) *tls.Config {
 	return &tls.Config{
 		MinVersion: tlsVersion(minVersion),
 		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 			name, _ := vhost.NormalizeHost(hello.ServerName) // empty (no SNI) picks the default site
-			site, _, ok := table.Lookup(name)
+			site, _, ok := table().Lookup(name)
 			if !ok || site.cert == nil {
 				return nil, fmt.Errorf("no certificate for %q", hello.ServerName)
 			}

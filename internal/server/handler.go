@@ -8,7 +8,6 @@ import (
 	"net/netip"
 	"time"
 
-	"github.com/laikait/lotus/internal/clientip"
 	"github.com/laikait/lotus/internal/config/model"
 	"github.com/laikait/lotus/internal/logging"
 	"github.com/laikait/lotus/internal/staticfiles"
@@ -33,21 +32,30 @@ type siteRuntime struct {
 
 // listenerHandler routes the requests of one listener to its sites.
 type listenerHandler struct {
-	table    *vhost.Table[*siteRuntime]
-	fallback *logging.Access // access log for requests that reach no site
-	clients  *clientip.Resolver
+	srv      *Server
+	listener string
 }
 
 func (h *listenerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	rec := &recorder{ResponseWriter: w}
-	access := h.fallback
+
+	// The whole request uses the configuration that is current now, even if a
+	// reload happens while it runs. The generation is released at the end.
+	gen := h.srv.acquire()
+	if gen == nil {
+		http.Error(rec, "server is shutting down", http.StatusServiceUnavailable)
+		return
+	}
+	defer gen.release()
+	table := gen.tables[h.listener]
+	access := gen.fallback
 
 	// The client address is the connection's peer, or, when that peer is a
 	// trusted proxy, the address it reports in Forwarded / X-Forwarded-For.
 	// Access logs, match conditions and {remote_ip} all use this one value.
 	client, _ := netip.ParseAddr(remoteIP(r))
-	client = h.clients.Resolve(client, r.Header)
+	client = gen.clients.Resolve(client, r.Header)
 	clientStr := addrString(client, r)
 	defer func() {
 		access.Log(logging.Entry{
@@ -69,7 +77,7 @@ func (h *listenerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(rec, "bad request: invalid Host header", http.StatusBadRequest)
 		return
 	}
-	site, _, ok := h.table.Lookup(host)
+	site, _, ok := table.Lookup(host)
 	if !ok {
 		http.Error(rec, "no site is configured for this listener", http.StatusNotFound)
 		return
@@ -81,7 +89,7 @@ func (h *listenerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// with HTTP/2, reused) for one site could be used to reach another.
 	if r.TLS != nil && r.TLS.ServerName != "" {
 		if sni, ok := vhost.NormalizeHost(r.TLS.ServerName); ok {
-			if bySNI, _, found := h.table.Lookup(sni); found && bySNI != site {
+			if bySNI, _, found := table.Lookup(sni); found && bySNI != site {
 				http.Error(rec, "misdirected request", http.StatusMisdirectedRequest)
 				return
 			}

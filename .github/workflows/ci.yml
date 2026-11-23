@@ -19,8 +19,8 @@ jobs:
     name: Lint and vulnerability check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version: stable
       - run: make fmt-check vet
@@ -36,8 +36,8 @@ jobs:
         go: [stable, oldstable]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version: ${{ matrix.go }}
       - name: Unit tests with race detector
@@ -47,8 +47,8 @@ jobs:
     name: Test (FreeBSD)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: vmactions/freebsd-vm@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: vmactions/freebsd-vm@811efaaac0668df8bfb8308c3ec997b5ab50037b
         with:
           usesh: true
           prepare: pkg install -y go
@@ -58,8 +58,8 @@ jobs:
     name: Cross-compile
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version: stable
       - run: make cross
