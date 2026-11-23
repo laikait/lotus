@@ -158,6 +158,8 @@ type Site struct {
 	SecurityHeaders []Header `json:"security_headers"`
 	Routes          []Route  `json:"routes"`
 	Named           []Route  `json:"named_routes"`
+	// ErrorPages maps a status to the page shown for it: "/path" or "@name".
+	ErrorPages map[int]string `json:"error_pages,omitempty"`
 }
 
 // Header is a response header added to every response.
@@ -201,14 +203,34 @@ type Route struct {
 	Index          []string       `json:"index"`
 	MaxRequestBody int64          `json:"max_request_body"`
 	Actions        Actions        `json:"actions"`
-	Matches        []Match        `json:"matches,omitempty"`
-	Children       []Route        `json:"children,omitempty"`
+	Rewrites       []Rewrite      `json:"rewrites,omitempty"`
+	// ErrorPages are the effective error pages: the site's and enclosing
+	// routes', replaced one by one by this route's own.
+	ErrorPages map[int]string `json:"error_pages,omitempty"`
+	Matches    []Match        `json:"matches,omitempty"`
+	Children   []Route        `json:"children,omitempty"`
 }
 
 // LiteralBrace is written before a '{' in a request-time template (try_files
 // candidates, return targets) that must not start a placeholder: one written
 // as \{ or coming from env() or file(). The router removes the marker.
 const LiteralBrace = "\x00"
+
+// Rewrite flags.
+const (
+	RewriteLast      = "last"      // route again with the new URI
+	RewriteRedirect  = "redirect"  // answer 302
+	RewritePermanent = "permanent" // answer 301
+)
+
+// Rewrite replaces the request when its path matches Pattern. Target is a
+// request-time template; {re.N} are the pattern's capture groups.
+type Rewrite struct {
+	Pattern string         `json:"pattern"`
+	Regexp  *regexp.Regexp `json:"-"`
+	Target  string         `json:"target"`
+	Flag    string         `json:"flag"`
+}
 
 // Actions say what to do with a request. A nil/zero field means "not set".
 type Actions struct {

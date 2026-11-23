@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/netip"
-	"net/url"
 	"strconv"
 	"strings"
 
@@ -15,8 +14,8 @@ import (
 	"github.com/laikait/lotus/internal/staticfiles"
 )
 
-// maxInternalRedirects bounds try_files fallbacks and named-route jumps for one
-// request (docs/architecture/routing-precedence.md §5).
+// maxInternalRedirects bounds try_files fallbacks, rewrites, named-route jumps
+// and error pages for one request (docs/architecture/routing-precedence.md §5).
 const maxInternalRedirects = 10
 
 func filesKey(root string, index []string) string {
@@ -39,9 +38,14 @@ type target struct {
 	named *model.Route
 }
 
+// errorState is what a request carries once an error page has taken over.
+type errorState struct {
+	inPage bool // an error page is being served: further errors are not replaced
+	force  int  // the status the page's response must carry
+}
+
 // serve runs the routing engine for one request and writes the response.
-func (rt *siteRuntime) serve(w http.ResponseWriter, r *http.Request) {
-	clientIP, _ := netip.ParseAddr(remoteIP(r))
+func (rt *siteRuntime) serve(w http.ResponseWriter, r *http.Request, clientIP netip.Addr) {
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
@@ -49,6 +53,7 @@ func (rt *siteRuntime) serve(w http.ResponseWriter, r *http.Request) {
 	origBody := r.Body
 	reqID := newRequestID()
 
+	var es errorState
 	cur := target{path: router.NormalizePath(r.URL.Path), query: r.URL.RawQuery}
 	for hops := 0; ; hops++ {
 		if hops > maxInternalRedirects {
@@ -58,6 +63,9 @@ func (rt *siteRuntime) serve(w http.ResponseWriter, r *http.Request) {
 		}
 
 		req := withTarget(r, cur)
+		if es.inPage {
+			asErrorPageRequest(req)
+		}
 
 		var (
 			route *model.Route
@@ -73,19 +81,26 @@ func (rt *siteRuntime) serve(w http.ResponseWriter, r *http.Request) {
 			actions model.Actions
 			files   = rt.defaultFiles
 			maxBody = rt.maxBody
+			pages   = rt.site.ErrorPages
 		)
 		if route != nil {
 			m := router.SelectMatch(route, router.Request{HTTP: req, ClientIP: clientIP, Scheme: scheme})
 			actions = router.Effective(route, m)
 			files = rt.filesFor(route)
 			maxBody = route.MaxRequestBody
+			pages = route.ErrorPages
 		}
 
-		if req.ContentLength > maxBody {
-			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
-			return
+		// out is where this step writes. When error pages apply it intercepts the
+		// responses they replace.
+		var (
+			out http.ResponseWriter = w
+			ew  *errorWriter
+		)
+		if es.force != 0 || (!es.inPage && len(pages) > 0) {
+			ew = newErrorWriter(w, pages, es)
+			out = ew
 		}
-		req.Body = http.MaxBytesReader(w, origBody, maxBody)
 
 		vars := &router.Vars{
 			URI:       router.EscapedURI(cur.path, cur.query),
@@ -94,7 +109,7 @@ func (rt *siteRuntime) serve(w http.ResponseWriter, r *http.Request) {
 			Host:      req.Host,
 			Scheme:    scheme,
 			Method:    req.Method,
-			RemoteIP:  remoteIP(r),
+			RemoteIP:  addrString(clientIP, r),
 			RequestID: reqID,
 			Header:    func(n string) string { return req.Header.Get(n) },
 			QueryArg:  func(n string) string { return req.URL.Query().Get(n) },
@@ -107,47 +122,173 @@ func (rt *siteRuntime) serve(w http.ResponseWriter, r *http.Request) {
 			Captures: caps,
 		}
 
-		switch {
-		case actions.Return != nil:
-			rt.respond(w, req, actions.Return, vars)
-			return
-
-		case len(actions.TryFiles) > 0:
-			next, handled := rt.tryFiles(w, req, actions.TryFiles, files, vars)
-			if handled {
-				return
+		// One step: it writes a response, or says where to route next.
+		step := func() (next target, again bool) {
+			if es.inPage {
+				req.Body, req.ContentLength = http.NoBody, 0
+			} else {
+				if req.ContentLength > maxBody {
+					http.Error(out, "request body too large", http.StatusRequestEntityTooLarge)
+					return target{}, false
+				}
+				req.Body = http.MaxBytesReader(w, origBody, maxBody)
 			}
+
+			// Rewrites run first; the first one that matches decides.
+			if route != nil {
+				for i := range route.Rewrites {
+					rw := &route.Rewrites[i]
+					m := rw.Regexp.FindStringSubmatch(cur.path)
+					if m == nil {
+						continue
+					}
+					rv := *vars
+					rv.Captures = m
+					if rw.Flag != model.RewriteRedirect && rw.Flag != model.RewritePermanent {
+						path, query, hasQuery, err := expandInternal(rw.Target, &rv)
+						if err != nil {
+							http.Error(out, "bad request", http.StatusBadRequest)
+							return target{}, false
+						}
+						return rt.nextTarget(out, req, path, query, hasQuery)
+					}
+					text, err := router.Expand(rw.Target, &rv)
+					if err != nil {
+						http.Error(out, "bad request", http.StatusBadRequest)
+						return target{}, false
+					}
+					status := http.StatusFound
+					if rw.Flag == model.RewritePermanent {
+						status = http.StatusMovedPermanently
+					}
+					if text == "" {
+						rt.log.Error("rewrite: a redirect needs a target", "pattern", rw.Pattern)
+						http.Error(out, "internal server error", http.StatusInternalServerError)
+						return target{}, false
+					}
+					w.Header().Set("Location", text)
+					w.WriteHeader(status)
+					return target{}, false
+				}
+			}
+
+			switch {
+			case actions.Return != nil:
+				// An explicit body is final and skips error pages, but while an
+				// error page is being served it must still carry the original status.
+				final := http.ResponseWriter(w)
+				if es.force != 0 {
+					final = out
+				}
+				rt.respond(final, out, req, actions.Return, vars)
+				return target{}, false
+
+			case len(actions.TryFiles) > 0:
+				return rt.tryFiles(out, req, actions.TryFiles, files, vars)
+
+			default:
+				if files == nil {
+					http.Error(out, "404 page not found", http.StatusNotFound)
+					return target{}, false
+				}
+				files.ServeHTTP(out, req)
+				return target{}, false
+			}
+		}
+		next, again := step()
+		if again {
 			cur = next
 			continue
-
-		default:
-			if files == nil {
-				http.Error(w, "404 page not found", http.StatusNotFound)
-				return
-			}
-			files.ServeHTTP(w, req)
-			return
 		}
+
+		// An error response was replaced: route to its page, remembering the status.
+		if ew != nil && ew.intercepted {
+			es = errorState{inPage: true, force: ew.code}
+			page := pages[ew.code]
+			if strings.HasPrefix(page, "@") {
+				named := router.FindNamed(rt.site.Named, page)
+				if named == nil {
+					rt.log.Error("error_page: no such named route", "route", page)
+					http.Error(w, "internal server error", http.StatusInternalServerError)
+					return
+				}
+				cur = target{path: cur.path, query: cur.query, named: named}
+			} else {
+				cur = target{path: router.NormalizePath(page), query: cur.query}
+			}
+			continue
+		}
+		return
 	}
 }
 
-// tryFiles serves the first candidate that exists. If none does, it returns
-// where to route next, or handles the final "=NNN" status itself.
+// asErrorPageRequest turns req into what an error page is served for: a plain
+// GET (or HEAD), with the conditions and ranges of the original request gone.
+func asErrorPageRequest(req *http.Request) {
+	if req.Method != http.MethodHead {
+		req.Method = http.MethodGet
+	}
+	for _, h := range []string{"Range", "If-Range", "If-Match", "If-None-Match", "If-Modified-Since", "If-Unmodified-Since"} {
+		req.Header.Del(h)
+	}
+}
+
+// expandInternal expands a template that names a URI to route to internally
+// (a try_files entry or a rewrite target). The template is split at its first
+// '?' before anything is expanded: the path part expands to decoded text, with
+// {uri} meaning the path alone, and the query part expands to raw query text.
+// Nothing is percent-decoded afterwards, so a path such as /a%2520b is never
+// decoded twice, and a '?' that came from a request value can't start a query.
+func expandInternal(tmpl string, v *router.Vars) (path, query string, hasQuery bool, err error) {
+	pathT, queryT, hasQuery := strings.Cut(tmpl, "?")
+	pv := *v
+	pv.URI = v.Path
+	if path, err = router.Expand(pathT, &pv); err != nil {
+		return "", "", false, err
+	}
+	if hasQuery {
+		if query, err = router.Expand(queryT, v); err != nil {
+			return "", "", false, err
+		}
+	}
+	return path, query, hasQuery, nil
+}
+
+// nextTarget decides where routing continues, given the expanded path (or
+// "@name") and query of an internal redirect. Without a query part the
+// original query stays. again is false when a response was already written.
+func (rt *siteRuntime) nextTarget(w http.ResponseWriter, r *http.Request, path, query string, hasQuery bool) (next target, again bool) {
+	if strings.HasPrefix(path, "@") {
+		named := router.FindNamed(rt.site.Named, path)
+		if named == nil {
+			rt.log.Error("no such named route", "route", path)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return target{}, false
+		}
+		return target{path: router.NormalizePath(r.URL.Path), query: r.URL.RawQuery, named: named}, true
+	}
+	if !hasQuery {
+		query = r.URL.RawQuery
+	}
+	return target{path: router.NormalizePath(path), query: query}, true
+}
+
+// tryFiles serves the first candidate that exists. If none does, it says where
+// to route next, or writes the final "=NNN" status itself.
 func (rt *siteRuntime) tryFiles(w http.ResponseWriter, r *http.Request, list []string,
-	files *staticfiles.Handler, vars *router.Vars) (next target, handled bool) {
+	files *staticfiles.Handler, vars *router.Vars) (next target, again bool) {
 
 	last := len(list) - 1
 	for _, cand := range list[:last] {
-		expanded, err := router.Expand(cand, vars)
+		expanded, _, _, err := expandInternal(cand, vars)
 		if err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
-			return target{}, true
+			return target{}, false
 		}
 		if files == nil {
 			continue
 		}
-		p, _, _ := strings.Cut(expanded, "?")
-		p = router.NormalizePath(p)
+		p := router.NormalizePath(expanded)
 		isDir, exists := files.Stat(p)
 		if !exists {
 			continue
@@ -158,48 +299,31 @@ func (rt *siteRuntime) tryFiles(w http.ResponseWriter, r *http.Request, list []s
 		}
 		r2 := withTarget(r, target{path: p, query: r.URL.RawQuery})
 		files.ServeHTTP(w, r2)
-		return target{}, true
+		return target{}, false
 	}
 
-	fallback, err := router.Expand(list[last], vars)
+	fallback, query, hasQuery, err := expandInternal(list[last], vars)
 	if err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
-		return target{}, true
+		return target{}, false
 	}
-	switch {
-	case strings.HasPrefix(fallback, "="):
+	if strings.HasPrefix(fallback, "=") {
 		code, err := strconv.Atoi(fallback[1:])
 		if err != nil || code < 200 || code > 599 {
 			rt.log.Error("try_files: bad status in last entry", "entry", fallback)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return target{}, true
+			return target{}, false
 		}
 		rt.status(w, r, code, "")
-		return target{}, true
-
-	case strings.HasPrefix(fallback, "@"):
-		named := router.FindNamed(rt.site.Named, fallback)
-		if named == nil {
-			rt.log.Error("try_files: no such named route", "route", fallback)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return target{}, true
-		}
-		return target{path: router.NormalizePath(r.URL.Path), query: r.URL.RawQuery, named: named}, false
+		return target{}, false
 	}
-
-	// A URI: re-route. A '?' in it replaces the query; otherwise the original stays.
-	p, q, hasQuery := strings.Cut(fallback, "?")
-	if !hasQuery {
-		q = r.URL.RawQuery
-	}
-	if dec, err := url.PathUnescape(p); err == nil {
-		p = dec
-	}
-	return target{path: router.NormalizePath(p), query: q}, false
+	return rt.nextTarget(w, r, fallback, query, hasQuery)
 }
 
-// respond answers a `return` action.
-func (rt *siteRuntime) respond(w http.ResponseWriter, r *http.Request, ret *model.Return, vars *router.Vars) {
+// respond answers a `return` action. A response with an explicit body (text)
+// is final and goes straight to w; a bare status goes through out, so an
+// error page can replace it.
+func (rt *siteRuntime) respond(w, out http.ResponseWriter, r *http.Request, ret *model.Return, vars *router.Vars) {
 	if ret.Status < 200 {
 		rt.log.Error("return: informational status codes can't be a final response", "status", ret.Status)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -220,7 +344,11 @@ func (rt *siteRuntime) respond(w http.ResponseWriter, r *http.Request, ret *mode
 		w.Header().Set("Location", text)
 		w.WriteHeader(ret.Status)
 	default:
-		rt.status(w, r, ret.Status, text)
+		if text == "" {
+			rt.status(out, r, ret.Status, "")
+		} else {
+			rt.status(w, r, ret.Status, text)
+		}
 	}
 }
 
@@ -249,6 +377,15 @@ func withTarget(r *http.Request, t target) *http.Request {
 	r2.URL.RawPath = ""
 	r2.URL.RawQuery = t.query
 	return r2
+}
+
+// addrString formats the client address, or what the connection reports when
+// there is no IP (a Unix-socket peer).
+func addrString(a netip.Addr, r *http.Request) string {
+	if a.IsValid() {
+		return a.String()
+	}
+	return remoteIP(r)
 }
 
 func newRequestID() string {

@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/laikait/lotus/internal/clientip"
 	"github.com/laikait/lotus/internal/config/model"
 	"github.com/laikait/lotus/internal/fspath"
 	"github.com/laikait/lotus/internal/logging"
@@ -98,6 +99,7 @@ func New(cfg *model.Config, opts Options) (*Server, error) {
 	}
 
 	defaultAccess := logging.NewAccess(opts.Stdout)
+	clients := clientip.New(cfg.TrustedProxies)
 	for _, l := range cfg.Listeners {
 		var entries []vhost.Entry[*siteRuntime]
 		for i := range cfg.Sites {
@@ -113,7 +115,7 @@ func New(cfg *model.Config, opts Options) (*Server, error) {
 		table := vhost.Build(entries)
 
 		srv := &http.Server{
-			Handler:           &listenerHandler{table: table, fallback: defaultAccess},
+			Handler:           &listenerHandler{table: table, fallback: defaultAccess, clients: clients},
 			ReadHeaderTimeout: time.Duration(cfg.Limits.HeaderTimeout),
 			ReadTimeout:       time.Duration(cfg.Limits.ReadTimeout),
 			WriteTimeout:      time.Duration(cfg.Limits.WriteTimeout),

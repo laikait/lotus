@@ -10,10 +10,11 @@ An independent, cross-platform web server written in Go. It's built for PHP and 
 
 - **Configuration:** the `.lotus` language (parser, includes, variables, `env()`/`file()`), a directive registry, validation with line/column errors, and `lotus config validate` / `lotus config inspect` (secrets redacted).
 - **Serving:** `lotus start` runs HTTP/1.1 and HTTPS (HTTP/2 included), virtual hosts with wildcard names, SNI certificate selection (`tls manual`), static files (ETag, Range, HEAD, index files, no directory listings), security headers, access logs (Combined format), connection and body limits, and graceful shutdown.
-- **Routing:** `route` blocks follow the Nginx `location` model (exact, prefix, `^~`, regex, named routes), with `return` (redirects and fixed responses), `try_files` (including `=404` and `@named` fallbacks, at most 10 internal redirects), `match` blocks (method, header, query, cookie, client IP, scheme, host), per-route `root` and `max_request_body`, and request-time placeholders such as `{uri}` and `{re.1}`. See `configs/examples/routes.lotus`.
+- **Routing:** `route` blocks follow the Nginx `location` model (exact, prefix, `^~`, regex, named routes), with `return` (redirects and fixed responses), `try_files` (including `=404` and `@named` fallbacks, at most 10 internal redirects), `match` blocks (method, header, query, cookie, client IP, scheme, host), `rewrite` (`last`, `redirect`, `permanent`), `error_page` (a path or `@named` route, original status kept), per-route `root` and `max_request_body`, and request-time placeholders such as `{uri}` and `{re.1}`. See `configs/examples/routes.lotus`.
+- **Client IP:** `trusted_proxies` makes LOTUS believe `Forwarded` / `X-Forwarded-For` only from the listed networks, reading the chain from the right and skipping trusted hops. Access logs, `client_ip` conditions and `{remote_ip}` use the resolved address.
 - **Safety:** every URL-to-file mapping goes through one resolver that blocks traversal, hidden files, symlink escapes and (on Windows) device names.
 
-**Not implemented yet.** A configuration that uses any of these is refused at startup with a clear message, never silently ignored: the `php` route action and PHP/FastCGI, reverse proxy, automatic certificates (ACME), HTTP/3, `trusted_proxies`, per-site timeouts, the control channel.
+**Not implemented yet.** A configuration that uses any of these is refused at startup with a clear message, never silently ignored: the `php` route action and PHP/FastCGI, reverse proxy, automatic certificates (ACME), HTTP/3, per-site timeouts, the control channel. PROXY protocol is not available either (no directive for it yet).
 
 ## Try it
 

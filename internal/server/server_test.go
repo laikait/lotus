@@ -40,7 +40,6 @@ func TestUnsupportedFeaturesFailLoudly(t *testing.T) {
 		}, "php"},
 		{"acme", func(c *model.Config) { c.Sites[0].TLS = model.TLSAutomatic }, "automatic certificates"},
 		{"http3", func(c *model.Config) { c.Listeners[0].HTTP3 = true }, "http3"},
-		{"trusted proxies", func(c *model.Config) { c.TrustedProxies = []netipPrefix{mustPrefix("10.0.0.0/8")} }, "trusted_proxies"},
 		{"control", func(c *model.Config) { c.Control.Socket = "/tmp/x.sock" }, "control"},
 		{"per-site timeout", func(c *model.Config) { c.Sites[0].Limits.IdleTimeout = model.Duration(time.Second) }, "server-wide"},
 		{"per-site connection limit", func(c *model.Config) { c.Sites[0].Limits.MaxConnections = 5 }, "server-wide"},

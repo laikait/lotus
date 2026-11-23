@@ -94,6 +94,28 @@ func buildDefault() *Registry {
 		Description: "Tries each candidate as a file or directory in the site root. If none exists, the last entry is handled as an internal redirect (or \"=404\" returns that status).",
 		Security:    "Candidates are resolved inside the document root only. The last entry re-enters routing, so it can reach any route of the site.",
 	}
+	rewrite := &Directive{
+		Name: "rewrite", Card: Repeated, Placeholders: true,
+		Args: []Arg{
+			{Name: "pattern", Type: Regex(), Raw: true},
+			{Name: "target", Type: String()},
+			{Name: "flag", Type: Enum("last", "redirect", "permanent"), Optional: true},
+		},
+		Since: since, Default: "none",
+		Description: "If the request path matches the pattern, replaces the request: with last (the default) routing starts again with the new URI, redirect answers 302 and permanent answers 301. Rewrites are tried in order and the first match wins; they run before return and try_files. In the target, {re.1}, {re.2}... are the pattern's capture groups.",
+		Security:    "A redirect target built from {re.N} can become an open redirect if the pattern lets a visitor choose the host, as in '^/go/(.*)$' to \"{re.1}\". Start the target with \"/\" or a fixed host. CR/LF characters in captured values are rejected.",
+	}
+	errorPage := &Directive{
+		Name: "error_page", Card: Repeated,
+		Args: []Arg{
+			{Name: "status", Type: Int(400, 599)},
+			{Name: "target", Type: String()},
+		},
+		Since: since, Default: "none",
+		Description: "Shows another page for responses with this status that LOTUS produces itself (a missing file, return or try_files =404). The target is a path such as \"/404.html\" or a named route such as \"@error\". The visitor still gets the original status code. Routes inherit the site's error pages and can replace them one by one.",
+		Security:    "The error page is read from the same document root, under the same rules as any file. An error page that itself fails is not replaced again, so there are no loops.",
+		Validate:    validateErrorPage,
+	}
 	php := scalar("php", "backend", String(), "none",
 		"Runs matching requests through the named php_backend over FastCGI.",
 		"Only existing files below the document root are ever passed to PHP. Which backend (and so which pool and OS user) runs a site is an administrator decision.")
@@ -296,6 +318,7 @@ func buildDefault() *Registry {
 	siteLimits := *limits
 	r.Define(CtxSite,
 		listeners, aliases, siteTLS, certificate, certificateKey, symlinks, dotfiles, root, index, route, logs, &siteLimits, secHeaders,
+		errorPage,
 	)
 
 	// ---- route ----
@@ -303,7 +326,7 @@ func buildDefault() *Registry {
 	routeIndex := *index
 	routeLimits := *maxBody
 	r.Define(CtxRoute,
-		route, tryFiles, php, phpDeny, ret, &routeIndex, &routeLimits,
+		route, tryFiles, php, phpDeny, ret, rewrite, errorPage, &routeIndex, &routeLimits,
 		&Directive{
 			Name: "match", Card: Repeated, Block: BlockRequired, Opens: CtxMatch,
 			Since: since, Default: "none",

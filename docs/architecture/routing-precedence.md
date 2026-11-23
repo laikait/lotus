@@ -1,6 +1,6 @@
 # Route Matching Precedence
 
-**Status:** implemented in `internal/router` and `internal/server/route.go` (path matching §3, `match` blocks §4, `try_files` and the 10-redirect limit §5). Not implemented yet: `rewrite`, `error_page`, `config explain`, the Nginx differential tests (§8), and client IP detection behind proxies (`client_ip` uses the connection's address).
+**Status:** implemented in `internal/router` and `internal/server/route.go` (path matching §3, `match` blocks §4, `try_files`, `rewrite`, `error_page` and the 10-redirect limit §5). Not implemented yet: a site-level `rewrite` (it is a route directive for now), `config explain`, the Nginx differential tests (§8). `client_ip` uses the address resolved by `internal/clientip` (spec §4.10.4); PROXY protocol is not implemented yet.
 **Spec reference:** v1.1 §4.3.3 (decision confirmed: Nginx `location` model)
 **Syntax reference:** `docs/configuration/grammar.md` §6.4
 
@@ -108,6 +108,9 @@ Rules:
 
 - At most **10** internal redirects per request. Going over → `500` + an error log entry `LOTUS-RT-0001`.
 - Named routes are only reachable by internal redirect. Requests from clients never match `@name`.
+- Internal URIs (`try_files` entries, `rewrite` targets) are split at their first `?` **before** placeholders are expanded. The path part expands to decoded text (`{uri}` there means the path alone) and the query part to raw text. Nothing is decoded a second time, so `/a%2520b` stays `/a%2520b`, and a `?` that came from a request value can't start a query.
+- `rewrite` runs before `return` and `try_files`; the first rewrite whose pattern matches the path decides, and it matches the normalized, decoded path. A `redirect` or `permanent` rewrite answers 302 or 301 with the expanded target.
+- `error_page` replaces a response that LOTUS itself produces with that status (a missing file, a bare `return 404`, `try_files` `=404`). The page is served as a GET (or HEAD) without the request's conditions and ranges, with the original status and the page's own headers. A `return` with explicit text is never replaced. An error page that fails is not replaced again. Error pages count towards the 10 redirects.
 - A new URI's query string replaces the old one, unless the new URI has no `?`, in which case the original query is kept. This follows Nginx's `try_files` and `rewrite` behavior.
 - Regex capture groups (`{re.1}` …) come from the regex that chose the current route, or from the `rewrite` pattern inside a rewrite.
 

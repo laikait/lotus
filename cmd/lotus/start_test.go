@@ -134,13 +134,13 @@ func TestStartRefusesAnInvalidConfiguration(t *testing.T) {
 }
 
 func TestStartRefusesUnsupportedFeatures(t *testing.T) {
-	cfgPath, _ := siteConfig(t, freePort(t), `    trusted_proxies [ "10.0.0.0/8" ]`)
+	cfgPath, _ := siteConfig(t, freePort(t), `    control { socket "/tmp/lotus-test.sock" }`)
 	var stdout, stderr safeBuf
 	code := runStart(context.Background(), []string{"-config", cfgPath}, &stdout, &stderr, nil)
 	if code != exitNotSupported {
 		t.Errorf("exit code = %d, want %d\n%s", code, exitNotSupported, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "trusted_proxies") {
+	if !strings.Contains(stderr.String(), "control") {
 		t.Errorf("the message must name the feature:\n%s", stderr.String())
 	}
 }

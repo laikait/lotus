@@ -19,6 +19,16 @@ server {
         root "./www"
         tls off
 
+        # Pages for errors LOTUS produces itself. The visitor still gets the
+        # original status (404 here). A route can replace a page for its own URLs.
+        error_page 404 "/404.html"
+
+        # rewrite: /blog/2024/my-post -> /posts/my-post.html (internal, the URL
+        # in the browser doesn't change). Flags: last (default), redirect, permanent.
+        route "/blog/" {
+            rewrite '^/blog/\d{4}/([a-z0-9-]+)$' "/posts/{re.1}.html"
+        }
+
         # Exact match: only "/old".
         route = "/old" {
             return 301 "/"
@@ -50,8 +60,9 @@ server {
         }
 
         # Named routes are reached only by try_files, never by a request path.
+        # A bare status (no text) lets error_page replace the response.
         route "@notfound" {
-            return 404 "nothing here"
+            return 404
         }
     }
 }

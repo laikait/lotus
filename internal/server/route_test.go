@@ -15,13 +15,26 @@ import (
 // routedSite builds a site on a document root that also has a "blog"
 // directory, and attaches the given routes.
 func routedSite(t *testing.T, routes []model.Route, named ...model.Route) (*harness, string) {
+	return routedSiteWith(t, nil, routes, named...)
+}
+
+// routedSiteWith is routedSite with a hook to change the site first.
+func routedSiteWith(t *testing.T, mutate func(*model.Site), routes []model.Route, named ...model.Route) (*harness, string) {
 	t.Helper()
 	root := docroot(t, "home")
 	must(t, os.MkdirAll(filepath.Join(root, "blog"), 0o755))
+	must(t, os.MkdirAll(filepath.Join(root, "new"), 0o755))
 	must(t, os.WriteFile(filepath.Join(root, "blog", "index.html"), []byte("blog-index"), 0o644))
 	must(t, os.WriteFile(filepath.Join(root, "page.html"), []byte("page"), 0o644))
+	must(t, os.WriteFile(filepath.Join(root, "new", "a.txt"), []byte("new-a"), 0o644))
+	must(t, os.WriteFile(filepath.Join(root, "sp ace.txt"), []byte("spaced"), 0o644))
+	must(t, os.WriteFile(filepath.Join(root, "404.html"), []byte("custom-404"), 0o644))
+	must(t, os.WriteFile(filepath.Join(root, "403.html"), []byte("custom-403"), 0o644))
 	s := siteConf("a.test", root, "http")
 	s.Limits.MaxRequestBody = model.DefaultMaxRequestBody
+	if mutate != nil {
+		mutate(&s)
+	}
 	inherit(routes, &s)
 	inherit(named, &s)
 	s.Routes, s.Named = routes, named
@@ -43,6 +56,14 @@ func inherit(routes []model.Route, s *model.Site) {
 		if r.MaxRequestBody == 0 {
 			r.MaxRequestBody = s.Limits.MaxRequestBody
 		}
+		merged := map[int]string{}
+		for k, v := range s.ErrorPages {
+			merged[k] = v
+		}
+		for k, v := range r.ErrorPages {
+			merged[k] = v
+		}
+		r.ErrorPages = merged
 		inherit(r.Children, s)
 	}
 }

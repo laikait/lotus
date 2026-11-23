@@ -5,8 +5,10 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"time"
 
+	"github.com/laikait/lotus/internal/clientip"
 	"github.com/laikait/lotus/internal/config/model"
 	"github.com/laikait/lotus/internal/logging"
 	"github.com/laikait/lotus/internal/staticfiles"
@@ -33,16 +35,24 @@ type siteRuntime struct {
 type listenerHandler struct {
 	table    *vhost.Table[*siteRuntime]
 	fallback *logging.Access // access log for requests that reach no site
+	clients  *clientip.Resolver
 }
 
 func (h *listenerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	rec := &recorder{ResponseWriter: w}
 	access := h.fallback
+
+	// The client address is the connection's peer, or, when that peer is a
+	// trusted proxy, the address it reports in Forwarded / X-Forwarded-For.
+	// Access logs, match conditions and {remote_ip} all use this one value.
+	client, _ := netip.ParseAddr(remoteIP(r))
+	client = h.clients.Resolve(client, r.Header)
+	clientStr := addrString(client, r)
 	defer func() {
 		access.Log(logging.Entry{
 			Time:      start,
-			RemoteIP:  remoteIP(r),
+			RemoteIP:  clientStr,
 			Method:    r.Method,
 			URI:       r.RequestURI,
 			Proto:     r.Proto,
@@ -81,7 +91,7 @@ func (h *listenerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for _, hd := range site.headers {
 		rec.Header().Set(hd.Name, hd.Value)
 	}
-	site.serve(rec, r)
+	site.serve(rec, r, client)
 }
 
 func remoteIP(r *http.Request) string {

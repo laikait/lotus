@@ -136,6 +136,29 @@ site "a" { route "/" { php "p83" } }`)},
 		{name: "keyed placeholder ok", src: cfg(`site "a" { route "/" { return 301 "/x/{query.page}/{header.User-Agent}" } }`)},
 
 		// ---- routes ----
+		{name: "rewrite and error_page are valid", src: cfg(`site "a" {
+        root "/x"
+        error_page 404 "/404.html"
+        error_page 500 "@oops"
+        route "/old/" {
+            rewrite '^/old/(.*)$' "/new/{re.1}"
+            rewrite '^/gone$' "/" permanent
+            error_page 404 "/other.html"
+        }
+        route "@oops" { return 500 "oops" }
+    }`)},
+		{name: "rewrite with a bad regex", src: cfg(`site "a" { route "/" { rewrite '(a' "/b" } }`), codes: []string{diag.CodeInvalidValue}},
+		{name: "rewrite with an unknown flag", src: cfg(`site "a" { route "/" { rewrite '^/a$' "/b" sideways } }`), codes: []string{diag.CodeInvalidValue}},
+		{name: "rewrite with an unknown placeholder", src: cfg(`site "a" { route "/" { rewrite '^/a$' "/{nope}" } }`), codes: []string{diag.CodeUnknownPlaceholder}},
+		{name: "rewrite is a route directive", src: cfg(`site "a" { rewrite '^/a$' "/b" }`), codes: []string{diag.CodeWrongContext}, hint: `"route"`},
+		{name: "error_page for a non-error status", src: cfg(`site "a" { error_page 200 "/x" }`), codes: []string{diag.CodeInvalidValue}},
+		{name: "error_page target must be a path", src: cfg(`site "a" { error_page 404 "404.html" }`), codes: []string{diag.CodeRoutePath}},
+		{name: "error_page named route is checked", src: cfg(`site "a" { error_page 404 "@Bad Name" }`), codes: []string{diag.CodeRoutePath}},
+		{name: "error_page does not take placeholders", src: cfg(`site "a" { error_page 404 "/{uri}" }`), codes: []string{diag.CodePlaceholderNotAllowed}},
+		{name: "duplicate error_page", src: cfg(`site "a" {
+ error_page 404 "/a.html"
+ error_page 404 "/b.html"
+}`), codes: []string{diag.CodeRouteDuplicate}},
 		{name: "invalid regex", src: cfg(`site "a" { route ~ '(a' { return 200 } }`), codes: []string{diag.CodeInvalidRegex}},
 		{name: "route path without slash", src: cfg(`site "a" { route "x" { return 200 } }`), codes: []string{diag.CodeRoutePath}},
 		{name: "route path with query", src: cfg(`site "a" { route "/x?y" { return 200 } }`), codes: []string{diag.CodeRoutePath}},

@@ -347,9 +347,39 @@ func (c *compiler) phpBackend(d *ast.Directive) model.PHPBackend {
 // ---- sites ----
 
 type inherited struct {
-	root    string
-	index   []string
-	maxBody int64
+	root       string
+	index      []string
+	maxBody    int64
+	errorPages map[int]string
+}
+
+// errorPages returns the error pages in effect inside a block: the inherited
+// ones, with those the block defines itself replacing them one by one. Two
+// definitions for the same status in one block are an error.
+func (c *compiler) errorPages(stmts []ast.Statement, parent map[int]string) map[int]string {
+	out := map[int]string{}
+	for status, target := range parent {
+		out[status] = target
+	}
+	own := map[int]bool{}
+	for _, st := range stmts {
+		d, ok := st.(*ast.Directive)
+		if !ok || d.Name != "error_page" {
+			continue
+		}
+		status := int(integer(arg(d, 0)))
+		if own[status] {
+			c.diags.Error(d.Pos, diag.CodeRouteDuplicate,
+				fmt.Sprintf("duplicate error_page for status %d (each status can have one error page per block)", status))
+			continue
+		}
+		own[status] = true
+		out[status] = str(arg(d, 1))
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (c *compiler) site(cfg *model.Config, d *ast.Directive) model.Site {
@@ -422,7 +452,8 @@ func (c *compiler) site(cfg *model.Config, d *ast.Directive) model.Site {
 		}
 	}
 
-	in := inherited{root: s.Root, index: s.Index, maxBody: s.Limits.MaxRequestBody}
+	s.ErrorPages = c.errorPages(body(d), nil)
+	in := inherited{root: s.Root, index: s.Index, maxBody: s.Limits.MaxRequestBody, errorPages: s.ErrorPages}
 	for _, rd := range findAll(body(d), "route") {
 		route, ok := c.route(rd, in)
 		if !ok {
@@ -507,14 +538,19 @@ func (c *compiler) route(d *ast.Directive, in inherited) (model.Route, bool) {
 		}
 	}
 	r.Actions = actions(body(d))
+	r.ErrorPages = c.errorPages(body(d), in.errorPages)
 
-	childIn := inherited{root: r.Root, index: r.Index, maxBody: r.MaxRequestBody}
+	childIn := inherited{root: r.Root, index: r.Index, maxBody: r.MaxRequestBody, errorPages: r.ErrorPages}
 	for _, st := range body(d) {
 		x, ok := st.(*ast.Directive)
 		if !ok {
 			continue
 		}
 		switch x.Name {
+		case "rewrite":
+			if rw, ok := c.rewrite(x); ok {
+				r.Rewrites = append(r.Rewrites, rw)
+			}
 		case "route":
 			if child, ok := c.route(x, childIn); ok {
 				r.Children = append(r.Children, child)
@@ -526,6 +562,20 @@ func (c *compiler) route(d *ast.Directive, in inherited) (model.Route, bool) {
 		}
 	}
 	return r, true
+}
+
+func (c *compiler) rewrite(d *ast.Directive) (model.Rewrite, bool) {
+	pattern := str(arg(d, 0))
+	re, err := regexp.Compile(pattern)
+	if err != nil { // the validator checked this; keep the compiler honest
+		c.diags.Error(d.Pos, diag.CodeInvalidRegex, "invalid regular expression")
+		return model.Rewrite{}, false
+	}
+	flag := model.RewriteLast
+	if f := str(arg(d, 2)); f != "" {
+		flag = f
+	}
+	return model.Rewrite{Pattern: pattern, Regexp: re, Target: tmpl(arg(d, 1)), Flag: flag}, true
 }
 
 func actions(stmts []ast.Statement) model.Actions {

@@ -188,6 +188,36 @@ func checkRoutesWith(rep Reporter, parent *ast.Directive, children []*ast.Direct
 	}
 }
 
+// validateErrorPage checks the target of an error_page directive: a path that
+// starts with "/" or a well-formed named route.
+func validateErrorPage(d *ast.Directive, rep Reporter) {
+	if len(d.Args) != 2 {
+		return
+	}
+	target, ok := plainString(d.Args[1])
+	if !ok {
+		return
+	}
+	pos := d.Args[1].Position()
+	secret := false
+	if s, isStr := d.Args[1].(*ast.String); isStr {
+		secret = s.Secret
+	}
+	switch {
+	case strings.HasPrefix(target, "@"):
+		if !namedRouteRe.MatchString(target) {
+			rep.Error(pos, diag.CodeRoutePath, "the named route is malformed",
+				"names look like @error: '@' followed by lowercase letters, digits, '_' or '-'")
+		}
+	case !strings.HasPrefix(target, "/"):
+		msg := fmt.Sprintf("error page target %q must start with '/' or be an @name", target)
+		if secret {
+			msg = "error page target must start with '/' or be an @name"
+		}
+		rep.Error(pos, diag.CodeRoutePath, msg, `write a path such as "/404.html", or a named route such as "@error"`)
+	}
+}
+
 // ---- match blocks ----
 
 var matchConditions = map[string]bool{

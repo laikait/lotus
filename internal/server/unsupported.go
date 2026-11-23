@@ -41,9 +41,6 @@ func Unsupported(cfg *model.Config) []string {
 	var out []string
 	add := func(format string, args ...any) { out = append(out, fmt.Sprintf(format, args...)) }
 
-	if len(cfg.TrustedProxies) > 0 {
-		add("trusted_proxies (client IP detection behind proxies arrives with request processing)")
-	}
 	if cfg.Control.Socket != "" || cfg.Control.ViewerGroup != "" {
 		add("control (the local control channel is not implemented yet)")
 	}
