@@ -100,7 +100,7 @@ func (rt *siteRuntime) serve(w0 http.ResponseWriter, r *http.Request, clientIP n
 		// being served, which would only repeat what already happened).
 		var (
 			htStatus int
-			htEnv    map[string]string
+			htPHPEnv htScript
 		)
 		if rt.ht != nil && actions.Return == nil && files != nil && !es.inPage {
 			root := rt.site.Root
@@ -118,7 +118,7 @@ func (rt *siteRuntime) serve(w0 http.ResponseWriter, r *http.Request, clientIP n
 				cur = target{path: router.NormalizePath(hr.dec.Rewrite.Path), query: hr.dec.Rewrite.Query}
 				continue
 			case hr.dec.Redirect != nil:
-				w = newHTWriter(w, hr.dec.Headers, rt.protected)
+				w = newHTWriter(w, hr.dec, rt.protected, cur.path)
 				w.Header().Set("Location", hr.dec.Redirect.Location)
 				w.WriteHeader(hr.dec.Redirect.Status)
 				return
@@ -129,8 +129,11 @@ func (rt *siteRuntime) serve(w0 http.ResponseWriter, r *http.Request, clientIP n
 						files = f
 					}
 				}
-				w = newHTWriter(w, hr.dec.Headers, rt.protected)
-				htStatus, htEnv = hr.dec.Status, hr.dec.Env
+				w = newHTWriter(w, hr.dec, rt.protected, cur.path)
+				htStatus, htPHPEnv = hr.dec.Status, htScript{env: hr.dec.Env, ini: hr.dec.PHP}
+				if hr.dec.AuthRealm != "" {
+					w.Header().Set("WWW-Authenticate", basicChallenge(hr.dec.AuthRealm))
+				}
 			}
 		}
 
@@ -174,7 +177,7 @@ func (rt *siteRuntime) serve(w0 http.ResponseWriter, r *http.Request, clientIP n
 		// serveFiles serves a file request of this route, running PHP where the
 		// route says so.
 		serveFiles := func(rq *http.Request) (target, bool) {
-			return rt.serveFiles(final, out, rq, clientStr, files, actions.PHP, actions.PHPDeny, htEnv)
+			return rt.serveFiles(final, out, rq, clientStr, files, actions.PHP, actions.PHPDeny, htPHPEnv)
 		}
 
 		// One step: it writes a response, or says where to route next.

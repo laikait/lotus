@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -14,7 +15,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/laikait/lotus/internal/config/model"
 	"github.com/laikait/lotus/internal/fastcgi"
+	"github.com/laikait/lotus/internal/htaccess"
+	"github.com/laikait/lotus/internal/phpproc"
 	"github.com/laikait/lotus/internal/staticfiles"
 )
 
@@ -66,20 +70,28 @@ func splitScript(p string) (script, info string, ok bool) {
 type phpCall struct {
 	backend string
 	files   *staticfiles.Handler
-	client  string            // the client address, after trusted-proxy resolution
-	env     map[string]string // variables set by .htaccess (RewriteRule E flag)
+	client  string   // the client address, after trusted-proxy resolution
+	ht      htScript // what .htaccess says about the script's environment
+}
+
+// htScript is what .htaccess files give to a PHP script: environment variables
+// (RewriteRule's E flag, REMOTE_USER after Basic authentication) and php_value /
+// php_flag settings.
+type htScript struct {
+	env map[string]string
+	ini []htaccess.PHPSetting
 }
 
 // serveFiles serves a file request with the PHP rules that apply to it. It
 // says where to route next when the request must be routed again.
 func (rt *siteRuntime) serveFiles(final, out http.ResponseWriter, r *http.Request, client string,
-	files *staticfiles.Handler, php string, deny bool, env map[string]string) (next target, again bool) {
+	files *staticfiles.Handler, php string, deny bool, ht htScript) (next target, again bool) {
 
 	switch {
 	case deny:
 		files.ServeWith(out, r, isPHPName)
 	case php != "":
-		rt.servePHP(final, out, r, phpCall{backend: php, files: files, client: client, env: env})
+		rt.servePHP(final, out, r, phpCall{backend: php, files: files, client: client, ht: ht})
 	case rt.phpSite:
 		// A directory whose index is a PHP file is routed again as that file,
 		// so the route that runs PHP gets it (as Nginx does with `index`).
@@ -155,6 +167,11 @@ func (rt *siteRuntime) servePHP(final, out http.ResponseWriter, r *http.Request,
 		}
 	}
 
+	ini, ok := rt.phpSettings(c.backend, client, scriptURL, c.ht.ini)
+	if !ok {
+		rt.status(out, r, http.StatusInternalServerError, "")
+		return
+	}
 	params := phpParams(phpEnv{
 		r:          r,
 		client:     c.client,
@@ -162,7 +179,8 @@ func (rt *siteRuntime) servePHP(final, out http.ResponseWriter, r *http.Request,
 		scriptName: scriptURL,
 		pathInfo:   pathInfo,
 		length:     length,
-		extra:      c.env,
+		extra:      c.ht.env,
+		ini:        ini,
 	})
 	resp, err := client.Do(r.Context(), &fastcgi.Request{Params: params, Stdin: stdin})
 	if err != nil {
@@ -188,6 +206,7 @@ func (rt *siteRuntime) relayPHP(final, out http.ResponseWriter, r *http.Request,
 		return
 	}
 
+	markScript(final)
 	copyPHPHeaders(final.Header(), resp.Header)
 	final.WriteHeader(resp.Status)
 	if r.Method == http.MethodHead {
@@ -312,6 +331,8 @@ type phpEnv struct {
 	// variable the server sets: a file in the document root can't forge
 	// SCRIPT_FILENAME or REMOTE_ADDR.
 	extra map[string]string
+	// ini is the PHP_VALUE parameter built from php_value / php_flag.
+	ini string
 }
 
 // phpParams builds the CGI environment (RFC 3875) a PHP script expects.
@@ -399,6 +420,9 @@ func phpParams(e phpEnv) []fastcgi.Param {
 			Value: strings.Join(r.Header[name], sep),
 		})
 	}
+	if e.ini != "" {
+		p = append(p, fastcgi.Param{Name: "PHP_VALUE", Value: e.ini})
+	}
 	if len(e.extra) > 0 {
 		have := make(map[string]bool, len(p))
 		for _, q := range p {
@@ -410,12 +434,57 @@ func phpParams(e phpEnv) []fastcgi.Param {
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			if !have[strings.ToUpper(k)] {
+			if !have[strings.ToUpper(k)] && !reservedParam(k) {
 				p = append(p, fastcgi.Param{Name: k, Value: e.extra[k]})
 			}
 		}
 	}
 	return p
+}
+
+// reservedParam says whether a variable from a .htaccess file must not become a
+// FastCGI parameter: PHP-FPM reads PHP_VALUE and PHP_ADMIN_VALUE as settings
+// (PHP_ADMIN_VALUE can't be overridden by the script at all), and FCGI_* belongs
+// to the protocol. Settings have their own, checked path (php_value).
+func reservedParam(name string) bool {
+	n := strings.ToUpper(name)
+	return n == "PHP_VALUE" || n == "PHP_ADMIN_VALUE" || strings.HasPrefix(n, "FCGI_")
+}
+
+// phpSettings builds the PHP_VALUE parameter for php_value / php_flag lines.
+// Values are written as single-quoted INI strings, which PHP-FPM takes
+// literally: no ${VAR} expansion (that would read the server's environment) and
+// no constants or operators, as with Apache's php_value.
+//
+// A php-cgi pool that LOTUS manages does not read PHP_VALUE (only PHP-FPM
+// does), so there the settings can't be applied. That is reported like any
+// unsupported directive: the request fails, or with htaccess_unsupported
+// "ignore" the settings are skipped with a warning.
+func (rt *siteRuntime) phpSettings(backend string, client phpBackend, script string, set []htaccess.PHPSetting) (string, bool) {
+	if len(set) == 0 {
+		return "", true
+	}
+	if _, managed := client.(*phpproc.Pool); managed {
+		skip := rt.ht != nil && rt.ht.cfg.OnUnsupported == model.HTAccessIgnore
+		level, action := slog.LevelError, "the request fails (htaccess_unsupported error)"
+		if skip {
+			level, action = slog.LevelWarn, "the settings are skipped (htaccess_unsupported ignore)"
+		}
+		if rt.ht == nil || rt.ht.once("phpini|"+backend) {
+			rt.log.Log(context.Background(), level, "htaccess: php_value and php_flag need PHP-FPM; the managed php-cgi pool does not read them",
+				"php_backend", backend, "script", script, "action", action)
+		}
+		return "", skip
+	}
+	var b strings.Builder
+	for _, s := range set {
+		if strings.Contains(s.Value, "'") {
+			// Compile refuses these too; this keeps the quoting safe on its own.
+			return "", false
+		}
+		b.WriteString(s.Name + "='" + s.Value + "'\n")
+	}
+	return strings.TrimSuffix(b.String(), "\n"), true
 }
 
 // phpDropped are response headers of a script that are not passed on:

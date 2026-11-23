@@ -8,6 +8,8 @@
 #       curl -i http://127.0.0.1:8086/blog/hello          -> served as /blog/hello.html
 #       curl -i http://127.0.0.1:8086/private/secret.txt  -> 403 with the site's own text
 #       curl -i http://127.0.0.1:8086/.htaccess           -> 403, never served
+#       curl -i http://127.0.0.1:8086/members/            -> 401 asking for a password
+#       curl -i -u alice:secret http://127.0.0.1:8086/members/   -> 200
 #
 # Full description: docs/architecture/htaccess.md
 

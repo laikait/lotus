@@ -1,9 +1,9 @@
 # `.htaccess` support
 
 Status: a subset aimed at what PHP applications ship (WordPress, Laravel,
-Drupal, Joomla, Symfony). Not built yet: HTTP Basic authentication, `Expires*`,
-`php_value` / `php_flag`, `AddType` / `AddHandler`, `RewriteOptions Inherit`,
-`<Limit>`, `SetEnvIf`. Check a file before you enable it:
+Drupal, Joomla, Symfony). Not built yet: `<Limit>`/`<LimitExcept>`,
+`RewriteOptions Inherit`, `SetEnvIf`, digest authentication, groups,
+`ForceType`/`AddHandler` (refused on purpose). Check a file before you enable it:
 
 ```
 lotus compat htaccess check /var/www/example/.htaccess
@@ -36,10 +36,15 @@ None of these can be set from a file a tenant includes into their own site. See
 | `directory_index` | `DirectoryIndex` (file names, or `disabled`) |
 | `options` | `-Indexes`, `-MultiViews`, `-ExecCGI`, `-Includes`, `None` (accepted); `+FollowSymLinks` and `+SymLinksIfOwnerMatch` are accepted and **have no effect**; `+Indexes`, `+MultiViews`, `+ExecCGI`, `+Includes`, `All` are refused |
 | `access` | `Require all granted\|denied`, `Require ip`, `Require not ip` inside `<RequireAll>` / `<RequireNone>`, `<RequireAny>`; `Order`, `Allow from`, `Deny from` |
-| `headers` | `Header set\|setifempty\|add\|append\|merge\|unset` (with or without `always`) |
+| `headers` | `Header set\|setifempty\|add\|append\|merge\|unset` (with or without `always`); `ExpiresActive`, `ExpiresDefault`, `ExpiresByType`; `AddDefaultCharset`; `AddType` |
+| `php` | `php_value`, `php_flag` (PHP-FPM backends only, see below) |
+
+`access` also covers HTTP Basic authentication: `AuthType Basic`, `AuthName`,
+`AuthUserFile`, `AuthBasicProvider file`, with `Require valid-user` and
+`Require user name...`.
 
 Containers: `<IfModule>` (true for `rewrite`, `alias`, `dir`, `headers`,
-`authz_core`, `authz_host`, `access_compat`; false for every other module, with a
+`authz_core`, `authz_host`, `access_compat`, `expires`, `mime`, `authn_core`, `authn_file`, `auth_basic`, `authz_user`; false for every other module, with a
 note in the log), `<Files>` and `<FilesMatch>` (for `Require`/`Order`/`Allow`/`Deny` and `Header`).
 
 Ignored with a note, because they have no meaning here: `ServerSignature`,
@@ -136,6 +141,78 @@ version of the file.
   that can't be honoured (`Require valid-user`, `Require host`, host names in
   `Allow from`, ...), `Auth*`, `Satisfy`, `<Limit>`, a `<Files>` block that can't
   be compiled, and any line that doesn't parse. They always fail the request.
+
+## Expires, charset and types
+
+- `ExpiresActive On` switches `ExpiresDefault` and `ExpiresByType` on (they do
+  nothing without it). Lifetimes are `access plus 1 month 2 days` (also `now
+  plus ...`) or `A2592000` seconds; a month is 30 days and a year 365. Lifetimes
+  counted from the file's modification time (`modification plus ...`, `M...`)
+  are refused.
+- A lifetime becomes `Cache-Control: max-age=N` and `Expires`, on 200, 206 and
+  304 responses only. `ExpiresByType` takes an exact type or `image/*`. A script
+  that sent its own `Expires` or `max-age` keeps it.
+- `AddDefaultCharset UTF-8` adds the charset to `text/html` and `text/plain`
+  responses that have none. `Off` in a deeper directory turns it off.
+- `AddType font/woff2 .woff2` sets the Content-Type of static files by
+  extension. It never applies to PHP responses, and a type that names a
+  handler (`application/x-httpd-php`, `text/x-server-parsed-html`) is refused:
+  which files run as code is decided by the server's `php` route.
+- None of these can change a header the site's `security_headers` set.
+
+## PHP settings
+
+`php_value name value` and `php_flag name on|off` become the `PHP_VALUE`
+FastCGI parameter, as single-quoted INI strings: no `${VAR}` expansion, no
+constants or operators (`error_reporting E_ALL` doesn't work, as with Apache; use
+the number). Deeper files override shallower ones, setting by setting.
+
+- **PHP-FPM only.** `php-cgi` (what LOTUS runs for a `command` backend) ignores
+  `PHP_VALUE`; checked against PHP 8 on Windows. With a managed pool the settings
+  can't be applied, so a request to a directory that has them gets a **500**
+  (logged), or with `htaccess_unsupported "ignore"` they are skipped with a
+  warning. Put per-site settings in the pool's `php_ini` instead.
+- A file can't change settings that belong to the administrator: `open_basedir`,
+  `disable_functions`, `disable_classes`, `auto_prepend_file`,
+  `auto_append_file`, `allow_url_include`, `allow_url_fopen`, `extension*`,
+  `error_log`, `include_path`, the session and temp directories, and similar.
+  Such a line is unsupported (see below). `php_admin_value` and `php_admin_flag`
+  are always refused.
+- `E=PHP_VALUE:...` in a `RewriteRule` doesn't work either: variables named
+  `PHP_VALUE`, `PHP_ADMIN_VALUE` and `FCGI_*` are never passed from a file. (They
+  would have bypassed both rules above.)
+- Not tested against a real PHP-FPM yet: the INI quoting was checked with PHP's
+  own `parse_ini_string`.
+
+## HTTP Basic authentication
+
+```
+AuthType Basic
+AuthName "Staff only"
+AuthUserFile .htpasswd
+Require valid-user          # or: Require user alice bob
+```
+
+- Password hashes: bcrypt (`$2y$`, `$2a$`, `$2b$`; cost up to 12 is checked,
+  higher is refused so a hash can't be used to burn CPU), Apache MD5 (`$apr1$`,
+  the `htpasswd` default) and `{SHA}`. Plain text and `crypt(3)` entries never
+  match.
+- `AuthUserFile` is an absolute path or relative to the directory of the
+  `.htaccess` that names it, and the file **must be inside the site's document
+  root** (symlinks resolved). `.htpasswd` is never served, so keeping it there is
+  safe. A missing or outside file locks everybody out (and is logged); it never
+  opens the directory.
+- Without credentials, or with wrong ones, the answer is **401** with
+  `WWW-Authenticate: Basic realm="..."`. A valid user who isn't allowed is a
+  **403**. Combined with `Require ip` the usual rules apply: any of the top-level
+  lines, or all of them inside `<RequireAll>`. `Require valid-user` without
+  `AuthType Basic` and `AuthUserFile` is a 500, never "open".
+- The password file is re-read when it changes (checked every `htaccess_recheck`).
+  At most four password checks run at once.
+- A PHP script gets `REMOTE_USER` and `AUTH_TYPE`.
+- Not supported: Digest, `AuthGroupFile`, `Require group`, `Require not user`,
+  LDAP, `Satisfy`. There is no lock-out after repeated failures yet; use a
+  strong password and `Require ip` where you can.
 
 ## Limits and safety
 

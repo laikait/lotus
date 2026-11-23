@@ -522,7 +522,7 @@ server {
 		t.Error(".htaccess must stay off unless `htaccess true` is set, whatever else is given")
 	}
 	d := bySite["default.test"]
-	if d == nil || len(d.Allow) != 7 || d.OnUnsupported != model.HTAccessError || time.Duration(d.Recheck) != model.DefaultHTAccessRecheck {
+	if d == nil || len(d.Allow) != 8 || d.OnUnsupported != model.HTAccessError || time.Duration(d.Recheck) != model.DefaultHTAccessRecheck {
 		t.Errorf("defaults: %+v", d)
 	}
 	x := bySite["custom.test"]

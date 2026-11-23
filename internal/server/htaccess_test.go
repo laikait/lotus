@@ -249,16 +249,16 @@ func TestHtaccessCatchAllDoesNotTakeHiddenFilesForPages(t *testing.T) {
 
 func TestHtaccessUnsupportedDirectiveFailsLoudly(t *testing.T) {
 	h, base, _ := htServer(t, map[string]string{
-		".htaccess": "ExpiresActive On\n",
+		".htaccess": "AddHandler cgi-script .cgi\n",
 	}, htConfig(), nil)
 	resp, body := do(t, "GET", base+"/hello.txt", nil, "")
 	if resp.StatusCode != 500 {
 		t.Fatalf("status %d: an unsupported directive must not be silently skipped", resp.StatusCode)
 	}
-	if strings.Contains(body, "Expires") || strings.Contains(body, ".htaccess") {
+	if strings.Contains(body, "AddHandler") || strings.Contains(body, ".htaccess") {
 		t.Errorf("the client was told about the file: %q", body)
 	}
-	if !strings.Contains(h.stderr.String(), "ExpiresActive") && !strings.Contains(h.stderr.String(), "expiresactive") {
+	if !strings.Contains(h.stderr.String(), "AddHandler") && !strings.Contains(h.stderr.String(), "addhandler") {
 		t.Errorf("the log must name the directive: %q", h.stderr.String())
 	}
 	if n := strings.Count(h.stderr.String(), "htaccess:"); n != 1 {

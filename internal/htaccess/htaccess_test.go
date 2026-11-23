@@ -4,6 +4,7 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeFS is the document root as the engine sees it: URL path -> directory?
@@ -236,12 +237,12 @@ ErrorDocument 403 "Access denied"
 
 func TestDrupalStyleFile(t *testing.T) {
 	c := compileClean(t, drupalish)
-	var expiresNote bool
+	var skipNote bool
 	for _, n := range c.Notes {
-		expiresNote = expiresNote || strings.Contains(n.Msg, "mod_expires")
+		skipNote = skipNote || strings.Contains(n.Msg, "mod_authz_core")
 	}
-	if !expiresNote {
-		t.Errorf("the skipped mod_expires block must be reported: %v", c.Notes)
+	if !skipNote {
+		t.Errorf("the skipped !mod_authz_core block must be reported: %v", c.Notes)
 	}
 	fs := fakeFS{"/": true, "/index.php": false, "/core.module": false, "/composer.json": false, "/style.css": false}
 	for path, wantDenied := range map[string]bool{
@@ -264,6 +265,9 @@ func TestDrupalStyleFile(t *testing.T) {
 	}
 	if len(d.Headers) != 2 || d.Headers[0].Name != "X-Content-Type-Options" {
 		t.Errorf("headers: %+v", d.Headers)
+	}
+	if d.Policy == nil || d.Policy.Expires == nil || d.Policy.Expires.ByType["image/png"] != 365*24*time.Hour {
+		t.Errorf("Drupal's mod_expires block must apply now: %+v", d.Policy)
 	}
 }
 
@@ -634,10 +638,11 @@ func TestUnsupportedDirectivesAreReported(t *testing.T) {
 		src       string
 		sensitive bool
 	}{
-		"php_value":           {"php_value upload_max_filesize 64M", false},
-		"expires":             {"ExpiresActive On", false},
-		"auth":                {"AuthType Basic", true},
-		"require valid-user":  {"Require valid-user", true},
+		"php_admin_value":     {"php_admin_value open_basedir /", false},
+		"expires modified":    {"ExpiresDefault \"modification plus 1 day\"", false},
+		"digest":              {"AuthType Digest", true},
+		"AuthGroupFile":       {"AuthGroupFile /x", true},
+		"require group":       {"Require group staff", true},
 		"require host":        {"Require host example.com", true},
 		"allow from a host":   {"Order allow,deny\nAllow from example.com", true},
 		"satisfy":             {"Satisfy any", true},

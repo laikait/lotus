@@ -30,6 +30,12 @@ type Request struct {
 	// Stat looks a URL path up below the document root with the server's file
 	// rules (hidden files, symlink policy and so on).
 	Stat func(urlPath string) (info FileInfo, ok bool)
+
+	// BasicUser checks the request's Basic credentials against an htpasswd file
+	// (AuthUserFile as written, and the URL directory of the .htaccess that
+	// wrote it) and returns the user's name, or "" if there are none or they
+	// are wrong. Nil means no authentication is available.
+	BasicUser func(userFile, dirURL string) string
 }
 
 // FileInfo is the result of Stat.

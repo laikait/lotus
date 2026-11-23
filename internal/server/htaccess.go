@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -37,6 +38,10 @@ type htRuntime struct {
 	mu     sync.Mutex
 	dirs   map[string]*htDir // by document root and directory URL
 	logged map[string]bool   // problems already reported, so a busy site doesn't flood its log
+
+	pwMu   sync.Mutex
+	pwFile map[string]*htPasswd // password files by path
+	hashes chan struct{}        // limits password checks running at once
 }
 
 // htDir is what is known about one directory.
@@ -54,6 +59,7 @@ func newHTRuntime(cfg *model.HTAccess, log *slog.Logger) *htRuntime {
 	h := &htRuntime{
 		cfg: cfg, log: log, recheck: time.Duration(cfg.Recheck),
 		allow: map[string]bool{}, dirs: map[string]*htDir{}, logged: map[string]bool{},
+		pwFile: map[string]*htPasswd{}, hashes: make(chan struct{}, 4),
 	}
 	for _, c := range cfg.Allow {
 		h.allow[c] = true
@@ -226,6 +232,9 @@ func (rt *siteRuntime) applyHTAccess(r *http.Request, root string, cur target, c
 			return htaccess.FileInfo{IsDir: f.Info.IsDir(), Size: f.Info.Size()}, true
 		},
 	}
+	req.BasicUser = func(file, dirURL string) string {
+		return rt.ht.basicUser(root, r.Header.Get("Authorization"), file, dirURL)
+	}
 	req.Scheme = "http"
 	if r.TLS != nil {
 		req.Scheme = "https"
@@ -235,7 +244,11 @@ func (rt *siteRuntime) applyHTAccess(r *http.Request, root string, cur target, c
 			req.ServerPort = port
 		}
 	}
-	return htResult{dec: htaccess.Evaluate(layers, req, noRewrite)}
+	dec := htaccess.Evaluate(layers, req, noRewrite)
+	if dec.Why != "" && rt.ht.once("why|"+cur.path+"|"+dec.Why) {
+		rt.ht.log.Error("htaccess: "+dec.Why, "path", cur.path)
+	}
+	return htResult{dec: dec}
 }
 
 // filesWithIndex returns a static handler for root with the index list a
@@ -296,29 +309,66 @@ func overlayPages(pages map[int]string, docs map[int]htaccess.ErrorDoc) map[int]
 
 // ---- headers ----
 
-// htWriter applies .htaccess `Header` directives when the response starts, so
-// they see the headers the script or file handler set: `Header unset
-// X-Powered-By` must remove PHP's header, and `Header append` must add to it.
+// htWriter applies what .htaccess says about the response when it starts, so it
+// sees the headers the script or file handler set: `Header unset X-Powered-By`
+// must remove PHP's header, `Header append` must add to it, and an Expires
+// lifetime must not override one the script chose.
 type htWriter struct {
 	http.ResponseWriter
 	ops       []htaccess.HeaderOp
+	policy    *htaccess.ResponsePolicy
+	path      string
 	protected map[string]bool
+	script    bool // the response comes from a PHP script
 	done      bool
 }
 
-func newHTWriter(w http.ResponseWriter, ops []htaccess.HeaderOp, protected map[string]bool) http.ResponseWriter {
-	if len(ops) == 0 {
+func newHTWriter(w http.ResponseWriter, dec *htaccess.Decision, protected map[string]bool, path string) http.ResponseWriter {
+	if len(dec.Headers) == 0 && dec.Policy.Empty() {
 		return w
 	}
-	return &htWriter{ResponseWriter: w, ops: ops, protected: protected}
+	return &htWriter{ResponseWriter: w, ops: dec.Headers, policy: dec.Policy, path: path, protected: protected}
 }
 
-func (w *htWriter) apply() {
+// markScript tells the .htaccess writer (if the response has one) that a PHP
+// script produces it: AddType is about static files and must not rewrite a
+// script's own Content-Type.
+func markScript(w http.ResponseWriter) {
+	for {
+		if hw, ok := w.(*htWriter); ok {
+			hw.script = true
+			return
+		}
+		u, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return
+		}
+		w = u.Unwrap()
+	}
+}
+
+func (w *htWriter) apply(status int) {
 	if w.done {
 		return
 	}
 	w.done = true
 	h := w.ResponseWriter.Header()
+	if !w.policy.Empty() {
+		// The administrator's security_headers stay as they are.
+		saved := map[string][]string{}
+		for _, n := range []string{"Content-Type", "Cache-Control", "Expires"} {
+			if w.protected[n] {
+				saved[n] = append([]string(nil), h.Values(n)...)
+			}
+		}
+		w.policy.Apply(h, w.path, status, w.script, time.Now())
+		for n, v := range saved {
+			h.Del(n)
+			for _, x := range v {
+				h.Add(n, x)
+			}
+		}
+	}
 	for _, op := range w.ops {
 		name := http.CanonicalHeaderKey(op.Name)
 		if w.protected[name] {
@@ -363,18 +413,18 @@ func containsToken(list, tok string) bool {
 }
 
 func (w *htWriter) WriteHeader(code int) {
-	w.apply()
+	w.apply(code)
 	w.ResponseWriter.WriteHeader(code)
 }
 
 func (w *htWriter) Write(p []byte) (int, error) {
-	w.apply()
+	w.apply(http.StatusOK)
 	return w.ResponseWriter.Write(p)
 }
 
 // ReadFrom keeps the zero-copy path (sendfile) available.
 func (w *htWriter) ReadFrom(src io.Reader) (int64, error) {
-	w.apply()
+	w.apply(http.StatusOK)
 	if rf, ok := w.ResponseWriter.(io.ReaderFrom); ok {
 		return rf.ReadFrom(src)
 	}
@@ -382,3 +432,122 @@ func (w *htWriter) ReadFrom(src io.Reader) (int64, error) {
 }
 
 func (w *htWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// ---- HTTP Basic authentication ----
+
+// once reports true the first time it is called with a key, so a busy site
+// doesn't repeat the same complaint on every request.
+func (h *htRuntime) once(key string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.logged[key] {
+		return false
+	}
+	if len(h.logged) > maxHTCache {
+		h.logged = map[string]bool{}
+	}
+	h.logged[key] = true
+	return true
+}
+
+// basicChallenge is the WWW-Authenticate value for a realm.
+func basicChallenge(realm string) string {
+	realm = strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(realm)
+	return `Basic realm="` + realm + `", charset="UTF-8"`
+}
+
+// htPasswd is a password file that was read.
+type htPasswd struct {
+	checked time.Time
+	mtime   time.Time
+	size    int64
+	users   map[string]string
+}
+
+// passwordFile finds the file AuthUserFile names: an absolute path, or one
+// relative to the directory of the .htaccess that named it. It must lie inside
+// the document root (after symlinks), so a site file can't aim the server at
+// files of other sites or of the system. Because `.ht*` files are never
+// served, a password file named .htpasswd inside the root is safe.
+func passwordFile(root, dirURL, file string) (string, bool) {
+	p := file
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(root, filepath.FromSlash(strings.Trim(dirURL, "/")), filepath.FromSlash(file))
+	}
+	real, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return "", false
+	}
+	rootReal, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", false
+	}
+	rel, err := filepath.Rel(rootReal, real)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", false
+	}
+	return real, true
+}
+
+// users returns the entries of a password file, read again when it changed.
+func (h *htRuntime) users(root, dirURL, file string) map[string]string {
+	p, ok := passwordFile(root, dirURL, file)
+	if !ok {
+		if h.once("pw-path|" + root + "|" + dirURL + "|" + file) {
+			h.log.Error("htaccess: AuthUserFile is missing or is not inside the site's document root", "directory", dirURL, "file", file)
+		}
+		return nil
+	}
+	now := time.Now()
+	h.pwMu.Lock()
+	cur := h.pwFile[p]
+	h.pwMu.Unlock()
+	if cur != nil && now.Sub(cur.checked) < h.recheck {
+		return cur.users
+	}
+	fi, err := os.Stat(p)
+	if err != nil || !fi.Mode().IsRegular() || fi.Size() > htaccess.MaxHtpasswdSize {
+		if h.once("pw-stat|" + p) {
+			h.log.Error("htaccess: the password file can't be used (missing, not a regular file, or over 4 MiB)", "file", p)
+		}
+		return nil
+	}
+	nu := &htPasswd{checked: now, mtime: fi.ModTime(), size: fi.Size()}
+	if cur != nil && cur.mtime.Equal(nu.mtime) && cur.size == nu.size {
+		nu.users = cur.users
+	} else {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return nil
+		}
+		nu.users = htaccess.ParseHtpasswd(data)
+	}
+	h.pwMu.Lock()
+	if len(h.pwFile) > 256 {
+		h.pwFile = map[string]*htPasswd{}
+	}
+	h.pwFile[p] = nu
+	h.pwMu.Unlock()
+	return nu.users
+}
+
+// basicUser checks the Basic credentials of a request against AuthUserFile and
+// returns the user's name, or "" when there are none or they are wrong.
+func (h *htRuntime) basicUser(root, authorization, file, dirURL string) string {
+	user, pass, ok := htaccess.ParseBasic(authorization)
+	if !ok {
+		return ""
+	}
+	hash, found := h.users(root, dirURL, file)[user]
+	if !found {
+		return ""
+	}
+	// bcrypt is meant to be slow; a flood of requests with bad passwords must
+	// not be able to use every CPU of the server.
+	h.hashes <- struct{}{}
+	defer func() { <-h.hashes }()
+	if htaccess.VerifyPassword(hash, pass) {
+		return user
+	}
+	return ""
+}

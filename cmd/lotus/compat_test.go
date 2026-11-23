@@ -37,12 +37,12 @@ func TestCompatHtaccessCheckAcceptsWordPress(t *testing.T) {
 }
 
 func TestCompatHtaccessCheckReportsWhatIsNotSupported(t *testing.T) {
-	src := "RewriteEngine On\nphp_value memory_limit 256M\nAuthType Basic\nOptions +FollowSymLinks\n<IfModule mod_expires.c>\nExpiresActive On\n</IfModule>\n"
+	src := "RewriteEngine On\nphp_admin_value memory_limit 256M\nAuthType Digest\nOptions +FollowSymLinks\n<IfModule mod_pagespeed.c>\nModPagespeed on\n</IfModule>\n"
 	code, out, _ := runCLI("compat", "htaccess", "check", writeHtaccess(t, src))
 	if code != exitNotSupported {
 		t.Errorf("exit code %d, want %d", code, exitNotSupported)
 	}
-	for _, want := range []string{"line 2", "php_value", "UNSUPPORTED", "AuthType", "never skipped", "IGNORED", "mod_expires", "can't apply"} {
+	for _, want := range []string{"line 2", "php_admin_value", "UNSUPPORTED", "AuthType", "never skipped", "IGNORED", "mod_pagespeed", "can't apply"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the report lacks %q:\n%s", want, out)
 		}
@@ -57,7 +57,7 @@ func TestCompatHtaccessCheckReportsWhatIsNotSupported(t *testing.T) {
 }
 
 func TestCompatHtaccessCheckJSON(t *testing.T) {
-	code, out, _ := runCLI("compat", "htaccess", "check", "--json", writeHtaccess(t, "Header set X 1\nAuthType Basic\n"))
+	code, out, _ := runCLI("compat", "htaccess", "check", "--json", writeHtaccess(t, "Header set X 1\nAuthType Digest\n"))
 	var res struct {
 		Problems   int `json:"problems"`
 		Directives []struct {

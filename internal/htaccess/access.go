@@ -10,9 +10,10 @@ import (
 // Access control: Apache 2.4 `Require` and the older `Order`/`Allow`/`Deny`.
 //
 // Supported: `Require all granted|denied`, `Require ip ...`, `Require not ip
-// ...`, and <RequireAll>, <RequireAny>, <RequireNone> around them. Several
-// Require lines at the top level mean "any of them". Everything that needs a
-// user (valid-user, user, group), a host name (DNS), an expression or an
+// ...`, `Require valid-user` and `Require user ...` (HTTP Basic authentication
+// against an htpasswd file, see auth.go), and <RequireAll>, <RequireAny>,
+// <RequireNone> around them. Several Require lines at the top level mean "any of
+// them". Everything that needs a group, a host name (DNS), an expression or an
 // environment variable is not supported, and is refused rather than guessed.
 
 type reqKind int
@@ -24,17 +25,48 @@ const (
 	rqGranted
 	rqDenied
 	rqIP
+	rqValidUser // Require valid-user
+	rqUser      // Require user name...
 )
 
 type reqNode struct {
-	kind reqKind
-	nets []netip.Prefix
-	not  bool // for rqIP: `Require not ip`
-	kids []*reqNode
+	kind  reqKind
+	nets  []netip.Prefix
+	not   bool // for rqIP: `Require not ip`
+	kids  []*reqNode
+	users map[string]bool
 }
 
-func (n *reqNode) eval(ip netip.Addr) bool {
+// accessCtx is what a Require tree is evaluated against.
+type accessCtx struct {
+	ip netip.Addr
+	// user returns the name of the user who authenticated with Basic
+	// credentials, or "" (asked at most once per request).
+	user func() string
+	// needAuth is set when a rule could have granted access to an authenticated
+	// user: the refusal is then a 401 asking for credentials rather than a 403.
+	needAuth bool
+	// usesAuth is set when the tree has any rule that needs a user.
+	usesAuth bool
+}
+
+func (n *reqNode) eval(c *accessCtx) bool {
+	ip := c.ip
 	switch n.kind {
+	case rqValidUser, rqUser:
+		c.usesAuth = true
+		u := ""
+		if c.user != nil {
+			u = c.user()
+		}
+		if u == "" {
+			c.needAuth = true
+			return false
+		}
+		if n.kind == rqUser && !n.users[u] {
+			return false
+		}
+		return true
 	case rqGranted:
 		return true
 	case rqDenied:
@@ -43,21 +75,21 @@ func (n *reqNode) eval(ip netip.Addr) bool {
 		return inAny(n.nets, ip) != n.not
 	case rqAny:
 		for _, k := range n.kids {
-			if k.eval(ip) {
+			if k.eval(c) {
 				return true
 			}
 		}
 		return false
 	case rqAll:
 		for _, k := range n.kids {
-			if !k.eval(ip) {
+			if !k.eval(c) {
 				return false
 			}
 		}
 		return true
 	case rqNone:
 		for _, k := range n.kids {
-			if k.eval(ip) {
+			if k.eval(c) {
 				return false
 			}
 		}
@@ -104,11 +136,11 @@ type accessSet struct {
 	legacy *legacyAccess
 }
 
-func (a *accessSet) permits(ip netip.Addr) bool {
+func (a *accessSet) permits(c *accessCtx) bool {
 	if a.top != nil {
-		return a.top.eval(ip)
+		return a.top.eval(c)
 	}
-	return a.legacy.permits(ip)
+	return a.legacy.permits(c.ip)
 }
 
 // parseNets reads the addresses of `Require ip`, `Allow from` and `Deny from`:
@@ -213,8 +245,25 @@ func requireLeaf(args []string, inAllOrNone bool) (*reqNode, string) {
 			return nil, "Require ip needs at least one address"
 		}
 		return &reqNode{kind: rqIP, nets: nets, not: not}, ""
-	case "valid-user", "user", "group", "ldap-user", "ldap-group", "ldap-dn", "ldap-attribute", "ldap-filter":
-		return nil, "Require " + args[0] + " needs authentication, which is not supported yet"
+	case "valid-user":
+		if not || len(args) != 1 {
+			return nil, "use `Require valid-user`"
+		}
+		return &reqNode{kind: rqValidUser}, ""
+	case "user":
+		if not {
+			return nil, "`Require not user` is not supported"
+		}
+		if len(args) < 2 {
+			return nil, "Require user needs at least one name"
+		}
+		users := map[string]bool{}
+		for _, u := range args[1:] {
+			users[u] = true
+		}
+		return &reqNode{kind: rqUser, users: users}, ""
+	case "group", "ldap-user", "ldap-group", "ldap-dn", "ldap-attribute", "ldap-filter":
+		return nil, "Require " + args[0] + " is not supported (groups and LDAP need services LOTUS does not talk to); only `valid-user` and `user` work with Basic authentication"
 	case "host":
 		return nil, "Require host needs DNS lookups, which LOTUS does not do; use `Require ip`"
 	}

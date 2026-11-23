@@ -16,11 +16,12 @@ const (
 	CatDirectoryIdx  = "directory_index"
 	CatOptions       = "options"
 	CatAccess        = "access"
-	CatHeaders       = "headers"
+	CatHeaders       = "headers" // Header, Expires*, AddDefaultCharset, AddType
+	CatPHP           = "php"     // php_value, php_flag
 )
 
 // Categories lists every category, in a fixed order.
-var Categories = []string{CatRewrite, CatRedirect, CatErrorDocument, CatDirectoryIdx, CatOptions, CatAccess, CatHeaders}
+var Categories = []string{CatRewrite, CatRedirect, CatErrorDocument, CatDirectoryIdx, CatOptions, CatAccess, CatHeaders, CatPHP}
 
 // Options say what a compilation allows.
 type Options struct {
@@ -93,6 +94,7 @@ type section struct {
 	reqTop []*reqNode
 	legacy *legacyAccess
 	access *accessSet
+	auth   *authSpec
 	line   int
 }
 
@@ -107,6 +109,7 @@ type Compiled struct {
 	index     []string
 	indexSet  bool // DirectoryIndex given (an empty list means "disabled")
 	sections  []*section
+	settings  *settings // Expires*, AddDefaultCharset, AddType, php_value
 }
 
 // Note is something worth telling an administrator that isn't an error.
@@ -132,6 +135,7 @@ func (c *Compiled) Problems() []Line {
 var modules = map[string]bool{
 	"core": true, "rewrite": true, "alias": true, "dir": true, "headers": true,
 	"authz_core": true, "authz_host": true, "access_compat": true,
+	"expires": true, "mime": true, "authn_core": true, "authn_file": true, "auth_basic": true, "authz_user": true,
 }
 
 func normalizeModule(s string) string {
@@ -283,10 +287,39 @@ func (c *compiler) node(n *Node, sec *section) {
 		if c.gate(n, CatAccess, true) {
 			c.access(n, sec)
 		}
+	case "authtype", "authname", "authuserfile", "authbasicprovider":
+		if c.gate(n, CatAccess, true) {
+			c.auth(n, sec)
+		}
 	case "header":
 		if c.gate(n, CatHeaders, false) {
 			c.header(n, sec)
 		}
+	case "expiresactive", "expiresdefault", "expiresbytype", "adddefaultcharset", "addtype":
+		if inFiles {
+			c.bad(n.Line, n.Name, n.Name+" is not supported inside <Files>", false)
+			return
+		}
+		if c.gate(n, CatHeaders, false) {
+			switch n.Name {
+			case "adddefaultcharset":
+				c.charset(n)
+			case "addtype":
+				c.addType(n)
+			default:
+				c.expires(n)
+			}
+		}
+	case "php_value", "php_flag":
+		if inFiles {
+			c.bad(n.Line, n.Name, n.Name+" is not supported inside <Files>", false)
+			return
+		}
+		if c.gate(n, CatPHP, false) {
+			c.php(n)
+		}
+	case "php_admin_value", "php_admin_flag":
+		c.bad(n.Line, n.Name, n.Name+" is for the administrator: set it in the PHP pool's configuration, not in a site file", false)
 	default:
 		if why, ok := ignoredNames[n.Name]; ok {
 			c.add(n.Line, n.Name, Ignored, why, false)
@@ -299,12 +332,14 @@ func (c *compiler) node(n *Node, sec *section) {
 func unsupportedHint(name string) string {
 	switch {
 	case strings.HasPrefix(name, "php_"):
-		return name + " is not supported yet (PHP settings belong in php.ini or the PHP pool for now)"
+		return name + " is not supported (php_value and php_flag are)"
 	case strings.HasPrefix(name, "expires"):
-		return name + " is not supported yet"
+		return name + " is not supported (ExpiresActive, ExpiresDefault and ExpiresByType are)"
+	case name == "authgroupfile":
+		return "AuthGroupFile is not supported: groups need a lookup LOTUS does not do; use `Require user` or `Require valid-user`"
 	case strings.HasPrefix(name, "auth"):
-		return name + " needs authentication, which is not supported yet"
-	case name == "addhandler" || name == "sethandler" || name == "addtype" || name == "forcetype":
+		return name + " is not supported (only HTTP Basic with an htpasswd file is)"
+	case name == "addhandler" || name == "sethandler" || name == "forcetype":
 		return name + " is not supported: which files run as PHP is decided by the server's `php` route, not by .htaccess"
 	}
 	return "the directive " + name + " is not supported"
