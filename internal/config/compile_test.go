@@ -497,3 +497,36 @@ func jsonEscaped(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b[1 : len(b)-1])
 }
+
+func TestCompileHtaccessSettings(t *testing.T) {
+	c := compile(t, `lotus_config_version 1
+server {
+    listen "http" { address "127.0.0.1:8080" }
+    site "off.test" { root "/srv/a" }
+    site "default.test" { root "/srv/b"
+ htaccess true }
+    site "custom.test" { root "/srv/c"
+ htaccess true
+ htaccess_allow [ "rewrite", "redirect" ]
+ htaccess_unsupported "ignore"
+ htaccess_recheck 10s }
+    site "settings-without-switch.test" { root "/srv/d"
+ htaccess_allow [ "rewrite" ] }
+}
+`)
+	bySite := map[string]*model.HTAccess{}
+	for _, s := range c.Sites {
+		bySite[s.Name] = s.HTAccess
+	}
+	if bySite["off.test"] != nil || bySite["settings-without-switch.test"] != nil {
+		t.Error(".htaccess must stay off unless `htaccess true` is set, whatever else is given")
+	}
+	d := bySite["default.test"]
+	if d == nil || len(d.Allow) != 7 || d.OnUnsupported != model.HTAccessError || time.Duration(d.Recheck) != model.DefaultHTAccessRecheck {
+		t.Errorf("defaults: %+v", d)
+	}
+	x := bySite["custom.test"]
+	if x == nil || len(x.Allow) != 2 || x.OnUnsupported != model.HTAccessIgnore || time.Duration(x.Recheck) != 10*time.Second {
+		t.Errorf("custom: %+v", x)
+	}
+}

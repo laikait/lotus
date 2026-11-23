@@ -19,6 +19,7 @@ import (
 	"github.com/laikait/lotus/internal/config/diag"
 	"github.com/laikait/lotus/internal/config/loader"
 	"github.com/laikait/lotus/internal/config/model"
+	"github.com/laikait/lotus/internal/htaccess"
 )
 
 // Compile builds the typed configuration. The returned Config is nil if any
@@ -413,12 +414,29 @@ func (c *compiler) site(cfg *model.Config, d *ast.Directive) model.Site {
 	c.sitePos = append(c.sitePos, arg(d, 0).Position())
 	c.hosts = append(c.hosts, claim{key: s.Name, owner: s.Name, idx: idx, pos: arg(d, 0).Position()})
 	sawListeners := false
+	var ht *model.HTAccess
+	htOn := false
 	for _, st := range body(d) {
 		r, ok := st.(*ast.Directive)
 		if !ok {
 			continue
 		}
 		switch r.Name {
+		case "htaccess", "htaccess_allow", "htaccess_unsupported", "htaccess_recheck":
+			if ht == nil {
+				ht = &model.HTAccess{Allow: append([]string(nil), htaccess.Categories...),
+					OnUnsupported: model.HTAccessError, Recheck: model.Duration(model.DefaultHTAccessRecheck)}
+			}
+			switch r.Name {
+			case "htaccess":
+				htOn = boolean(arg(r, 0))
+			case "htaccess_allow":
+				ht.Allow = strs(arg(r, 0))
+			case "htaccess_unsupported":
+				ht.OnUnsupported = str(arg(r, 0))
+			case "htaccess_recheck":
+				ht.Recheck = model.Duration(dur(arg(r, 0)))
+			}
 		case "listeners":
 			s.Listeners, sawListeners = strs(arg(r, 0)), true
 		case "aliases":
@@ -454,6 +472,9 @@ func (c *compiler) site(cfg *model.Config, d *ast.Directive) model.Site {
 				}
 			}
 		}
+	}
+	if htOn {
+		s.HTAccess = ht
 	}
 	if !sawListeners {
 		for _, l := range cfg.Listeners {

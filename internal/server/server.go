@@ -287,6 +287,14 @@ func (s *Server) newSite(g *generation, site *model.Site) (*siteRuntime, error) 
 		return nil, err
 	}
 	rt.defaultFiles = rt.handlers[filesKey(site.Root, site.Index)]
+	rt.resolvers = resolvers
+	if site.HTAccess != nil {
+		rt.ht = newHTRuntime(site.HTAccess, siteLog)
+		rt.protected = map[string]bool{}
+		for _, h := range site.SecurityHeaders {
+			rt.protected[http.CanonicalHeaderKey(h.Name)] = true
+		}
+	}
 
 	if site.TLS == model.TLSManual {
 		cert, err := loadCertificate(site, s.log, s.opts.Now())

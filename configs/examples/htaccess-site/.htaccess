@@ -1,0 +1,26 @@
+# A small example of what applications put in .htaccess.
+
+RewriteEngine On
+RewriteBase /
+
+# /blog/hello is the file blog/hello.html
+RewriteRule ^blog/([a-z0-9-]+)$ /blog/$1.html [L]
+
+# A moved page. (A plain Redirect would be shadowed by a catch-all rewrite rule
+# placed above it, so this is written as a rewrite rule.)
+RewriteRule ^old-page$ /new-page [R=301,L]
+
+ErrorDocument 404 /404.html
+ErrorDocument 403 "Nothing to see here"
+
+Options -Indexes
+DirectoryIndex index.html
+
+<IfModule mod_headers.c>
+    Header set X-Served-By "lotus"
+    Header unset X-Powered-By
+</IfModule>
+
+<FilesMatch "\.(sql|bak|log)$">
+    Require all denied
+</FilesMatch>

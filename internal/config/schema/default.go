@@ -3,10 +3,12 @@ package schema
 import (
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/laikait/lotus/internal/config/ast"
 	"github.com/laikait/lotus/internal/config/diag"
+	"github.com/laikait/lotus/internal/htaccess"
 )
 
 const since = "0.1"
@@ -315,10 +317,26 @@ func buildDefault() *Registry {
 		Description: "Per-site log files.",
 		Security:    "LOTUS writes these files as its own user. A site's log path must not point at files it should not be able to modify.",
 	}
+	htOn := scalar("htaccess", "enabled", Bool(), "false",
+		"Reads .htaccess files in the document root and the directories below it, for the directives in htaccess_allow. Off by default.",
+		"A .htaccess file is written by whoever can write to the site. It can rewrite, redirect and deny URLs of its own directory tree but is never executed as code, and it can't loosen the site's symlink, dotfile or security header settings.")
+	htOn.TenantForbidden = true
+	htAllow := scalar("htaccess_allow", "categories", List(Enum(htaccess.Categories...), 1), "all supported categories",
+		"Which kinds of directives .htaccess files may use: "+strings.Join(htaccess.Categories, ", ")+". A directive of another kind is treated as unsupported.",
+		"Leave out access to stop .htaccess from relaxing or adding access rules; leave out headers to stop it adding response headers.")
+	htAllow.TenantForbidden = true
+	htUnsupported := scalar("htaccess_unsupported", "action", Enum("error", "ignore"), "error",
+		"What happens when a .htaccess file holds a directive LOTUS doesn't support or the site doesn't allow: error answers 500 and logs the directive; ignore skips it with a warning. Directives that grant or restrict access are never skipped.",
+		"ignore can change what a site does without any visible failure. Use `lotus compat htaccess check` before relying on it.")
+	htUnsupported.TenantForbidden = true
+	htRecheck := scalar("htaccess_recheck", "interval", Duration(0), "2s",
+		"How long a .htaccess file (or its absence) is remembered before the file system is looked at again. 0s checks on every request.",
+		"Short intervals cost a file system lookup per directory per request.")
+	htRecheck.TenantForbidden = true
 	siteLimits := *limits
 	r.Define(CtxSite,
 		listeners, aliases, siteTLS, certificate, certificateKey, symlinks, dotfiles, root, index, route, logs, &siteLimits, secHeaders,
-		errorPage,
+		errorPage, htOn, htAllow, htUnsupported, htRecheck,
 	)
 
 	// ---- route ----

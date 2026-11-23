@@ -45,7 +45,7 @@ type errorState struct {
 }
 
 // serve runs the routing engine for one request and writes the response.
-func (rt *siteRuntime) serve(w http.ResponseWriter, r *http.Request, clientIP netip.Addr) {
+func (rt *siteRuntime) serve(w0 http.ResponseWriter, r *http.Request, clientIP netip.Addr) {
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
@@ -54,8 +54,12 @@ func (rt *siteRuntime) serve(w http.ResponseWriter, r *http.Request, clientIP ne
 	reqID := newRequestID()
 
 	var es errorState
+	htEnd := false // a .htaccess rule had the END flag: no more .htaccess rewriting
 	cur := target{path: router.NormalizePath(r.URL.Path), query: r.URL.RawQuery}
 	for hops := 0; ; hops++ {
+		// w is the response of this step. A .htaccess file may wrap it (headers);
+		// a step that routes again starts over from the original.
+		w := w0
 		if hops > maxInternalRedirects {
 			rt.log.Error("too many internal redirects", "code", "LOTUS-RT-0001", "uri", r.RequestURI)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -89,6 +93,45 @@ func (rt *siteRuntime) serve(w http.ResponseWriter, r *http.Request, clientIP ne
 			files = rt.filesFor(route)
 			maxBody = route.MaxRequestBody
 			pages = route.ErrorPages
+		}
+
+		// .htaccess files apply where the request is about to be served from the
+		// file system (not to a fixed `return`, and not while an error page is
+		// being served, which would only repeat what already happened).
+		var (
+			htStatus int
+			htEnv    map[string]string
+		)
+		if rt.ht != nil && actions.Return == nil && files != nil && !es.inPage {
+			root := rt.site.Root
+			if route != nil {
+				root = route.Root
+			}
+			hr := rt.applyHTAccess(req, root, cur, clientIP, htEnd)
+			switch {
+			case hr.fail != "":
+				rt.status(w, req, http.StatusInternalServerError, "")
+				return
+			case hr.dec == nil:
+			case hr.dec.Rewrite != nil:
+				htEnd = htEnd || hr.dec.Rewrite.End
+				cur = target{path: router.NormalizePath(hr.dec.Rewrite.Path), query: hr.dec.Rewrite.Query}
+				continue
+			case hr.dec.Redirect != nil:
+				w = newHTWriter(w, hr.dec.Headers, rt.protected)
+				w.Header().Set("Location", hr.dec.Redirect.Location)
+				w.WriteHeader(hr.dec.Redirect.Status)
+				return
+			default:
+				pages = overlayPages(pages, hr.dec.ErrorDocs)
+				if hr.dec.IndexSet {
+					if f := rt.filesWithIndex(root, hr.dec.Index); f != nil {
+						files = f
+					}
+				}
+				w = newHTWriter(w, hr.dec.Headers, rt.protected)
+				htStatus, htEnv = hr.dec.Status, hr.dec.Env
+			}
 		}
 
 		// out is where this step writes. When error pages apply it intercepts the
@@ -131,11 +174,15 @@ func (rt *siteRuntime) serve(w http.ResponseWriter, r *http.Request, clientIP ne
 		// serveFiles serves a file request of this route, running PHP where the
 		// route says so.
 		serveFiles := func(rq *http.Request) (target, bool) {
-			return rt.serveFiles(final, out, rq, clientStr, files, actions.PHP, actions.PHPDeny)
+			return rt.serveFiles(final, out, rq, clientStr, files, actions.PHP, actions.PHPDeny, htEnv)
 		}
 
 		// One step: it writes a response, or says where to route next.
 		step := func() (next target, again bool) {
+			if htStatus != 0 { // refused or gone by a .htaccess file
+				rt.status(out, req, htStatus, "")
+				return target{}, false
+			}
 			if es.inPage {
 				req.Body, req.ContentLength = http.NoBody, 0
 			} else {
@@ -212,6 +259,23 @@ func (rt *siteRuntime) serve(w http.ResponseWriter, r *http.Request, clientIP ne
 		if ew != nil && ew.intercepted {
 			es = errorState{inPage: true, force: ew.code}
 			page := pages[ew.code]
+			switch {
+			case strings.HasPrefix(page, textPagePrefix):
+				// ErrorDocument with text: the error status, the text as the body.
+				h := w.Header()
+				h.Set("Content-Type", "text/html; charset=utf-8")
+				h.Set("X-Content-Type-Options", "nosniff")
+				w.WriteHeader(ew.code)
+				if bodyAllowed(ew.code) && req.Method != http.MethodHead {
+					_, _ = io.WriteString(w, strings.TrimPrefix(page, textPagePrefix))
+				}
+				return
+			case strings.HasPrefix(page, urlPagePrefix):
+				// ErrorDocument with a URL: the client is sent there.
+				w.Header().Set("Location", strings.TrimPrefix(page, urlPagePrefix))
+				w.WriteHeader(http.StatusFound)
+				return
+			}
 			if strings.HasPrefix(page, "@") {
 				named := router.FindNamed(rt.site.Named, page)
 				if named == nil {

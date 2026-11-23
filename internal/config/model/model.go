@@ -172,6 +172,24 @@ type Site struct {
 	Named           []Route  `json:"named_routes"`
 	// ErrorPages maps a status to the page shown for it: "/path" or "@name".
 	ErrorPages map[int]string `json:"error_pages,omitempty"`
+	// HTAccess is set when the site reads .htaccess files.
+	HTAccess *HTAccess `json:"htaccess,omitempty"`
+}
+
+// What a site does with .htaccess directives it can't honour.
+const (
+	HTAccessError  = "error"  // answer 500 and log the directive
+	HTAccessIgnore = "ignore" // skip it with a warning (never for access rules)
+)
+
+// DefaultHTAccessRecheck is how long a .htaccess file is remembered.
+const DefaultHTAccessRecheck = 2 * time.Second
+
+// HTAccess configures .htaccess support for a site.
+type HTAccess struct {
+	Allow         []string `json:"allow"`          // permitted directive categories
+	OnUnsupported string   `json:"on_unsupported"` // HTAccessError or HTAccessIgnore
+	Recheck       Duration `json:"recheck"`
 }
 
 // Header is a response header added to every response.

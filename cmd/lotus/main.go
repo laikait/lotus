@@ -42,6 +42,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cmdStatus(args[1:], stdout, stderr)
 	case "logs":
 		return cmdLogs(args[1:], stdout, stderr)
+	case "compat":
+		return cmdCompat(args[1:], stdout, stderr)
 	case "help", "--help", "-h":
 		printHelp(stdout)
 		return exitOK
@@ -93,6 +95,8 @@ Commands:
                               Stop the running server, letting requests finish
   status [--json]             Show the running server's state
   logs reopen                 Reopen the log files (after log rotation)
+  compat htaccess check [--json] [--all] <file>
+                              Report which directives of a .htaccess file LOTUS can apply
   help                        Show this help
 
 The reload, stop, status and logs commands talk to the running server through its control

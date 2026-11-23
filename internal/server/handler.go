@@ -6,9 +6,11 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"sync"
 	"time"
 
 	"github.com/laikait/lotus/internal/config/model"
+	"github.com/laikait/lotus/internal/fspath"
 	"github.com/laikait/lotus/internal/logging"
 	"github.com/laikait/lotus/internal/staticfiles"
 	"github.com/laikait/lotus/internal/vhost"
@@ -30,6 +32,12 @@ type siteRuntime struct {
 	cert         *tls.Certificate      // set for tls manual
 	php          map[string]phpBackend // PHP backends of this configuration, by name
 	phpSite      bool                  // some route of the site runs PHP
+
+	// .htaccess support; ht is nil when the site doesn't read .htaccess files.
+	ht            *htRuntime
+	resolvers     map[string]*fspath.Resolver // by document root
+	extraHandlers sync.Map                    // static handlers with an index list a .htaccess chose
+	protected     map[string]bool             // names of the site's security_headers
 }
 
 // listenerHandler routes the requests of one listener to its sites.

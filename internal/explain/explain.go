@@ -115,6 +115,9 @@ func Explain(cfg *model.Config, req Request, files Files) *Report {
 		return rep
 	}
 	e.phpSite = e.site.UsesPHP()
+	if e.site.HTAccess != nil {
+		e.step("htaccess", "this site reads .htaccess files; explain does not apply them, so rewrites, redirects, access rules, error documents and headers they define are not reflected below")
+	}
 	rep.Outcome = e.route()
 	rep.Steps = e.steps
 	return rep

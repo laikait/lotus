@@ -99,9 +99,20 @@ func Segments(urlPath string) ([]string, error) {
 	return segs, nil
 }
 
-// checkSegments applies the dotfile rule and the platform rules.
-func (r *Resolver) checkSegments(segs []string) error {
+// checkSegments applies the dotfile rule and the platform rules. When
+// htaccess is set, a final segment named ".htaccess" is exempt from the rules
+// about hidden files: it is how the server reads those files, never how a
+// client reaches them.
+func (r *Resolver) checkSegments(segs []string, htaccess bool) error {
 	for i, s := range segs {
+		if htaccess && i == len(segs)-1 && s == ".htaccess" {
+			continue
+		}
+		// .htaccess, .htpasswd and the like are never served, whatever the
+		// dotfile policy says (Apache's default protection of the same files).
+		if len(s) >= 3 && strings.EqualFold(s[:3], ".ht") {
+			return fmt.Errorf("%w: hidden file", ErrForbidden)
+		}
 		if strings.HasPrefix(s, ".") && !r.policy.AllowDotfiles && !(i == 0 && s == ".well-known") {
 			return fmt.Errorf("%w: hidden file", ErrForbidden)
 		}
@@ -115,12 +126,29 @@ func (r *Resolver) checkSegments(segs []string) error {
 // Open resolves urlPath below the root and opens it. The result is a regular
 // file or a directory; anything else (devices, sockets, pipes) is refused.
 // The caller must Close the file.
-func (r *Resolver) Open(urlPath string) (*File, error) {
+func (r *Resolver) Open(urlPath string) (*File, error) { return r.open(urlPath, false) }
+
+// OpenHtaccess opens the .htaccess file of the directory dirURL ("/" or
+// "/blog/"). It follows the same symlink and containment rules as Open. A
+// missing file is ErrNotFound; so is a directory named .htaccess.
+func (r *Resolver) OpenHtaccess(dirURL string) (*File, error) {
+	f, err := r.open(strings.TrimSuffix(dirURL, "/")+"/.htaccess", true)
+	if err != nil {
+		return nil, err
+	}
+	if f.Info.IsDir() {
+		f.Close()
+		return nil, ErrNotFound
+	}
+	return f, nil
+}
+
+func (r *Resolver) open(urlPath string, htaccess bool) (*File, error) {
 	segs, err := Segments(urlPath)
 	if err != nil {
 		return nil, err
 	}
-	if err := r.checkSegments(segs); err != nil {
+	if err := r.checkSegments(segs, htaccess); err != nil {
 		return nil, err
 	}
 

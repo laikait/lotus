@@ -722,3 +722,25 @@ func TestUnixSocket(t *testing.T) {
 }
 
 var _ = http.StatusOK
+
+// A connection must be reused even when the scheduler runs the goroutine that
+// sends the request late: the backend can answer before that goroutine has
+// returned from its last write. This used to discard about one connection in 700.
+func TestConnectionReuseDoesNotDependOnScheduling(t *testing.T) {
+	if testing.Short() {
+		t.Skip("a statistical test")
+	}
+	f := newFake(t, func(r *fakeReq) { r.Respond("", "ok") })
+	c := f.client()
+	defer c.Close()
+	for i := 0; i < 1500; i++ {
+		resp, err := c.Do(context.Background(), get())
+		if err != nil {
+			t.Fatal(err)
+		}
+		readAll(t, resp)
+	}
+	if n := f.Accepted(); n != 1 {
+		t.Errorf("%d connections for 1500 sequential requests, want 1", n)
+	}
+}

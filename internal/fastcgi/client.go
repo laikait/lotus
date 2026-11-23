@@ -60,6 +60,10 @@ type StderrError struct {
 func (e *StderrError) Error() string { return e.Err.Error() }
 func (e *StderrError) Unwrap() error { return e.Err }
 
+// senderGrace is how long Body.Close waits for the goroutine that sends the
+// request to return before treating the connection as unusable.
+const senderGrace = 50 * time.Millisecond
+
 // Limits that protect the server from a misbehaving backend or request.
 const (
 	maxHeaderBytes = 64 << 10 // CGI response headers
@@ -535,13 +539,17 @@ func (b *body) Read(p []byte) (int, error) {
 func (b *body) Close() error {
 	r := b.r
 	r.closeOnce.Do(func() {
-		bodyErr, connErr := r.s.failure()
-		reusable := r.st.complete && bodyErr == nil && connErr == nil
+		reusable := true
+		// A sender that has written everything is only a moment from returning
+		// (the backend can answer before the goroutine is scheduled again), so
+		// give it that moment. One that is still going after it is blocked: the
+		// backend answered without reading the whole request. That connection
+		// can't be reused, and closing it is what stops the sender.
+		grace := time.NewTimer(senderGrace)
 		select {
 		case <-r.s.done:
-		default:
-			// The backend finished (or we are giving up) while the request was
-			// still being sent: that connection can't be reused.
+			grace.Stop()
+		case <-grace.C:
 			reusable = false
 			r.pc.c.Close()
 		}
@@ -550,6 +558,10 @@ func (b *body) Close() error {
 			reusable = false
 		}
 		<-r.s.done
+		bodyErr, connErr := r.s.failure()
+		if !r.st.complete || bodyErr != nil || connErr != nil {
+			reusable = false
+		}
 		if reusable {
 			r.cl.put(r.pc)
 		} else {

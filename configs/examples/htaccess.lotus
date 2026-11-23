@@ -1,0 +1,45 @@
+# .htaccess files: what a PHP application's own rewrite rules, redirects, error
+# documents, access rules and headers do, with the server staying in control.
+#
+#     lotus start -config configs/examples/htaccess.lotus
+#     lotus compat htaccess check configs/examples/htaccess-site/.htaccess
+#
+# Try:  curl -i http://127.0.0.1:8086/old-page            -> 301 to /new-page
+#       curl -i http://127.0.0.1:8086/blog/hello          -> served as /blog/hello.html
+#       curl -i http://127.0.0.1:8086/private/secret.txt  -> 403 with the site's own text
+#       curl -i http://127.0.0.1:8086/.htaccess           -> 403, never served
+#
+# Full description: docs/architecture/htaccess.md
+
+lotus_config_version 1
+
+server {
+    listen "http" {
+        address "127.0.0.1:8086"
+    }
+
+    site "localhost" {
+        root "./htaccess-site"
+        tls off
+
+        # Turn .htaccess on for this site. Only an administrator can: a tenant's
+        # included file may not set any of these.
+        htaccess true
+
+        # Which kinds of directives the files may use (all of them by default).
+        # Leave "access" out to stop files from adding or relaxing access rules.
+        htaccess_allow [ "rewrite", "redirect", "error_document", "directory_index", "options", "access", "headers" ]
+
+        # A directive LOTUS cannot apply answers 500 and is logged with its line.
+        # "ignore" skips harmless ones with a warning; access rules are never skipped.
+        htaccess_unsupported "error"
+
+        # How long a file (or its absence) is remembered between looks.
+        htaccess_recheck 2s
+
+        # Policy the files cannot override:
+        security_headers {
+            "X-Content-Type-Options" = "nosniff"
+        }
+    }
+}

@@ -302,3 +302,76 @@ func TestOpenRejectsHazardousNamesOnWindows(t *testing.T) {
 		}
 	}
 }
+
+func TestHtaccessFilesAreNeverServedButCanBeRead(t *testing.T) {
+	root, _ := site(t)
+	for _, f := range []string{".htaccess", ".htpasswd", "sub/.htaccess", "sub/.HTACCESS", "sub/.htsomething"} {
+		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(f)), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, allowDot := range []bool{false, true} {
+		r, err := New(root, Policy{Symlinks: SymlinksDeny, AllowDotfiles: allowDot})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.Close()
+		for _, p := range []string{"/.htaccess", "/.htpasswd", "/sub/.htaccess", "/sub/.htsomething", "/sub/.HtAccess"} {
+			if f, err := r.Open(p); !errors.Is(err, ErrForbidden) {
+				if f != nil {
+					f.Close()
+				}
+				t.Errorf("AllowDotfiles=%v: Open(%q) = %v, want forbidden", allowDot, p, err)
+			}
+		}
+		// OpenHtaccess is how the server reads them.
+		for _, dir := range []string{"/", "/sub/"} {
+			f, err := r.OpenHtaccess(dir)
+			if err != nil {
+				t.Errorf("OpenHtaccess(%q): %v", dir, err)
+				continue
+			}
+			f.Close()
+		}
+		if _, err := r.OpenHtaccess("/a/"); !errors.Is(err, ErrNotFound) {
+			t.Errorf("a directory without the file: %v", err)
+		}
+		if _, err := r.OpenHtaccess("/nodir/"); !errors.Is(err, ErrNotFound) {
+			t.Errorf("a missing directory: %v", err)
+		}
+	}
+}
+
+func TestOpenHtaccessFollowsTheSymlinkPolicy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need a privilege on Windows")
+	}
+	root, outside := site(t)
+	if err := os.WriteFile(filepath.Join(outside, "evil-htaccess"), []byte("Require all granted"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A .htaccess that is a link to a file outside the root must not be read.
+	if err := os.Symlink(filepath.Join(outside, "evil-htaccess"), filepath.Join(root, "sub", ".htaccess")); err != nil {
+		t.Skip(err)
+	}
+	for _, pol := range []SymlinkPolicy{SymlinksDeny, SymlinksOwnerMatch, SymlinksFollow} {
+		r, _ := New(root, Policy{Symlinks: pol})
+		if f, err := r.OpenHtaccess("/sub/"); err == nil {
+			f.Close()
+			t.Errorf("policy %d: a .htaccess linked from outside the root was opened", pol)
+		}
+		r.Close()
+	}
+}
+
+func TestOpenHtaccessIgnoresADirectoryOfThatName(t *testing.T) {
+	root, _ := site(t)
+	if err := os.MkdirAll(filepath.Join(root, "a", ".htaccess"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r, _ := New(root, Policy{})
+	defer r.Close()
+	if _, err := r.OpenHtaccess("/a/"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("got %v", err)
+	}
+}

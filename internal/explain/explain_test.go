@@ -177,3 +177,26 @@ func TestSummaryAndText(t *testing.T) {
 		t.Errorf("summary = %q", got)
 	}
 }
+
+func TestExplainSaysWhenHtaccessIsNotApplied(t *testing.T) {
+	s := site("a.test", nil, "http")
+	s.Root = "/srv/a"
+	s.HTAccess = &model.HTAccess{}
+	cfg := &model.Config{Listeners: []model.Listener{{Name: "http"}}, Sites: []model.Site{s}}
+	rep := Explain(cfg, Request{Host: "a.test", Path: "/x"}, nil)
+	found := false
+	for _, st := range rep.Steps {
+		found = found || (st.Phase == "htaccess" && strings.Contains(st.Detail, "does not apply"))
+	}
+	if !found {
+		t.Errorf("no warning: %+v", rep.Steps)
+	}
+	// A site without .htaccess gets no such step.
+	s.HTAccess = nil
+	cfg.Sites[0] = s
+	for _, st := range Explain(cfg, Request{Host: "a.test", Path: "/x"}, nil).Steps {
+		if st.Phase == "htaccess" {
+			t.Error("a warning for a site that doesn't read .htaccess")
+		}
+	}
+}

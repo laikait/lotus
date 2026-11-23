@@ -66,19 +66,20 @@ func splitScript(p string) (script, info string, ok bool) {
 type phpCall struct {
 	backend string
 	files   *staticfiles.Handler
-	client  string // the client address, after trusted-proxy resolution
+	client  string            // the client address, after trusted-proxy resolution
+	env     map[string]string // variables set by .htaccess (RewriteRule E flag)
 }
 
 // serveFiles serves a file request with the PHP rules that apply to it. It
 // says where to route next when the request must be routed again.
 func (rt *siteRuntime) serveFiles(final, out http.ResponseWriter, r *http.Request, client string,
-	files *staticfiles.Handler, php string, deny bool) (next target, again bool) {
+	files *staticfiles.Handler, php string, deny bool, env map[string]string) (next target, again bool) {
 
 	switch {
 	case deny:
 		files.ServeWith(out, r, isPHPName)
 	case php != "":
-		rt.servePHP(final, out, r, phpCall{backend: php, files: files, client: client})
+		rt.servePHP(final, out, r, phpCall{backend: php, files: files, client: client, env: env})
 	case rt.phpSite:
 		// A directory whose index is a PHP file is routed again as that file,
 		// so the route that runs PHP gets it (as Nginx does with `index`).
@@ -161,6 +162,7 @@ func (rt *siteRuntime) servePHP(final, out http.ResponseWriter, r *http.Request,
 		scriptName: scriptURL,
 		pathInfo:   pathInfo,
 		length:     length,
+		extra:      c.env,
 	})
 	resp, err := client.Do(r.Context(), &fastcgi.Request{Params: params, Stdin: stdin})
 	if err != nil {
@@ -306,6 +308,10 @@ type phpEnv struct {
 	scriptName string // URL path of the script
 	pathInfo   string
 	length     int64 // body length, or -1/0 for none
+	// extra are environment variables from .htaccess. They never replace a
+	// variable the server sets: a file in the document root can't forge
+	// SCRIPT_FILENAME or REMOTE_ADDR.
+	extra map[string]string
 }
 
 // phpParams builds the CGI environment (RFC 3875) a PHP script expects.
@@ -392,6 +398,22 @@ func phpParams(e phpEnv) []fastcgi.Param {
 			Name:  "HTTP_" + strings.ToUpper(strings.ReplaceAll(name, "-", "_")),
 			Value: strings.Join(r.Header[name], sep),
 		})
+	}
+	if len(e.extra) > 0 {
+		have := make(map[string]bool, len(p))
+		for _, q := range p {
+			have[strings.ToUpper(q.Name)] = true
+		}
+		keys := make([]string, 0, len(e.extra))
+		for k := range e.extra {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			if !have[strings.ToUpper(k)] {
+				p = append(p, fastcgi.Param{Name: k, Value: e.extra[k]})
+			}
+		}
 	}
 	return p
 }

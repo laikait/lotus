@@ -208,6 +208,18 @@ site "a" { route "/" { php "p83" } }`)},
 		{name: "too many processes", src: cfg(`php_backend "p" { command "php-cgi"
  processes 1000 }`), codes: []string{diag.CodeInvalidValue}},
 
+		// ---- .htaccess ----
+		{name: "htaccess on", src: cfg(`site "a" { htaccess true }`)},
+		{name: "htaccess with every setting", src: cfg(`site "a" { htaccess true
+ htaccess_allow [ "rewrite", "access" ]
+ htaccess_unsupported "ignore"
+ htaccess_recheck 0s }`)},
+		{name: "htaccess must be a boolean", src: cfg(`site "a" { htaccess "yes" }`), codes: []string{diag.CodeInvalidValue}},
+		{name: "unknown htaccess category", src: cfg(`site "a" { htaccess_allow [ "rewrite", "bogus" ] }`), codes: []string{diag.CodeInvalidValue}},
+		{name: "empty htaccess_allow", src: cfg(`site "a" { htaccess_allow [] }`), codes: []string{diag.CodeInvalidValue}},
+		{name: "unknown htaccess_unsupported", src: cfg(`site "a" { htaccess_unsupported "maybe" }`), codes: []string{diag.CodeInvalidValue}},
+		{name: "bad htaccess_recheck", src: cfg(`site "a" { htaccess_recheck "soon" }`), codes: []string{diag.CodeInvalidValue}},
+
 		// ---- security_headers map ----
 		{name: "bad header name", src: cfg(`site "a" { security_headers { "Bad Name" = "x" } }`), codes: []string{diag.CodeInvalidValue}},
 		{name: "header injection", src: cfg(`site "a" { security_headers { "X-A" = "x\r\nSet-Cookie: a=b" } }`), codes: []string{diag.CodeInvalidValue}},
@@ -281,12 +293,16 @@ func TestTenantBoundary(t *testing.T) {
 		}
 	})
 	forbidden := map[string]string{
-		"root":    `root "/etc"`,
-		"logs":    `logs { access "/etc/passwd" }`,
-		"aliases": `aliases [ "victim.example" ]`,
-		"limits":  `limits { max_request_body 100gib }`,
-		"php":     `route "/" { php "other" }`,
-		"tls":     `tls off`,
+		"root":                 `root "/etc"`,
+		"logs":                 `logs { access "/etc/passwd" }`,
+		"aliases":              `aliases [ "victim.example" ]`,
+		"limits":               `limits { max_request_body 100gib }`,
+		"php":                  `route "/" { php "other" }`,
+		"tls":                  `tls off`,
+		"htaccess":             `htaccess true`,
+		"htaccess_allow":       `htaccess_allow [ "access" ]`,
+		"htaccess_unsupported": `htaccess_unsupported "ignore"`,
+		"htaccess_recheck":     `htaccess_recheck 0s`,
 	}
 	for name, body := range forbidden {
 		t.Run("forbidden "+name, func(t *testing.T) {
