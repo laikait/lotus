@@ -314,3 +314,40 @@ func TestLargeFileIsStreamed(t *testing.T) {
 		t.Errorf("range in a large file: %d %q", resp.StatusCode, body)
 	}
 }
+
+// Describe must predict exactly what ServeHTTP does: they share one decision.
+func TestDescribeMatchesServeHTTP(t *testing.T) {
+	srv, _ := newSite(t, Options{Index: []string{"index.html", "index.htm"}}, fspath.Policy{})
+	h := srv.Config.Handler.(*Handler)
+
+	for _, method := range []string{"GET", "HEAD", "POST", "DELETE"} {
+		for _, p := range []string{
+			"/", "/hello.txt", "/style.css", "/nope", "/.env", "/secret/.git/config",
+			"/docs", "/docs/", "/docs/guide.html", "/empty", "/empty/", "/empty/readme.txt",
+			"/hello.txt/", "/a/../hello.txt",
+		} {
+			want := h.Describe(method, p)
+
+			req := httptest.NewRequest(method, "http://x"+p, nil)
+			req.URL.Path = p // httptest cleans nothing, but be explicit
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			if rec.Code != want.Status {
+				t.Errorf("%s %s: served %d, Describe says %d", method, p, rec.Code, want.Status)
+			}
+			if want.Redirect != "" && rec.Header().Get("Location") != want.Redirect {
+				t.Errorf("%s %s: Location %q, Describe says %q", method, p, rec.Header().Get("Location"), want.Redirect)
+			}
+			if want.Status == 200 && method == "GET" && rec.Body.Len() == 0 {
+				t.Errorf("%s %s: Describe says file %q but the body is empty", method, p, want.File)
+			}
+		}
+	}
+	if got := h.Describe("GET", "/"); got.File != "/index.html" {
+		t.Errorf("index file = %q", got.File)
+	}
+	if got := h.Describe("GET", "/docs/"); got.File != "/docs/index.htm" {
+		t.Errorf("second index file = %q", got.File)
+	}
+}

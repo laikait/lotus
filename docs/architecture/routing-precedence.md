@@ -1,6 +1,6 @@
 # Route Matching Precedence
 
-**Status:** implemented in `internal/router` and `internal/server/route.go` (path matching §3, `match` blocks §4, `try_files`, `rewrite`, `error_page` and the 10-redirect limit §5). Not implemented yet: a site-level `rewrite` (it is a route directive for now), `config explain`, the Nginx differential tests (§8). `client_ip` uses the address resolved by `internal/clientip` (spec §4.10.4); PROXY protocol is not implemented yet.
+**Status:** implemented in `internal/router` and `internal/server/route.go` (path matching §3, `match` blocks §4, `try_files`, `rewrite`, `error_page` and the 10-redirect limit §5). Not implemented yet: a site-level `rewrite` (it is a route directive for now), the Nginx differential tests (§8). `client_ip` uses the address resolved by `internal/clientip` (spec §4.10.4); PROXY protocol is not implemented yet.
 **Spec reference:** v1.1 §4.3.3 (decision confirmed: Nginx `location` model)
 **Syntax reference:** `docs/configuration/grammar.md` §6.4
 
@@ -92,7 +92,7 @@ route "/api/" {
 - Conditions: `method`, `header "<name>" <op> <value>`, `query "<name>" <op> <value>`, `cookie "<name>" <op> <value>`, `client_ip <op> [cidr...]`, `scheme`, `host`. Operators: `=`, `~`, `~*`, `!~`, `!~*`. A bare value means `=`.
 - `match` blocks can't be nested.
 
-So `config explain` always gives two answers: (1) the route, decided by path alone, and (2) the `match` block that applies, decided by the conditions.
+`lotus config explain <file> <url>` (implemented in `internal/explain`) follows these steps without serving anything. A test starts a real server and checks that explain predicts every status, redirect target and body. So `config explain` always gives two answers: (1) the route, decided by path alone, and (2) the `match` block that applies, decided by the conditions.
 
 ## 5. Internal redirects
 

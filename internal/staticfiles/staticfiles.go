@@ -52,26 +52,109 @@ func New(res *fspath.Resolver, opts Options) *Handler {
 	return h
 }
 
-// ServeHTTP implements http.Handler.
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		w.Header().Set("Allow", "GET, HEAD")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+// Outcome describes what the handler would do for a request, without doing it.
+// ServeHTTP and Describe share one decision (resolve), so they can't disagree.
+type Outcome struct {
+	Status   int    // 200 for a file, else the error or redirect status
+	File     string // the file served, as a URL path (Status 200)
+	Redirect string // the Location of a redirect (Status 301)
+	Message  string // why, for an error
+}
 
-	f, err := h.res.Open(r.URL.Path)
+// plan is the decision for one request. A non-nil file must be closed by the caller.
+type plan struct {
+	Outcome
+	file *fspath.File
+	err  error // an unexpected error, to be logged
+}
+
+// resolve decides what a request for urlPath gets: a file to serve, a
+// redirect, or an error status. rawQuery is only carried into redirects.
+func (h *Handler) resolve(method, urlPath, rawQuery string) plan {
+	if method != http.MethodGet && method != http.MethodHead {
+		return plan{Outcome: Outcome{Status: http.StatusMethodNotAllowed, Message: "method not allowed"}}
+	}
+	f, err := h.res.Open(urlPath)
 	if err != nil {
-		h.fail(w, r, err)
-		return
+		return h.failure(err)
+	}
+	if !f.Info.IsDir() {
+		return plan{Outcome: Outcome{Status: http.StatusOK, File: "/" + f.Rel}, file: f}
 	}
 	defer f.Close()
 
-	if f.Info.IsDir() {
-		h.serveDir(w, r, f.Rel)
-		return
+	// A directory: redirect to the canonical URL, then serve its index file.
+	// Directory listings are not supported.
+	if !strings.HasSuffix(urlPath, "/") {
+		u := url.URL{Path: path.Base(urlPath) + "/", RawQuery: rawQuery}
+		return plan{Outcome: Outcome{Status: http.StatusMovedPermanently, Redirect: u.String()}}
 	}
-	h.serveFile(w, r, f)
+	base := "/"
+	if f.Rel != "" && f.Rel != "." {
+		base = "/" + f.Rel + "/"
+	}
+	for _, name := range h.index {
+		idx, err := h.res.Open(base + name)
+		if err != nil {
+			if errors.Is(err, fspath.ErrNotFound) || errors.Is(err, fspath.ErrForbidden) {
+				continue
+			}
+			return h.failure(err)
+		}
+		if idx.Info.IsDir() {
+			idx.Close()
+			continue
+		}
+		return plan{Outcome: Outcome{Status: http.StatusOK, File: "/" + idx.Rel}, file: idx}
+	}
+	return plan{Outcome: Outcome{Status: http.StatusForbidden, Message: "forbidden"}}
+}
+
+// failure maps resolver errors to HTTP statuses. Messages never reveal file
+// system paths.
+func (h *Handler) failure(err error) plan {
+	switch {
+	case errors.Is(err, fspath.ErrNotFound):
+		return plan{Outcome: Outcome{Status: http.StatusNotFound, Message: "404 page not found"}}
+	case errors.Is(err, fspath.ErrForbidden):
+		return plan{Outcome: Outcome{Status: http.StatusForbidden, Message: "forbidden"}}
+	case errors.Is(err, fspath.ErrBadPath):
+		return plan{Outcome: Outcome{Status: http.StatusBadRequest, Message: "bad request"}}
+	}
+	return plan{Outcome: Outcome{Status: http.StatusInternalServerError, Message: "internal server error"}, err: err}
+}
+
+// Describe reports what ServeHTTP would do for method and urlPath, without
+// writing a response.
+func (h *Handler) Describe(method, urlPath string) Outcome {
+	p := h.resolve(method, urlPath, "")
+	if p.file != nil {
+		p.file.Close()
+	}
+	if p.Redirect != "" { // ServeHTTP lets http.Redirect resolve the relative form
+		p.Redirect = urlPath + "/"
+	}
+	return p.Outcome
+}
+
+// ServeHTTP implements http.Handler.
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	p := h.resolve(r.Method, r.URL.Path, r.URL.RawQuery)
+	switch {
+	case p.file != nil:
+		defer p.file.Close()
+		h.serveFile(w, r, p.file)
+	case p.Redirect != "":
+		http.Redirect(w, r, p.Redirect, p.Status)
+	default:
+		if p.Status == http.StatusMethodNotAllowed {
+			w.Header().Set("Allow", "GET, HEAD")
+		}
+		if p.err != nil && h.log != nil {
+			h.log.Error("static file error", "path", r.URL.Path, "error", p.err)
+		}
+		http.Error(w, p.Message, p.Status)
+	}
 }
 
 // Stat reports whether urlPath names an existing file or directory that the
@@ -86,38 +169,6 @@ func (h *Handler) Stat(urlPath string) (isDir, exists bool) {
 	}
 	defer f.Close()
 	return f.Info.IsDir(), true
-}
-
-// serveDir redirects to the canonical directory URL and serves the first index
-// file that exists. Directory listings are not supported.
-func (h *Handler) serveDir(w http.ResponseWriter, r *http.Request, rel string) {
-	if !strings.HasSuffix(r.URL.Path, "/") {
-		u := url.URL{Path: path.Base(r.URL.Path) + "/", RawQuery: r.URL.RawQuery}
-		http.Redirect(w, r, u.String(), http.StatusMovedPermanently)
-		return
-	}
-	base := "/"
-	if rel != "" && rel != "." {
-		base = "/" + rel + "/"
-	}
-	for _, name := range h.index {
-		f, err := h.res.Open(base + name)
-		if err != nil {
-			if errors.Is(err, fspath.ErrNotFound) || errors.Is(err, fspath.ErrForbidden) {
-				continue
-			}
-			h.fail(w, r, err)
-			return
-		}
-		if f.Info.IsDir() {
-			f.Close()
-			continue
-		}
-		defer f.Close()
-		h.serveFile(w, r, f)
-		return
-	}
-	http.Error(w, "forbidden", http.StatusForbidden) // no index file and listings are off
 }
 
 func (h *Handler) serveFile(w http.ResponseWriter, r *http.Request, f *fspath.File) {
@@ -148,22 +199,4 @@ func (h *Handler) contentType(rel string) string {
 		return t
 	}
 	return mime.TypeByExtension(ext) // empty if unknown: ServeContent then sniffs
-}
-
-// fail maps resolver errors to HTTP statuses. The response never reveals file
-// system paths.
-func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
-	switch {
-	case errors.Is(err, fspath.ErrNotFound):
-		http.Error(w, "404 page not found", http.StatusNotFound)
-	case errors.Is(err, fspath.ErrForbidden):
-		http.Error(w, "forbidden", http.StatusForbidden)
-	case errors.Is(err, fspath.ErrBadPath):
-		http.Error(w, "bad request", http.StatusBadRequest)
-	default:
-		if h.log != nil {
-			h.log.Error("static file error", "path", r.URL.Path, "error", err)
-		}
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-	}
 }

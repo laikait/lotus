@@ -76,7 +76,9 @@ Commands:
                               Check a configuration file and everything it includes
   config inspect [--site NAME] <file>
                               Print the effective configuration as JSON (secrets redacted)
-  help                        Show this help
+  config explain [options] <file> <url>
+                              Show which site, route and action a request would get
+  help                       Show this help
 
 Exit codes: 0 success, 1 usage error, 2 invalid configuration, 6 uses a feature not
 implemented yet, 10 the server could not start or failed.

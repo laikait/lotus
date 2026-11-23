@@ -21,6 +21,14 @@ func routedSite(t *testing.T, routes []model.Route, named ...model.Route) (*harn
 // routedSiteWith is routedSite with a hook to change the site first.
 func routedSiteWith(t *testing.T, mutate func(*model.Site), routes []model.Route, named ...model.Route) (*harness, string) {
 	t.Helper()
+	cfg := routedConfig(t, mutate, routes, named...)
+	h := start(t, cfg)
+	return h, "http://" + h.addr("http")
+}
+
+// routedConfig builds the configuration routedSiteWith runs.
+func routedConfig(t *testing.T, mutate func(*model.Site), routes []model.Route, named ...model.Route) *model.Config {
+	t.Helper()
 	root := docroot(t, "home")
 	must(t, os.MkdirAll(filepath.Join(root, "blog"), 0o755))
 	must(t, os.MkdirAll(filepath.Join(root, "new"), 0o755))
@@ -38,8 +46,7 @@ func routedSiteWith(t *testing.T, mutate func(*model.Site), routes []model.Route
 	inherit(routes, &s)
 	inherit(named, &s)
 	s.Routes, s.Named = routes, named
-	h := start(t, baseConfig(s))
-	return h, "http://" + h.addr("http")
+	return baseConfig(s)
 }
 
 // inherit fills in what the compiler would: a route without its own root,

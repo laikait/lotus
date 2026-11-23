@@ -145,7 +145,7 @@ func (rt *siteRuntime) serve(w http.ResponseWriter, r *http.Request, clientIP ne
 					rv := *vars
 					rv.Captures = m
 					if rw.Flag != model.RewriteRedirect && rw.Flag != model.RewritePermanent {
-						path, query, hasQuery, err := expandInternal(rw.Target, &rv)
+						path, query, hasQuery, err := router.ExpandInternal(rw.Target, &rv)
 						if err != nil {
 							http.Error(out, "bad request", http.StatusBadRequest)
 							return target{}, false
@@ -233,27 +233,6 @@ func asErrorPageRequest(req *http.Request) {
 	}
 }
 
-// expandInternal expands a template that names a URI to route to internally
-// (a try_files entry or a rewrite target). The template is split at its first
-// '?' before anything is expanded: the path part expands to decoded text, with
-// {uri} meaning the path alone, and the query part expands to raw query text.
-// Nothing is percent-decoded afterwards, so a path such as /a%2520b is never
-// decoded twice, and a '?' that came from a request value can't start a query.
-func expandInternal(tmpl string, v *router.Vars) (path, query string, hasQuery bool, err error) {
-	pathT, queryT, hasQuery := strings.Cut(tmpl, "?")
-	pv := *v
-	pv.URI = v.Path
-	if path, err = router.Expand(pathT, &pv); err != nil {
-		return "", "", false, err
-	}
-	if hasQuery {
-		if query, err = router.Expand(queryT, v); err != nil {
-			return "", "", false, err
-		}
-	}
-	return path, query, hasQuery, nil
-}
-
 // nextTarget decides where routing continues, given the expanded path (or
 // "@name") and query of an internal redirect. Without a query part the
 // original query stays. again is false when a response was already written.
@@ -280,7 +259,7 @@ func (rt *siteRuntime) tryFiles(w http.ResponseWriter, r *http.Request, list []s
 
 	last := len(list) - 1
 	for _, cand := range list[:last] {
-		expanded, _, _, err := expandInternal(cand, vars)
+		expanded, _, _, err := router.ExpandInternal(cand, vars)
 		if err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return target{}, false
@@ -302,7 +281,7 @@ func (rt *siteRuntime) tryFiles(w http.ResponseWriter, r *http.Request, list []s
 		return target{}, false
 	}
 
-	fallback, query, hasQuery, err := expandInternal(list[last], vars)
+	fallback, query, hasQuery, err := router.ExpandInternal(list[last], vars)
 	if err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return target{}, false

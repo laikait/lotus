@@ -142,3 +142,24 @@ func EscapedURI(p, rawQuery string) string {
 	}
 	return u
 }
+
+// ExpandInternal expands a template that names a URI to route to internally
+// (a try_files entry or a rewrite target). The template is split at its first
+// '?' before anything is expanded: the path part expands to decoded text, with
+// {uri} meaning the path alone, and the query part expands to raw query text.
+// Nothing is percent-decoded afterwards, so a path such as /a%2520b is never
+// decoded twice, and a '?' that came from a request value can't start a query.
+func ExpandInternal(tmpl string, v *Vars) (path, query string, hasQuery bool, err error) {
+	pathT, queryT, hasQuery := strings.Cut(tmpl, "?")
+	pv := *v
+	pv.URI = v.Path
+	if path, err = Expand(pathT, &pv); err != nil {
+		return "", "", false, err
+	}
+	if hasQuery {
+		if query, err = Expand(queryT, v); err != nil {
+			return "", "", false, err
+		}
+	}
+	return path, query, hasQuery, nil
+}
