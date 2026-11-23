@@ -136,3 +136,72 @@ func dump(rep *explain.Report) string {
 	explain.WriteText(&b, rep)
 	return b.String()
 }
+
+// The same check for PHP: explain must say exactly when a script runs, which
+// script, and when PHP source is refused or served.
+func TestExplainAgreesWithTheServerForPHP(t *testing.T) {
+	p := startPHP(t, nil, phpRoutes(), nil)
+	must(t, os.MkdirAll(filepath.Join(p.root, "dir.php"), 0o755))
+	must(t, os.WriteFile(filepath.Join(p.root, "dir.php", "index.php"), []byte("<?php"), 0o644))
+
+	files := explain.NewDiskFiles()
+	defer files.Close()
+
+	probes := []struct{ method, path string }{
+		{"GET", "/"}, {"GET", "/info/"}, {"GET", "/info"}, {"GET", "/data/"}, {"GET", "/data/notes.txt"},
+		{"GET", "/app.php"}, {"POST", "/app.php"}, {"GET", "/app.php/x/y?z=1"}, {"GET", "/APP.PHP"},
+		{"GET", "/missing.php"}, {"GET", "/pretty/url?x=1"}, {"GET", "/style.css"}, {"GET", "/.env"},
+		{"GET", "/uploads/shell.php"}, {"GET", "/uploads/evil.jpg"}, {"GET", "/uploads/evil.jpg/x.php"},
+		{"GET", "/legacy/upload.phtml"}, {"GET", "/dir.php"}, {"GET", "/dir.php/"}, {"GET", "/.hidden.php"},
+		{"TRACE", "/app.php"}, {"HEAD", "/app.php"}, {"GET", "/style.css/x.php"},
+	}
+	for _, pr := range probes {
+		before := p.calls.count()
+		resp, body := do(t, pr.method, p.base+pr.path, nil, "")
+		ran := p.calls.count() - before
+
+		u, _ := splitTarget(pr.path)
+		rep := explain.Explain(p.cfg, explain.Request{
+			Method: pr.method, Host: "a.test", Path: u.path, RawQuery: u.query,
+			ClientIP: netip.MustParseAddr("127.0.0.1"),
+		}, files)
+		out := rep.Outcome
+		label := pr.method + " " + pr.path
+
+		if out.Kind == explain.KindDepends {
+			t.Errorf("%s: explain could not decide with files available", label)
+			continue
+		}
+		if out.Kind == explain.KindPHP {
+			if ran != 1 {
+				t.Errorf("%s: explain says a script runs, but PHP was called %d times\n%s", label, ran, dump(rep))
+				continue
+			}
+			params, _ := p.calls.last(t)
+			if params["SCRIPT_NAME"] != out.File {
+				t.Errorf("%s: ran %s, explain says %s\n%s", label, params["SCRIPT_NAME"], out.File, dump(rep))
+			}
+			if resp.StatusCode != 200 {
+				t.Errorf("%s: status %d", label, resp.StatusCode)
+			}
+			continue
+		}
+		if ran != 0 {
+			t.Errorf("%s: PHP ran, but explain says %s\n%s", label, out.Summary(), dump(rep))
+			continue
+		}
+		if resp.StatusCode != out.Status {
+			t.Errorf("%s: the server answered %d, explain says %d (%s)\n%s", label, resp.StatusCode, out.Status, out.Summary(), dump(rep))
+			continue
+		}
+		if out.Kind == explain.KindFile && pr.method == "GET" {
+			want, err := os.ReadFile(filepath.Join(p.root, filepath.FromSlash(out.File)))
+			if err != nil || string(want) != body {
+				t.Errorf("%s: body %q, but explain says the file %s holds %q (%v)", label, body, out.File, want, err)
+			}
+			if strings.HasSuffix(strings.ToLower(out.File), ".php") {
+				t.Errorf("%s: explain says PHP source is served as a file: %s", label, out.File)
+			}
+		}
+	}
+}

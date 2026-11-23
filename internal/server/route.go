@@ -122,6 +122,18 @@ func (rt *siteRuntime) serve(w http.ResponseWriter, r *http.Request, clientIP ne
 			Captures: caps,
 		}
 
+		// final is where a response that error pages must not replace goes.
+		final := http.ResponseWriter(w)
+		if es.force != 0 {
+			final = out
+		}
+		clientStr := addrString(clientIP, r)
+		// serveFiles serves a file request of this route, running PHP where the
+		// route says so.
+		serveFiles := func(rq *http.Request) (target, bool) {
+			return rt.serveFiles(final, out, rq, clientStr, files, actions.PHP, actions.PHPDeny)
+		}
+
 		// One step: it writes a response, or says where to route next.
 		step := func() (next target, again bool) {
 			if es.inPage {
@@ -176,23 +188,18 @@ func (rt *siteRuntime) serve(w http.ResponseWriter, r *http.Request, clientIP ne
 			case actions.Return != nil:
 				// An explicit body is final and skips error pages, but while an
 				// error page is being served it must still carry the original status.
-				final := http.ResponseWriter(w)
-				if es.force != 0 {
-					final = out
-				}
 				rt.respond(final, out, req, actions.Return, vars)
 				return target{}, false
 
 			case len(actions.TryFiles) > 0:
-				return rt.tryFiles(out, req, actions.TryFiles, files, vars)
+				return rt.tryFiles(out, req, actions.TryFiles, files, vars, serveFiles)
 
 			default:
 				if files == nil {
 					http.Error(out, "404 page not found", http.StatusNotFound)
 					return target{}, false
 				}
-				files.ServeHTTP(out, req)
-				return target{}, false
+				return serveFiles(req)
 			}
 		}
 		next, again := step()
@@ -255,7 +262,7 @@ func (rt *siteRuntime) nextTarget(w http.ResponseWriter, r *http.Request, path, 
 // tryFiles serves the first candidate that exists. If none does, it says where
 // to route next, or writes the final "=NNN" status itself.
 func (rt *siteRuntime) tryFiles(w http.ResponseWriter, r *http.Request, list []string,
-	files *staticfiles.Handler, vars *router.Vars) (next target, again bool) {
+	files *staticfiles.Handler, vars *router.Vars, serve func(*http.Request) (target, bool)) (next target, again bool) {
 
 	last := len(list) - 1
 	for _, cand := range list[:last] {
@@ -277,8 +284,7 @@ func (rt *siteRuntime) tryFiles(w http.ResponseWriter, r *http.Request, list []s
 			continue
 		}
 		r2 := withTarget(r, target{path: p, query: r.URL.RawQuery})
-		files.ServeHTTP(w, r2)
-		return target{}, false
+		return serve(r2)
 	}
 
 	fallback, query, hasQuery, err := router.ExpandInternal(list[last], vars)

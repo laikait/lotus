@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/netip"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -49,6 +50,7 @@ type Step struct {
 // Outcome kinds.
 const (
 	KindFile     = "file"     // a file is served
+	KindPHP      = "php"      // a PHP script is run
 	KindStatus   = "status"   // an error or fixed response
 	KindRedirect = "redirect" // 301, 302, ...
 	KindDepends  = "depends"  // can't be known without checking files
@@ -59,7 +61,7 @@ const (
 type Outcome struct {
 	Kind     string `json:"kind"`
 	Status   int    `json:"status,omitempty"`
-	File     string `json:"file,omitempty"`     // URL path of the file, for KindFile
+	File     string `json:"file,omitempty"`     // URL path of the file or script, for KindFile and KindPHP
 	Location string `json:"location,omitempty"` // for KindRedirect
 	Body     string `json:"body,omitempty"`     // explicit text of a return
 	Note     string `json:"note,omitempty"`
@@ -81,11 +83,12 @@ type Files interface {
 }
 
 type explainer struct {
-	cfg   *model.Config
-	req   Request
-	files Files
-	site  *model.Site
-	steps []Step
+	cfg     *model.Config
+	req     Request
+	files   Files
+	site    *model.Site
+	steps   []Step
+	phpSite bool // some route of the site runs PHP
 	// speculative is set when the answer assumes files that weren't checked don't exist.
 	speculative bool
 }
@@ -111,6 +114,7 @@ func Explain(cfg *model.Config, req Request, files Files) *Report {
 		rep.Steps = e.steps
 		return rep
 	}
+	e.phpSite = e.site.UsesPHP()
 	rep.Outcome = e.route()
 	rep.Steps = e.steps
 	return rep
@@ -324,13 +328,10 @@ func (e *explainer) action(route *model.Route, a model.Actions, root string, ind
 		return e.doReturn(a.Return, vars), target{}, false
 
 	case len(a.TryFiles) > 0:
-		return e.tryFiles(a.TryFiles, root, index, vars, cur)
+		return e.tryFiles(a, root, index, vars, cur)
 
-	case a.PHP != "":
-		e.step("action", "php %q (not supported by this version of lotus yet)", a.PHP)
-		return Outcome{Kind: KindError, Status: 500, Note: "php is not supported yet"}, target{}, false
 	}
-	return e.static(root, index, cur), target{}, false
+	return e.static(root, index, cur, a)
 }
 
 func unsafeValue(e *explainer) Outcome {
@@ -356,7 +357,8 @@ func (e *explainer) doReturn(ret *model.Return, vars *router.Vars) Outcome {
 	return Outcome{Kind: KindStatus, Status: ret.Status, Body: text}
 }
 
-func (e *explainer) tryFiles(list []string, root string, index []string, vars *router.Vars, cur target) (Outcome, target, bool) {
+func (e *explainer) tryFiles(a model.Actions, root string, index []string, vars *router.Vars, cur target) (Outcome, target, bool) {
+	list := a.TryFiles
 	h, note := e.handler(root, index)
 	last := len(list) - 1
 	for _, cand := range list[:last] {
@@ -377,7 +379,7 @@ func (e *explainer) tryFiles(list []string, root string, index []string, vars *r
 			e.step("try_files", "candidate %q exists but is a %s", p, map[bool]string{true: "directory", false: "file"}[isDir])
 		default:
 			e.step("try_files", "candidate %q exists; it is served", p)
-			return e.describeFile(h, p), target{}, false
+			return e.serveFile(h, p, a, cur)
 		}
 	}
 	if h == nil && last > 0 {
@@ -423,21 +425,98 @@ func (e *explainer) nextTarget(path, query string, hasQuery bool, cur target) (O
 	return Outcome{}, target{path: router.NormalizePath(path), query: query}, true
 }
 
-func (e *explainer) static(root string, index []string, cur target) Outcome {
+func (e *explainer) static(root string, index []string, cur target, a model.Actions) (Outcome, target, bool) {
 	if root == "" {
 		e.step("static", "the site has no document root")
-		return Outcome{Kind: KindStatus, Status: http.StatusNotFound, Note: "no document root"}
+		return Outcome{Kind: KindStatus, Status: http.StatusNotFound, Note: "no document root"}, target{}, false
 	}
 	h, note := e.handler(root, index)
 	if h == nil {
-		e.step("static", "serves %q from %s (%s)", cur.path, root, note)
-		return Outcome{Kind: KindDepends, Note: "depends on the files in " + root}
+		what := "serves"
+		if a.PHP != "" && !a.PHPDeny {
+			what = "serves or runs"
+		}
+		e.step("static", "%s %q from %s (%s)", what, cur.path, root, note)
+		return Outcome{Kind: KindDepends, Note: "depends on the files in " + root}, target{}, false
 	}
-	return e.describeFile(h, cur.path)
+	return e.serveFile(h, cur.path, a, cur)
 }
 
-func (e *explainer) describeFile(h *staticfiles.Handler, p string) Outcome {
-	o := h.Describe(e.req.Method, p)
+func isPHPName(name string) bool { return strings.EqualFold(path.Ext(name), ".php") }
+
+// serveFile mirrors the server's serveFiles: which of static serving and PHP
+// applies to a file request, and the rules that keep PHP source from being sent.
+func (e *explainer) serveFile(h *staticfiles.Handler, p string, a model.Actions, cur target) (Outcome, target, bool) {
+	switch {
+	case a.PHPDeny:
+		return e.describeFile(h, p, isPHPName, "php_deny: a .php file is never run or served here"), target{}, false
+	case a.PHP != "":
+		return e.describePHP(h, p, a.PHP), target{}, false
+	case e.phpSite:
+		if strings.HasSuffix(p, "/") {
+			if o := h.Locate(p, nil); o.Status == http.StatusOK && isPHPName(o.File) {
+				e.step("php", "%q is a directory whose index is %q; routing starts again with it so the route that runs PHP gets it", p, o.File)
+				return Outcome{}, target{path: o.File, query: cur.query}, true
+			}
+		}
+		return e.describeFile(h, p, isPHPName, "this route does not run PHP, so a .php file is refused rather than served as text"), target{}, false
+	}
+	return e.describeFile(h, p, nil, ""), target{}, false
+}
+
+// describePHP is what the server's servePHP decides for a path.
+func (e *explainer) describePHP(h *staticfiles.Handler, p, backend string) Outcome {
+	if e.req.Method == http.MethodTrace {
+		e.step("php", "TRACE is refused")
+		return Outcome{Kind: KindStatus, Status: http.StatusMethodNotAllowed}
+	}
+	script, info, found := splitScript(p)
+	if !found {
+		if o := h.Locate(p, nil); o.Status == http.StatusOK && isPHPName(o.File) {
+			script, found = o.File, true
+		}
+	}
+	if !found {
+		e.step("php", "%q is not a script (no .php file); the static file rules apply", p)
+		return e.describeFile(h, p, isPHPName, "")
+	}
+	o := h.Locate(script, nil)
+	if o.Status != http.StatusOK || o.File != path.Clean(script) {
+		status := http.StatusNotFound
+		if o.Status == http.StatusForbidden || o.Status == http.StatusBadRequest {
+			status = o.Status
+		}
+		e.step("php", "the script %q does not exist or is not allowed; PHP is not run", script)
+		return Outcome{Kind: KindStatus, Status: status}
+	}
+	note := "backend " + backend
+	if info != "" {
+		note += ", PATH_INFO " + info
+	}
+	e.step("php", "runs the script %q on php_backend %q", o.File, backend)
+	return Outcome{Kind: KindPHP, Status: 200, File: o.File, Note: note}
+}
+
+// splitScript must match the server's: the first segment ending in .php ends the script's path.
+func splitScript(p string) (script, info string, ok bool) {
+	for i := 0; i < len(p); {
+		end := len(p)
+		if j := strings.IndexByte(p[i+1:], '/'); j >= 0 {
+			end = i + 1 + j
+		}
+		if isPHPName(p[i+1 : end]) {
+			return p[:end], p[end:], true
+		}
+		i = end
+	}
+	return "", "", false
+}
+
+func (e *explainer) describeFile(h *staticfiles.Handler, p string, refuse func(string) bool, why string) Outcome {
+	o := h.DescribeWith(e.req.Method, p, refuse)
+	if why != "" && o.Status == http.StatusForbidden && o.Message == "forbidden" {
+		e.step("php", "%s", why)
+	}
 	switch {
 	case o.Status == http.StatusOK:
 		e.step("static", "%q is the file %q", p, o.File)

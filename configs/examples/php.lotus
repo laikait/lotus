@@ -1,0 +1,54 @@
+# PHP through FastCGI (PHP-FPM, or php-cgi started separately).
+#
+#     lotus start -config configs/examples/php.lotus
+#
+# Needs a PHP-FPM listening on 127.0.0.1:9000 (change fastcgi_pass below). With
+# the PHP CLI you can serve this directory without FPM, for a quick try:
+#
+#     php-cgi -b 127.0.0.1:9000
+#
+# Try:  curl -i http://127.0.0.1:8082/
+#       curl -i http://127.0.0.1:8082/uploads/shell.php      # 403: never run, never shown
+#       curl -i http://127.0.0.1:8082/some/pretty/url         # the front controller
+
+lotus_config_version 1
+
+server {
+    listen "http" {
+        address "127.0.0.1:8082"
+    }
+
+    # Which PHP runs a site is the administrator's decision, so this block is
+    # server-level. A tenant's included files cannot name a backend.
+    php_backend "app" {
+        fastcgi_pass "127.0.0.1:9000"      # or "unix:/run/php/php-fpm.sock"
+        timeout 60s                          # how long PHP may take to answer
+    }
+
+    site "localhost" {
+        root "./php-app"
+        index [ "index.php", "index.html" ]
+        tls off
+
+        # Anything that is a .php file below the document root runs; the first
+        # segment that ends in .php is the script, the rest is PATH_INFO
+        # (/index.php/a/b). A path that names no existing .php file is a 404 and
+        # PHP is never asked.
+        route ~ '\.php(/|$)' {
+            php "app"
+        }
+
+        # Uploaded files are never executed and never shown as text. ^~ keeps the
+        # regex route above from applying here.
+        route ^~ "/uploads/" {
+            php_deny true
+        }
+
+        # Existing files are served directly; everything else goes to the
+        # application's front controller, which sees the original URL in
+        # REQUEST_URI.
+        route "/" {
+            try_files [ "{uri}", "{uri}/", "/index.php?{query}" ]
+        }
+    }
+}

@@ -70,15 +70,20 @@ type plan struct {
 
 // resolve decides what a request for urlPath gets: a file to serve, a
 // redirect, or an error status. rawQuery is only carried into redirects.
-func (h *Handler) resolve(method, urlPath, rawQuery string) plan {
-	if method != http.MethodGet && method != http.MethodHead {
-		return plan{Outcome: Outcome{Status: http.StatusMethodNotAllowed, Message: "method not allowed"}}
-	}
+//
+// refuse, when not nil, is asked about every file that would be served (given
+// as a path below the root); a true answer makes the request a 403. It is how
+// PHP source is kept from being served as text.
+func (h *Handler) resolve(urlPath, rawQuery string, refuse func(rel string) bool) plan {
 	f, err := h.res.Open(urlPath)
 	if err != nil {
 		return h.failure(err)
 	}
 	if !f.Info.IsDir() {
+		if refuse != nil && refuse(f.Rel) {
+			f.Close()
+			return plan{Outcome: Outcome{Status: http.StatusForbidden, Message: "forbidden"}}
+		}
 		return plan{Outcome: Outcome{Status: http.StatusOK, File: "/" + f.Rel}, file: f}
 	}
 	defer f.Close()
@@ -127,7 +132,21 @@ func (h *Handler) failure(err error) plan {
 // Describe reports what ServeHTTP would do for method and urlPath, without
 // writing a response.
 func (h *Handler) Describe(method, urlPath string) Outcome {
-	p := h.resolve(method, urlPath, "")
+	return h.DescribeWith(method, urlPath, nil)
+}
+
+// DescribeWith is Describe for requests served with ServeWith(refuse).
+func (h *Handler) DescribeWith(method, urlPath string, refuse func(rel string) bool) Outcome {
+	if method != http.MethodGet && method != http.MethodHead {
+		return Outcome{Status: http.StatusMethodNotAllowed, Message: "method not allowed"}
+	}
+	return h.Locate(urlPath, refuse)
+}
+
+// Locate reports which file urlPath leads to (following directory redirects
+// and index files), whatever the request method.
+func (h *Handler) Locate(urlPath string, refuse func(rel string) bool) Outcome {
+	p := h.resolve(urlPath, "", refuse)
 	if p.file != nil {
 		p.file.Close()
 	}
@@ -137,9 +156,22 @@ func (h *Handler) Describe(method, urlPath string) Outcome {
 	return p.Outcome
 }
 
+// Root returns the document root directory.
+func (h *Handler) Root() string { return h.res.Root() }
+
 // ServeHTTP implements http.Handler.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	p := h.resolve(r.Method, r.URL.Path, r.URL.RawQuery)
+	h.ServeWith(w, r, nil)
+}
+
+// ServeWith is ServeHTTP with a refuse hook (see resolve).
+func (h *Handler) ServeWith(w http.ResponseWriter, r *http.Request, refuse func(rel string) bool) {
+	var p plan
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		p = plan{Outcome: Outcome{Status: http.StatusMethodNotAllowed, Message: "method not allowed"}}
+	} else {
+		p = h.resolve(r.URL.Path, r.URL.RawQuery, refuse)
+	}
 	switch {
 	case p.file != nil:
 		defer p.file.Close()

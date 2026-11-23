@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/laikait/lotus/internal/fastcgi/fcgitest"
 )
 
 func get(params ...Param) *Request { return &Request{Params: params} }
@@ -219,7 +221,7 @@ func TestConnectionsAreReused(t *testing.T) {
 		}
 		readAll(t, resp)
 	}
-	if n := f.accepted.Load(); n != 1 {
+	if n := f.Accepted(); n != 1 {
 		t.Errorf("%d connections for 5 sequential requests, want 1", n)
 	}
 }
@@ -241,7 +243,7 @@ func TestReuseDisabled(t *testing.T) {
 		}
 		readAll(t, resp)
 	}
-	if n := f.accepted.Load(); n != 3 {
+	if n := f.Accepted(); n != 3 {
 		t.Errorf("%d connections, want 3", n)
 	}
 }
@@ -265,7 +267,7 @@ func TestAConnectionTheBackendClosedIsNotReused(t *testing.T) {
 		}
 		time.Sleep(30 * time.Millisecond) // let the close reach the idle watcher
 	}
-	if n := f.accepted.Load(); n != 4 {
+	if n := f.Accepted(); n != 4 {
 		t.Errorf("%d connections, want 4 (a dead one must never be reused)", n)
 	}
 }
@@ -283,7 +285,7 @@ func TestIdleConnectionsExpire(t *testing.T) {
 		readAll(t, resp)
 		time.Sleep(60 * time.Millisecond)
 	}
-	if n := f.accepted.Load(); n != 2 {
+	if n := f.Accepted(); n != 2 {
 		t.Errorf("%d connections, want 2", n)
 	}
 }
@@ -398,7 +400,7 @@ func TestGarbageFromTheBackend(t *testing.T) {
 	}
 	for name, raw := range cases {
 		t.Run(name, func(t *testing.T) {
-			f := newFake(t, func(r *fakeReq) { r.c.Write([]byte(raw)); r.Close() })
+			f := newFake(t, func(r *fakeReq) { r.Conn().Write([]byte(raw)); r.Close() })
 			c := f.client()
 			defer c.Close()
 			if _, err := c.Do(context.Background(), get()); err == nil {
@@ -633,7 +635,7 @@ func TestMaxConnsLimitsTheBackendLoad(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	if m := f.maxActive.Load(); m > 3 {
+	if m := f.MaxActive(); m > 3 {
 		t.Errorf("%d requests ran at once, limit is 3", m)
 	}
 }
@@ -707,16 +709,7 @@ func TestUnixSocket(t *testing.T) {
 		t.Skip("unix sockets unavailable:", err)
 	}
 	defer ln.Close()
-	f := &fakeBackend{t: t, ln: ln, handler: func(r *fakeReq) { r.Respond("", "unix ok") }}
-	go func() {
-		for {
-			c, err := ln.Accept()
-			if err != nil {
-				return
-			}
-			go f.serve(c)
-		}
-	}()
+	fcgitest.NewOn(t, ln, func(r *fakeReq) { r.Respond("", "unix ok") })
 	c := &Client{Network: "unix", Address: dir + "/fcgi.sock"}
 	defer c.Close()
 	resp, err := c.Do(context.Background(), get())

@@ -27,7 +27,9 @@ type siteRuntime struct {
 	log          *slog.Logger
 	headers      []model.Header
 	maxBody      int64
-	cert         *tls.Certificate // set for tls manual
+	cert         *tls.Certificate      // set for tls manual
+	php          map[string]phpBackend // PHP backends of this configuration, by name
+	phpSite      bool                  // some route of the site runs PHP
 }
 
 // listenerHandler routes the requests of one listener to its sites.

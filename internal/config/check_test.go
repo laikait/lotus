@@ -194,6 +194,20 @@ site "a" { route "/" { php "p83" } }`)},
  protocol https
  http3 true }`)},
 
+		// ---- managed php backends ----
+		{name: "command alone is a backend", src: cfg(`php_backend "p" { command "C:/php/php-cgi.exe"
+ processes 8
+ max_requests 0 }`)},
+		{name: "both fastcgi_pass and command", src: cfg(`php_backend "p" { fastcgi_pass "127.0.0.1:9000"
+ command "php-cgi" }`), codes: []string{diag.CodeInvalidValue}, hint: "runs on its own"},
+		{name: "neither fastcgi_pass nor command", src: cfg(`php_backend "p" { timeout 5s }`), codes: []string{diag.CodeMissingRequired}, hint: "command"},
+		{name: "processes needs command", src: cfg(`php_backend "p" { fastcgi_pass "127.0.0.1:9000"
+ processes 2 }`), codes: []string{diag.CodeInvalidValue}, hint: "start the processes with command"},
+		{name: "zero processes", src: cfg(`php_backend "p" { command "php-cgi"
+ processes 0 }`), codes: []string{diag.CodeInvalidValue}},
+		{name: "too many processes", src: cfg(`php_backend "p" { command "php-cgi"
+ processes 1000 }`), codes: []string{diag.CodeInvalidValue}},
+
 		// ---- security_headers map ----
 		{name: "bad header name", src: cfg(`site "a" { security_headers { "Bad Name" = "x" } }`), codes: []string{diag.CodeInvalidValue}},
 		{name: "header injection", src: cfg(`site "a" { security_headers { "X-A" = "x\r\nSet-Cookie: a=b" } }`), codes: []string{diag.CodeInvalidValue}},

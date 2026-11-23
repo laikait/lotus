@@ -113,6 +113,10 @@ type ContextSpec struct {
 	Directives map[string]*Directive
 	// Required lists directives that must appear at least once.
 	Required []string
+	// Check validates a block as a whole, given the names of the directives it
+	// contains. It returns a diagnostic code, a message and a hint, or an empty
+	// message if all is well.
+	Check func(present map[string]bool) (code, msg, hint string)
 	// Pairs is set for map-like blocks, which accept only `"key" = value` entries.
 	Pairs *PairSpec
 }

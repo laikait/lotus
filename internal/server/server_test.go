@@ -24,20 +24,6 @@ func TestUnsupportedFeaturesFailLoudly(t *testing.T) {
 		mutate func(*model.Config)
 		want   string
 	}{
-		{"php in a route", func(c *model.Config) {
-			c.Sites[0].Routes = []model.Route{{Kind: model.RoutePrefix, Path: "/", Actions: model.Actions{PHP: "main"}}}
-		}, "php"},
-		{"php in a nested route", func(c *model.Config) {
-			c.Sites[0].Routes = []model.Route{{Kind: model.RoutePrefix, Path: "/", Children: []model.Route{
-				{Kind: model.RoutePrefix, Path: "/a/", Actions: model.Actions{PHP: "main"}}}}}
-		}, "php"},
-		{"php in a named route", func(c *model.Config) {
-			c.Sites[0].Named = []model.Route{{Kind: model.RouteNamed, Path: "@x", Actions: model.Actions{PHP: "main"}}}
-		}, "php"},
-		{"php in a match block", func(c *model.Config) {
-			c.Sites[0].Routes = []model.Route{{Kind: model.RoutePrefix, Path: "/",
-				Matches: []model.Match{{Methods: []string{"POST"}, Actions: model.Actions{PHP: "main"}}}}}
-		}, "php"},
 		{"acme", func(c *model.Config) { c.Sites[0].TLS = model.TLSAutomatic }, "automatic certificates"},
 		{"http3", func(c *model.Config) { c.Listeners[0].HTTP3 = true }, "http3"},
 		{"control", func(c *model.Config) { c.Control.ViewerGroup = "lotus-viewers" }, "control"},
@@ -67,7 +53,7 @@ func TestUnsupportedFeaturesFailLoudly(t *testing.T) {
 		cfg := baseConfig(siteConf("a.test", root, "http"))
 		cfg.Listeners[0].HTTP3 = true
 		cfg.Sites[0].TLS = model.TLSAutomatic
-		cfg.Sites[0].Routes = []model.Route{{Kind: model.RoutePrefix, Path: "/", Actions: model.Actions{PHP: "main"}}}
+		cfg.Control.ViewerGroup = "lotus-viewers"
 		if items := Unsupported(cfg); len(items) != 3 {
 			t.Errorf("got %d items: %v", len(items), items)
 		}

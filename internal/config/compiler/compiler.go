@@ -326,6 +326,7 @@ func tlsSettings(base model.TLS, d *ast.Directive) model.TLS {
 
 func (c *compiler) phpBackend(d *ast.Directive) model.PHPBackend {
 	b := model.PHPBackend{Name: str(arg(d, 0)), Timeout: model.Duration(model.DefaultPHPTimeout)}
+	processes, maxRequests := model.DefaultPHPProcesses, model.DefaultPHPMaxRequests
 	for _, s := range body(d) {
 		if r, ok := s.(*ast.Directive); ok {
 			switch r.Name {
@@ -338,8 +339,26 @@ func (c *compiler) phpBackend(d *ast.Directive) model.PHPBackend {
 				}
 			case "timeout":
 				b.Timeout = model.Duration(dur(arg(r, 0)))
+			case "command":
+				// A bare program name is looked up in PATH; anything with a
+				// directory is relative to the configuration file.
+				cmd := str(arg(r, 0))
+				if filepath.Base(cmd) == cmd {
+					b.Command = cmd
+				} else {
+					b.Command = c.path(cmd)
+				}
+			case "processes":
+				processes = int(integer(arg(r, 0)))
+			case "max_requests":
+				maxRequests = int(integer(arg(r, 0)))
+			case "php_ini":
+				b.PHPIni = c.path(str(arg(r, 0)))
 			}
 		}
+	}
+	if b.Command != "" {
+		b.Processes, b.MaxRequests = processes, maxRequests
 	}
 	return b
 }

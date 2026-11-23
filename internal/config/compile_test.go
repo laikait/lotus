@@ -74,6 +74,11 @@ server {
     php_backend "fpm" { fastcgi_pass "unix:/run/php.sock" }
     php_backend "tcp" { fastcgi_pass "127.0.0.1:9000"
  timeout 5s }
+    php_backend "managed" { command "php-cgi"
+ processes 2 }
+    php_backend "managed2" { command "./bin/php-cgi"
+ max_requests 0
+ php_ini "./php.ini" }
     control { socket "/tmp/c.sock"
  viewer_group "ops" }
 }
@@ -104,6 +109,15 @@ server {
 	}
 	if b := c.PHPBackends[1]; b.Network != "tcp" || b.Address != "127.0.0.1:9000" || time.Duration(b.Timeout) != 5*time.Second {
 		t.Errorf("tcp backend = %+v", b)
+	}
+	if b := c.PHPBackends[2]; !b.Managed() || b.Command != "php-cgi" || b.Processes != 2 || b.MaxRequests != model.DefaultPHPMaxRequests || b.Network != "" {
+		t.Errorf("managed backend = %+v (a bare command is looked up in PATH; unset values take defaults)", b)
+	}
+	if b := c.PHPBackends[3]; b.Processes != model.DefaultPHPProcesses || b.MaxRequests != 0 || !filepath.IsAbs(b.Command) || !filepath.IsAbs(b.PHPIni) {
+		t.Errorf("managed backend with paths = %+v (paths are relative to the configuration file; 0 means never recycle)", b)
+	}
+	if b := c.PHPBackends[0]; b.Managed() || b.Processes != 0 {
+		t.Errorf("a fastcgi_pass backend must not carry process settings: %+v", b)
 	}
 	if c.Control.Socket != abs("/tmp/c.sock") || c.Control.ViewerGroup != "ops" {
 		t.Errorf("control = %+v", c.Control)

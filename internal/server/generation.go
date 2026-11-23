@@ -3,10 +3,13 @@ package server
 import (
 	"io"
 	"sync"
+	"time"
 
 	"github.com/laikait/lotus/internal/clientip"
 	"github.com/laikait/lotus/internal/config/model"
+	"github.com/laikait/lotus/internal/fastcgi"
 	"github.com/laikait/lotus/internal/logging"
+	"github.com/laikait/lotus/internal/phpproc"
 	"github.com/laikait/lotus/internal/vhost"
 )
 
@@ -21,7 +24,8 @@ type generation struct {
 	cfg      *model.Config
 	tables   map[string]*vhost.Table[*siteRuntime] // by listener name
 	clients  *clientip.Resolver
-	fallback *logging.Access // access log for requests that reach no site
+	fallback *logging.Access       // access log for requests that reach no site
+	php      map[string]phpBackend // the PHP backends, by name
 
 	mu      sync.Mutex
 	refs    int  // requests using this generation
@@ -88,3 +92,60 @@ func (g *generation) closeAll() {
 	}
 	g.closers = nil
 }
+
+// poolCloser closes a FastCGI connection pool with the generation.
+type poolCloser struct{ c *fastcgi.Client }
+
+func (p poolCloser) Close() error {
+	p.c.Close()
+	return nil
+}
+
+// sharedPool is a php-cgi process pool and the generations using it.
+type sharedPool struct {
+	pool *phpproc.Pool
+	refs int
+}
+
+// managedPool returns the process pool for a backend with `command`, starting
+// it if no generation uses one with the same settings yet. The closer gives the
+// generation's hold on it back; the last one stops the processes.
+func (s *Server) managedPool(b model.PHPBackend) (phpBackend, io.Closer, error) {
+	spec := phpproc.Spec{
+		Command:     b.Command,
+		Processes:   b.Processes,
+		MaxRequests: b.MaxRequests,
+		PHPIni:      b.PHPIni,
+		Timeout:     time.Duration(b.Timeout),
+	}
+	key := spec.Key()
+
+	s.poolMu.Lock()
+	defer s.poolMu.Unlock()
+	sp := s.pools[key]
+	if sp == nil {
+		pool, err := phpproc.Start(spec, s.log.With("php_backend", b.Name))
+		if err != nil {
+			return nil, nil, err
+		}
+		sp = &sharedPool{pool: pool}
+		if s.pools == nil {
+			s.pools = map[string]*sharedPool{}
+		}
+		s.pools[key] = sp
+	}
+	sp.refs++
+	return sp.pool, poolRelease(func() error {
+		s.poolMu.Lock()
+		defer s.poolMu.Unlock()
+		if sp.refs--; sp.refs == 0 {
+			delete(s.pools, key)
+			sp.pool.Close()
+		}
+		return nil
+	}), nil
+}
+
+type poolRelease func() error
+
+func (f poolRelease) Close() error { return f() }

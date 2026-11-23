@@ -21,6 +21,8 @@ const (
 	DefaultWriteTimeout   = 60 * time.Second
 	DefaultIdleTimeout    = 120 * time.Second
 	DefaultPHPTimeout     = 60 * time.Second
+	DefaultPHPProcesses   = 4
+	DefaultPHPMaxRequests = 500
 	DefaultTLSMinVersion  = "1.2"
 )
 
@@ -110,13 +112,23 @@ type ACME struct {
 	EABHMACKey Secret `json:"eab_hmac_key,omitempty"`
 }
 
-// PHPBackend is a FastCGI backend.
+// PHPBackend is a FastCGI backend: either an existing server at Address, or
+// processes LOTUS starts itself from Command.
 type PHPBackend struct {
 	Name    string   `json:"name"`
-	Network string   `json:"network"` // "unix" or "tcp"
-	Address string   `json:"address"` // socket path or host:port
+	Network string   `json:"network,omitempty"` // "unix" or "tcp"
+	Address string   `json:"address,omitempty"` // socket path or host:port
 	Timeout Duration `json:"timeout"`
+
+	// Set when LOTUS runs the processes (Command is not empty).
+	Command     string `json:"command,omitempty"`
+	Processes   int    `json:"processes,omitempty"`
+	MaxRequests int    `json:"max_requests,omitempty"` // 0: never recycle
+	PHPIni      string `json:"php_ini,omitempty"`
 }
+
+// Managed reports whether LOTUS starts the backend's processes.
+func (b *PHPBackend) Managed() bool { return b.Command != "" }
 
 // Control configures the local control channel. Empty values mean the
 // platform default.
@@ -270,4 +282,22 @@ type Pattern struct {
 	Op     string         `json:"op"` // = ~ ~* !~ !~*
 	Value  string         `json:"value"`
 	Regexp *regexp.Regexp `json:"-"`
+}
+
+// UsesPHP reports whether any route of the site, or match block in one, runs PHP.
+func (s *Site) UsesPHP() bool { return routesUsePHP(s.Routes) || routesUsePHP(s.Named) }
+
+func routesUsePHP(routes []Route) bool {
+	for i := range routes {
+		r := &routes[i]
+		if r.Actions.PHP != "" || routesUsePHP(r.Children) {
+			return true
+		}
+		for _, m := range r.Matches {
+			if m.Actions.PHP != "" {
+				return true
+			}
+		}
+	}
+	return false
 }

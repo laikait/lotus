@@ -59,6 +59,9 @@ func New(root string, p Policy) (*Resolver, error) {
 	return &Resolver{root: r, policy: p}, nil
 }
 
+// Root returns the root directory as it was given to New.
+func (r *Resolver) Root() string { return r.root.Name() }
+
 // Close releases the root directory.
 func (r *Resolver) Close() error { return r.root.Close() }
 

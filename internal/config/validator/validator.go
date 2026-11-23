@@ -119,6 +119,16 @@ func (v *validator) block(ctx schema.Context, stmts []ast.Statement, owner *ast.
 				fmt.Sprintf("usage: %s", v.reg.Lookup(ctx, name).Usage()))
 		}
 	}
+
+	if cs.Check != nil && !v.diags.Full() {
+		if code, msg, hint := cs.Check(present); msg != "" {
+			pos := v.root
+			if owner != nil {
+				pos = owner.Pos
+			}
+			v.Error(pos, code, msg, hint)
+		}
+	}
 }
 
 func where(ctx schema.Context) string {

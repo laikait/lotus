@@ -20,6 +20,7 @@ import (
 
 	"github.com/laikait/lotus/internal/clientip"
 	"github.com/laikait/lotus/internal/config/model"
+	"github.com/laikait/lotus/internal/fastcgi"
 	"github.com/laikait/lotus/internal/fspath"
 	"github.com/laikait/lotus/internal/logging"
 	"github.com/laikait/lotus/internal/staticfiles"
@@ -54,6 +55,12 @@ type Server struct {
 	tracker *connTracker
 
 	reloadMu sync.Mutex // one reload at a time
+
+	// pools are the php-cgi process pools in use, shared by the generations
+	// that ask for the same settings, so a reload that doesn't change them
+	// neither restarts the processes nor runs two sets side by side.
+	poolMu sync.Mutex
+	pools  map[string]*sharedPool
 
 	listeners []*boundListener
 
@@ -155,6 +162,22 @@ func (s *Server) buildGeneration(cfg *model.Config) (*generation, error) {
 		tables:   map[string]*vhost.Table[*siteRuntime]{},
 		clients:  clientip.New(cfg.TrustedProxies),
 		fallback: s.defaultAccess,
+		php:      make(map[string]phpBackend, len(cfg.PHPBackends)),
+	}
+	for _, b := range cfg.PHPBackends {
+		if b.Managed() {
+			be, closer, err := s.managedPool(b)
+			if err != nil {
+				g.closeNow()
+				return nil, fmt.Errorf("php_backend %q: %w", b.Name, err)
+			}
+			g.php[b.Name] = be
+			g.closers = append(g.closers, closer)
+			continue
+		}
+		c := &fastcgi.Client{Network: b.Network, Address: b.Address, Timeout: time.Duration(b.Timeout)}
+		g.php[b.Name] = c
+		g.closers = append(g.closers, poolCloser{c})
 	}
 	sites := make(map[string]*siteRuntime, len(cfg.Sites))
 	for i := range cfg.Sites {
@@ -196,6 +219,8 @@ func (s *Server) newSite(g *generation, site *model.Site) (*siteRuntime, error) 
 		site:    site,
 		headers: site.SecurityHeaders,
 		maxBody: site.Limits.MaxRequestBody,
+		php:     g.php,
+		phpSite: site.UsesPHP(),
 	}
 
 	access, err := s.logWriter(g, site.Logs.Access, s.opts.Stdout)

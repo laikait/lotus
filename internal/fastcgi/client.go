@@ -33,6 +33,14 @@ var (
 	ErrBadParam = errors.New("fastcgi: invalid parameter")
 )
 
+// DialError is a failure to connect to the backend. Nothing was sent and the
+// request body was not read, so the request can safely be tried again, on
+// another backend for instance.
+type DialError struct{ Err error }
+
+func (e *DialError) Error() string { return "fastcgi: connecting to the backend: " + e.Err.Error() }
+func (e *DialError) Unwrap() error { return e.Err }
+
 // BodyError wraps an error from reading the request body that was being sent
 // to the backend (for example a client that disconnected, or a body over the
 // size limit), as opposed to a failure of the backend itself.
@@ -226,7 +234,7 @@ func (c *Client) dial(ctx context.Context) (*pooled, error) {
 	}
 	conn, err := d.DialContext(ctx, c.Network, c.Address)
 	if err != nil {
-		return nil, fmt.Errorf("fastcgi: connecting to the backend: %w", err)
+		return nil, &DialError{Err: err}
 	}
 	return newPooled(conn), nil
 }

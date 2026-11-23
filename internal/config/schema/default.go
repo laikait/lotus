@@ -386,14 +386,43 @@ func buildDefault() *Registry {
 
 	// ---- php_backend ----
 
-	r.Define(CtxPHPBackend,
+	phpb := r.Define(CtxPHPBackend,
 		scalar("fastcgi_pass", "address", Address(HostPort|UnixSock), "none",
-			"FastCGI server address: unix:/path/to/socket or host:port.",
+			"FastCGI server address: unix:/path/to/socket or host:port. For a server that runs on its own, such as PHP-FPM.",
 			"Prefer Unix sockets with restricted permissions. A TCP address that is reachable by others lets them run PHP as this pool."),
+		scalar("command", "path", Path(), "none",
+			"A php-cgi program that LOTUS starts and supervises instead of connecting to an existing server. Use this where there is no PHP-FPM, such as Windows.",
+			"The processes run as the LOTUS user and get a minimal environment (no LOTUS secrets). On Windows they listen on 127.0.0.1, so any account on the machine can reach them."),
+		scalar("processes", "count", Int(1, 256), "4",
+			"How many php-cgi processes to run with command. Each handles one request at a time.",
+			"More processes allow more simultaneous requests and use more memory."),
+		scalar("max_requests", "count", IntAtLeast(0), "500",
+			"A php-cgi process exits and is replaced after this many requests, which contains memory leaks. 0 means never.",
+			"Applies to command."),
+		scalar("php_ini", "path", Path(), "none",
+			"php.ini file for the processes started with command (php-cgi -c). Without it PHP searches its usual places.",
+			"The file decides which PHP settings apply, including open_basedir and disabled functions."),
 		scalar("timeout", "duration", Duration(time.Millisecond), "60s",
-			"Time to wait for the FastCGI server to respond.",
+			"Time to wait for the FastCGI server to respond. With command it is also how long a request waits for a free process.",
 			"Long timeouts let slow scripts tie up connections."),
-	).Required = []string{"fastcgi_pass"}
+	)
+	phpb.Check = func(present map[string]bool) (string, string, string) {
+		switch {
+		case present["fastcgi_pass"] && present["command"]:
+			return diag.CodeInvalidValue, "a php_backend has either fastcgi_pass or command, not both",
+				"use fastcgi_pass for a PHP server that runs on its own, command to have LOTUS start php-cgi"
+		case !present["fastcgi_pass"] && !present["command"]:
+			return diag.CodeMissingRequired, "a php_backend needs fastcgi_pass or command",
+				`example: fastcgi_pass "unix:/run/php/php-fpm.sock"   or   command "C:/php/php-cgi.exe"`
+		case present["fastcgi_pass"]:
+			for _, d := range []string{"processes", "max_requests", "php_ini"} {
+				if present[d] {
+					return diag.CodeInvalidValue, d + " only applies to command, not to fastcgi_pass", "remove it, or start the processes with command"
+				}
+			}
+		}
+		return "", "", ""
+	}
 
 	// ---- security_headers ----
 

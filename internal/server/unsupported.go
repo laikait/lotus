@@ -20,22 +20,6 @@ func (e *UnsupportedError) Error() string {
 		strings.Join(e.Items, "\n  - ")
 }
 
-// usesPHP reports whether any route, or match block in one, runs PHP.
-func usesPHP(routes []model.Route) bool {
-	for i := range routes {
-		r := &routes[i]
-		if r.Actions.PHP != "" || usesPHP(r.Children) {
-			return true
-		}
-		for _, m := range r.Matches {
-			if m.Actions.PHP != "" {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // Unsupported returns what in cfg the server can't honor yet.
 func Unsupported(cfg *model.Config) []string {
 	var out []string
@@ -53,9 +37,6 @@ func Unsupported(cfg *model.Config) []string {
 	for _, s := range cfg.Sites {
 		if s.TLS == model.TLSAutomatic {
 			add("site %q: automatic certificates (ACME arrive with the TLS phase); use `tls manual` with a certificate", s.Name)
-		}
-		if usesPHP(s.Routes) || usesPHP(s.Named) {
-			add("site %q: php (FastCGI arrives with the PHP phase)", s.Name)
 		}
 		// Connection-level limits belong to a listener, not a site, so a site
 		// can't have its own values yet. Only the request body limit is per site.

@@ -1,0 +1,38 @@
+# PHP with processes that LOTUS starts and supervises: no PHP-FPM needed.
+# This is the way to run PHP on Windows, and works anywhere php-cgi exists.
+#
+#     lotus start -config configs/examples/php-managed.lotus
+#
+# Edit `command` to where php-cgi is installed (XAMPP: C:/xampp/php/php-cgi.exe).
+
+lotus_config_version 1
+
+server {
+    listen "http" {
+        address "127.0.0.1:8084"
+    }
+
+    php_backend "app" {
+        command "C:/xampp/php/php-cgi.exe"   # a bare name such as "php-cgi" is looked up in PATH
+        processes 4                            # simultaneous PHP requests; each process does one at a time
+        max_requests 500                       # replace a process after this many requests (0 = never)
+        # php_ini "C:/xampp/php/php.ini"       # optional: php-cgi -c
+        timeout 60s                            # how long PHP may take; also how long a request may wait for a free process
+    }
+
+    site "localhost" {
+        root "./php-app"
+        index [ "index.php", "index.html" ]
+        tls off
+
+        route ~ '\.php(/|$)' {
+            php "app"
+        }
+        route ^~ "/uploads/" {
+            php_deny true
+        }
+        route "/" {
+            try_files [ "{uri}", "{uri}/", "/index.php?{query}" ]
+        }
+    }
+}
