@@ -1,0 +1,4 @@
+lotus_config_version 1
+site "x" {
+    root "/var/www"
+}

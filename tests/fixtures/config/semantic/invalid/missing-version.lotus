@@ -1,0 +1,4 @@
+# expect: LOTUS-CFG-0114 2:1
+server {
+    listen "http" { address "0.0.0.0:80" }
+}

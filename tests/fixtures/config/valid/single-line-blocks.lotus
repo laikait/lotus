@@ -1,0 +1,7 @@
+lotus_config_version 1
+limits { max_request_body 10mib; header_timeout 15s }
+empty {}
+empty2 {
+}
+a 1; b 2;
+c 3

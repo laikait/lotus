@@ -1,0 +1,11 @@
+lotus_config_version 1
+
+server {
+    listen "http" {
+        address "0.0.0.0:8080"
+    }
+
+    site "localhost" {
+        root "/var/www/html"
+    }
+}

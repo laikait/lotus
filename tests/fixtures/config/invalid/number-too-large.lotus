@@ -1,0 +1,2 @@
+# expect: LOTUS-CFG-0006 2:11
+max_conns 99999999999999999999

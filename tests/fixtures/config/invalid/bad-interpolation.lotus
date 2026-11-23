@@ -1,0 +1,2 @@
+# expect: LOTUS-CFG-0015 2:7
+root "${Name}"

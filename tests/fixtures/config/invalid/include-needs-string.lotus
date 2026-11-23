@@ -1,0 +1,2 @@
+# expect: LOTUS-CFG-0012 2:9
+include foo

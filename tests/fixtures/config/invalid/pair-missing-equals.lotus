@@ -1,0 +1,5 @@
+# expect: LOTUS-CFG-0012 4:15
+lotus_config_version 1
+a {
+    "X-Frame" "SAMEORIGIN"
+}

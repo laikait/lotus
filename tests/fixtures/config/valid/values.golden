@@ -1,0 +1,45 @@
+File
+  Directive "lotus_config_version" @1:1
+    Int 1 "1" @1:22
+  Let $size @3:1 [blank]
+    Size 10485760 "10mib" @3:13
+  Let $names @4:1
+    List @4:14
+      String @4:16 [text:"a"]
+      String @4:21 [text:"b"]
+    trailing "# trailing comma is fine" @4:30
+  leading "# every kind of value" @6:1 [blank]
+  Directive "sample" @7:1
+    Int 42 "42" @7:8
+    Int 10000 "10_000" @7:11
+    Size 100000000 "100mb" @7:18
+    Size 524288 "512kib" @7:24
+    Duration 15000000000 "15s" @7:31
+    Duration 5400000000000 "1h30m" @7:35
+    Bool true @7:41
+    Bool false @7:46
+    Null @7:52
+    Ident auto @7:57
+  Directive "sample" @8:1
+    Variable $size @8:8
+    String @8:14 [var:x]
+    String @8:21 [text:"plain"]
+    RawString @8:29 [text:"raw \\d+ ${not_interpolated}"]
+  Directive "sample" @9:1
+    String @9:8 [text:"interp " var:size text:" and {uri} and " esc:"{" text:"literal" esc:"}"]
+    String @9:51 [text:"tab\there😀"]
+  Directive "sample" @10:1
+    Call env @10:8
+      String @10:12 [text:"HOME"]
+    Call env @10:20
+      String @10:24 [text:"HOME"]
+      String @10:32 [text:"/tmp"]
+    Call file @10:40
+      String @10:45 [text:"secret.txt"]
+  Directive "sample" @11:1
+    List @11:8
+      Int 1 "1" @12:5
+      Int 2 "2" @13:5
+      List @14:5
+        String @14:7 [text:"nested"]
+        Int 3 "3" @14:17

@@ -1,0 +1,24 @@
+# A minimal static website. Run it with:
+#
+#     lotus start -config configs/examples/static-site.lotus
+#
+# then open http://localhost:8080/ . Change `root` to your own directory.
+
+lotus_config_version 1
+
+server {
+    listen "http" {
+        address "127.0.0.1:8080"
+    }
+
+    site "localhost" {
+        root "./www"          # relative paths are relative to this file
+        index [ "index.html" ]
+        tls off
+
+        security_headers {
+            "X-Content-Type-Options" = "nosniff"
+            "X-Frame-Options" = "DENY"
+        }
+    }
+}

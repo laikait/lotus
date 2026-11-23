@@ -1,0 +1,10 @@
+lotus_config_version 1
+
+site "example.com" {
+    route "/"                { return 200 }
+    route = "/exact"         { return 200 }
+    route ^~ "/static/"      { return 200 }
+    route ~ '\.php$'         { return 200 }
+    route ~* '\.(png|jpg)$'  { return 200 }
+    match { client_ip !~ [ "10.0.0.0/8" ]; header "X-A" !~* 'bot' }
+}

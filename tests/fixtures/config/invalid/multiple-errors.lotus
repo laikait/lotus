@@ -1,0 +1,7 @@
+# expect: LOTUS-CFG-0004 5:4
+# expect: LOTUS-CFG-0005 6:3
+# expect: LOTUS-CFG-0012 7:1
+lotus_config_version 1
+a "\q"
+b 1x
+}

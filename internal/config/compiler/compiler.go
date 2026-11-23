@@ -1,0 +1,694 @@
+// Package compiler turns a validated configuration tree into the typed
+// model.Config the server runs on. It applies defaults, merges inherited
+// settings (server, site, route), compiles patterns, and performs the checks
+// that need a view of the whole configuration, such as duplicate hostnames.
+//
+// The input must come from the loader and have passed the validator, so
+// argument types are already known to be right.
+package compiler
+
+import (
+	"fmt"
+	"net/netip"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/laikait/lotus/internal/config/ast"
+	"github.com/laikait/lotus/internal/config/diag"
+	"github.com/laikait/lotus/internal/config/loader"
+	"github.com/laikait/lotus/internal/config/model"
+)
+
+// Compile builds the typed configuration. The returned Config is nil if any
+// error was found.
+func Compile(res *loader.Result) (*model.Config, []diag.Diagnostic) {
+	c := &compiler{diags: diag.NewList(diag.DefaultMaxErrors), base: baseDir(res.File.Path)}
+	cfg := &model.Config{
+		Version: res.Version,
+		Limits:  model.DefaultLimits(),
+		TLS:     model.TLS{MinVersion: model.DefaultTLSMinVersion},
+	}
+	if server := find(res.File.Statements, "server"); server != nil && server.Block != nil {
+		c.server(cfg, server)
+	}
+	c.crossChecks(cfg)
+	if c.diags.HasErrors() {
+		return nil, c.diags.Items()
+	}
+	return cfg, c.diags.Items()
+}
+
+// claim records where something that must be unique was declared.
+type claim struct {
+	key   string // the address or hostname
+	owner string // listener or site name, for messages
+	idx   int    // index of the owning site
+	pos   diag.Pos
+}
+
+type compiler struct {
+	// base is the directory of the root configuration file. Relative file paths
+	// in directives are resolved against it (grammar §6.8), not against the
+	// working directory, so the result does not depend on where lotus is started.
+	base      string
+	diags     *diag.List
+	listeners []claim
+	hosts     []claim
+	sitePos   []diag.Pos // position of each site's name
+}
+
+// ---- tree helpers ----
+
+func find(stmts []ast.Statement, name string) *ast.Directive {
+	for _, s := range stmts {
+		if d, ok := s.(*ast.Directive); ok && d.Name == name {
+			return d
+		}
+	}
+	return nil
+}
+
+func findAll(stmts []ast.Statement, name string) []*ast.Directive {
+	var out []*ast.Directive
+	for _, s := range stmts {
+		if d, ok := s.(*ast.Directive); ok && d.Name == name {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+func body(d *ast.Directive) []ast.Statement {
+	if d == nil || d.Block == nil {
+		return nil
+	}
+	return d.Block.Statements
+}
+
+// arg returns argument i, or nil.
+func arg(d *ast.Directive, i int) ast.Value {
+	if i < len(d.Args) {
+		return d.Args[i]
+	}
+	return nil
+}
+
+func str(v ast.Value) string {
+	switch x := v.(type) {
+	case *ast.String:
+		s, _ := x.Plain()
+		return s
+	case *ast.Ident:
+		return x.Name
+	}
+	return ""
+}
+
+// tmpl returns a string that will be expanded at request time. Text that must
+// stay literal (\{ and values from env() or file()) gets a
+// model.LiteralBrace marker before each '{', so it is never mistaken for a placeholder.
+func tmpl(v ast.Value) string {
+	s, ok := v.(*ast.String)
+	if !ok {
+		return str(v)
+	}
+	var b strings.Builder
+	for _, p := range s.Parts {
+		if p.Escaped {
+			b.WriteString(strings.ReplaceAll(p.Text, "{", model.LiteralBrace+"{"))
+		} else {
+			b.WriteString(p.Text)
+		}
+	}
+	return b.String()
+}
+
+func tmpls(v ast.Value) []string {
+	l, ok := v.(*ast.List)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(l.Items))
+	for _, it := range l.Items {
+		out = append(out, tmpl(it))
+	}
+	return out
+}
+
+func strs(v ast.Value) []string {
+	l, ok := v.(*ast.List)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(l.Items))
+	for _, it := range l.Items {
+		out = append(out, str(it))
+	}
+	return out
+}
+
+func integer(v ast.Value) int64 {
+	if n, ok := v.(*ast.Int); ok {
+		return n.Value
+	}
+	return 0
+}
+
+func boolean(v ast.Value) bool {
+	b, ok := v.(*ast.Bool)
+	return ok && b.Value
+}
+
+func size(v ast.Value) int64 {
+	if s, ok := v.(*ast.Size); ok {
+		return s.Bytes
+	}
+	return 0
+}
+
+func dur(v ast.Value) time.Duration {
+	if d, ok := v.(*ast.Duration); ok {
+		return d.Value
+	}
+	return 0
+}
+
+func isNull(v ast.Value) bool { _, ok := v.(*ast.Null); return ok }
+
+// operatorAndRest splits an optional leading operator from the arguments.
+func operatorAndRest(args []ast.Value) (op string, rest []ast.Value) {
+	if len(args) > 0 {
+		if o, ok := args[0].(*ast.Operator); ok {
+			return o.Op, args[1:]
+		}
+	}
+	return "", args
+}
+
+func prefixes(v ast.Value) []netip.Prefix {
+	var out []netip.Prefix
+	for _, s := range strs(v) {
+		if p, err := netip.ParsePrefix(s); err == nil {
+			out = append(out, p.Masked())
+		} else if a, err := netip.ParseAddr(s); err == nil {
+			out = append(out, netip.PrefixFrom(a, a.BitLen()))
+		}
+	}
+	return out
+}
+
+// ---- server ----
+
+func (c *compiler) server(cfg *model.Config, server *ast.Directive) {
+	for _, st := range body(server) {
+		d, ok := st.(*ast.Directive)
+		if !ok {
+			continue
+		}
+		switch d.Name {
+		case "runtime":
+			for _, s := range body(d) {
+				if r, ok := s.(*ast.Directive); ok {
+					switch r.Name {
+					case "max_procs":
+						cfg.Runtime.MaxProcs = int(integer(arg(r, 0))) // "auto" is not an Int: stays 0
+					case "memory_limit":
+						cfg.Runtime.MemoryLimit = size(arg(r, 0))
+					}
+				}
+			}
+		case "listen":
+			cfg.Listeners = append(cfg.Listeners, c.listener(d))
+		case "trusted_proxies":
+			cfg.TrustedProxies = prefixes(arg(d, 0))
+		case "limits":
+			cfg.Limits = applyLimits(cfg.Limits, d)
+		case "tls":
+			cfg.TLS = tlsSettings(cfg.TLS, d)
+		case "php_backend":
+			cfg.PHPBackends = append(cfg.PHPBackends, c.phpBackend(d))
+		case "control":
+			for _, s := range body(d) {
+				if r, ok := s.(*ast.Directive); ok {
+					switch r.Name {
+					case "socket":
+						cfg.Control.Socket = c.path(str(arg(r, 0)))
+					case "viewer_group":
+						cfg.Control.ViewerGroup = str(arg(r, 0))
+					}
+				}
+			}
+		}
+	}
+	// Sites are compiled after everything else so they can inherit server settings.
+	for _, d := range findAll(body(server), "site") {
+		cfg.Sites = append(cfg.Sites, c.site(cfg, d))
+	}
+}
+
+func (c *compiler) listener(d *ast.Directive) model.Listener {
+	l := model.Listener{Name: str(arg(d, 0))}
+	for _, s := range body(d) {
+		if r, ok := s.(*ast.Directive); ok {
+			switch r.Name {
+			case "address":
+				l.Address = str(arg(r, 0))
+				c.listeners = append(c.listeners, claim{key: l.Address, owner: l.Name, pos: arg(r, 0).Position()})
+			case "protocol":
+				l.HTTPS = str(arg(r, 0)) == "https"
+			case "http3":
+				l.HTTP3 = boolean(arg(r, 0))
+			}
+		}
+	}
+	return l
+}
+
+// applyLimits overlays the limits in d onto base.
+func applyLimits(base model.Limits, d *ast.Directive) model.Limits {
+	for _, s := range body(d) {
+		r, ok := s.(*ast.Directive)
+		if !ok {
+			continue
+		}
+		switch r.Name {
+		case "max_connections":
+			base.MaxConnections = int(integer(arg(r, 0)))
+		case "max_request_body":
+			base.MaxRequestBody = size(arg(r, 0))
+		case "max_header_bytes":
+			base.MaxHeaderBytes = size(arg(r, 0))
+		case "header_timeout":
+			base.HeaderTimeout = model.Duration(dur(arg(r, 0)))
+		case "read_timeout":
+			base.ReadTimeout = model.Duration(dur(arg(r, 0)))
+		case "write_timeout":
+			base.WriteTimeout = model.Duration(dur(arg(r, 0)))
+		case "idle_timeout":
+			base.IdleTimeout = model.Duration(dur(arg(r, 0)))
+		}
+	}
+	return base
+}
+
+func tlsSettings(base model.TLS, d *ast.Directive) model.TLS {
+	for _, s := range body(d) {
+		r, ok := s.(*ast.Directive)
+		if !ok {
+			continue
+		}
+		switch r.Name {
+		case "min_version":
+			base.MinVersion = str(arg(r, 0))
+		case "acme":
+			a := &model.ACME{}
+			for _, as := range body(r) {
+				if f, ok := as.(*ast.Directive); ok {
+					switch f.Name {
+					case "email":
+						a.Email = str(arg(f, 0))
+					case "ca":
+						a.CA = str(arg(f, 0))
+					case "eab_key_id":
+						a.EABKeyID = str(arg(f, 0))
+					case "eab_hmac_key":
+						a.EABHMACKey = model.Secret(str(arg(f, 0)))
+					}
+				}
+			}
+			base.ACME = a
+		}
+	}
+	return base
+}
+
+func (c *compiler) phpBackend(d *ast.Directive) model.PHPBackend {
+	b := model.PHPBackend{Name: str(arg(d, 0)), Timeout: model.Duration(model.DefaultPHPTimeout)}
+	for _, s := range body(d) {
+		if r, ok := s.(*ast.Directive); ok {
+			switch r.Name {
+			case "fastcgi_pass":
+				addr := str(arg(r, 0))
+				if rest, isUnix := strings.CutPrefix(addr, "unix:"); isUnix {
+					b.Network, b.Address = "unix", c.path(rest)
+				} else {
+					b.Network, b.Address = "tcp", addr
+				}
+			case "timeout":
+				b.Timeout = model.Duration(dur(arg(r, 0)))
+			}
+		}
+	}
+	return b
+}
+
+// ---- sites ----
+
+type inherited struct {
+	root    string
+	index   []string
+	maxBody int64
+}
+
+func (c *compiler) site(cfg *model.Config, d *ast.Directive) model.Site {
+	s := model.Site{
+		Name:     strings.ToLower(str(arg(d, 0))),
+		Index:    []string{"index.html"},
+		Limits:   cfg.Limits,
+		Symlinks: model.SymlinksOwnerMatch,
+		Dotfiles: model.DotfilesDeny,
+	}
+	idx := len(cfg.Sites)
+	c.sitePos = append(c.sitePos, arg(d, 0).Position())
+	c.hosts = append(c.hosts, claim{key: s.Name, owner: s.Name, idx: idx, pos: arg(d, 0).Position()})
+	sawListeners := false
+	for _, st := range body(d) {
+		r, ok := st.(*ast.Directive)
+		if !ok {
+			continue
+		}
+		switch r.Name {
+		case "listeners":
+			s.Listeners, sawListeners = strs(arg(r, 0)), true
+		case "aliases":
+			if l, ok := arg(r, 0).(*ast.List); ok {
+				for _, item := range l.Items {
+					a := strings.ToLower(str(item))
+					s.Aliases = append(s.Aliases, a)
+					c.hosts = append(c.hosts, claim{key: a, owner: s.Name, idx: idx, pos: item.Position()})
+				}
+			}
+		case "tls":
+			s.TLS = str(arg(r, 0))
+		case "certificate":
+			s.Certificate = c.path(str(arg(r, 0)))
+		case "certificate_key":
+			s.CertificateKey = c.path(str(arg(r, 0)))
+		case "symlinks":
+			s.Symlinks = str(arg(r, 0))
+		case "dotfiles":
+			s.Dotfiles = str(arg(r, 0))
+		case "root":
+			s.Root = c.path(str(arg(r, 0)))
+		case "index":
+			s.Index = strs(arg(r, 0))
+		case "limits":
+			s.Limits = applyLimits(s.Limits, r)
+		case "logs":
+			s.Logs = c.logs(r)
+		case "security_headers":
+			for _, ps := range body(r) {
+				if p, ok := ps.(*ast.Pair); ok {
+					s.SecurityHeaders = append(s.SecurityHeaders, model.Header{Name: str(p.Key), Value: str(p.Value)})
+				}
+			}
+		}
+	}
+	if !sawListeners {
+		for _, l := range cfg.Listeners {
+			s.Listeners = append(s.Listeners, l.Name)
+		}
+	}
+	if s.TLS == "" {
+		s.TLS = model.TLSOff
+		for _, name := range s.Listeners {
+			for _, l := range cfg.Listeners {
+				if l.Name == name && l.HTTPS {
+					s.TLS = model.TLSAutomatic
+				}
+			}
+		}
+	}
+
+	in := inherited{root: s.Root, index: s.Index, maxBody: s.Limits.MaxRequestBody}
+	for _, rd := range findAll(body(d), "route") {
+		route, ok := c.route(rd, in)
+		if !ok {
+			continue
+		}
+		if route.Kind == model.RouteNamed {
+			s.Named = append(s.Named, route)
+		} else {
+			s.Routes = append(s.Routes, route)
+		}
+	}
+	return s
+}
+
+func (c *compiler) logs(d *ast.Directive) model.Logs {
+	var l model.Logs
+	target := func(v ast.Value) model.LogTarget {
+		if isNull(v) {
+			return model.LogTarget{Off: true}
+		}
+		return model.LogTarget{Path: c.path(str(v))}
+	}
+	for _, s := range body(d) {
+		if r, ok := s.(*ast.Directive); ok {
+			switch r.Name {
+			case "access":
+				l.Access = target(arg(r, 0))
+			case "error":
+				l.Error = target(arg(r, 0))
+			}
+		}
+	}
+	return l
+}
+
+// ---- routes ----
+
+func (c *compiler) route(d *ast.Directive, in inherited) (model.Route, bool) {
+	op, rest := operatorAndRest(d.Args)
+	if len(rest) != 1 {
+		return model.Route{}, false
+	}
+	path := str(rest[0])
+	r := model.Route{Path: path}
+	switch op {
+	case "":
+		r.Kind = model.RoutePrefix
+		if strings.HasPrefix(path, "@") {
+			r.Kind = model.RouteNamed
+		}
+	case "=":
+		r.Kind = model.RouteExact
+	case "^~":
+		r.Kind = model.RouteFinalPrefix
+	case "~", "~*":
+		r.Kind = model.RouteRegex
+		pattern := path
+		if op == "~*" {
+			r.Kind, pattern = model.RouteRegexFold, "(?i)"+path
+		}
+		re, err := regexp.Compile(pattern)
+		if err != nil { // the validator checked this; keep the compiler honest
+			c.diags.Error(rest[0].Position(), diag.CodeInvalidRegex, "invalid regular expression")
+			return model.Route{}, false
+		}
+		r.Regexp = re
+	}
+
+	r.Root, r.Index, r.MaxRequestBody = in.root, in.index, in.maxBody
+	for _, st := range body(d) {
+		x, ok := st.(*ast.Directive)
+		if !ok {
+			continue
+		}
+		switch x.Name {
+		case "root":
+			r.Root = c.path(str(arg(x, 0)))
+		case "index":
+			r.Index = strs(arg(x, 0))
+		case "max_request_body":
+			r.MaxRequestBody = size(arg(x, 0))
+		}
+	}
+	r.Actions = actions(body(d))
+
+	childIn := inherited{root: r.Root, index: r.Index, maxBody: r.MaxRequestBody}
+	for _, st := range body(d) {
+		x, ok := st.(*ast.Directive)
+		if !ok {
+			continue
+		}
+		switch x.Name {
+		case "route":
+			if child, ok := c.route(x, childIn); ok {
+				r.Children = append(r.Children, child)
+			}
+		case "match":
+			if m, ok := c.match(x); ok {
+				r.Matches = append(r.Matches, m)
+			}
+		}
+	}
+	return r, true
+}
+
+func actions(stmts []ast.Statement) model.Actions {
+	var a model.Actions
+	for _, st := range stmts {
+		d, ok := st.(*ast.Directive)
+		if !ok {
+			continue
+		}
+		switch d.Name {
+		case "try_files":
+			a.TryFiles = tmpls(arg(d, 0))
+		case "php":
+			a.PHP = str(arg(d, 0))
+		case "php_deny":
+			a.PHPDeny = boolean(arg(d, 0))
+		case "return":
+			a.Return = &model.Return{Status: int(integer(arg(d, 0))), Target: tmpl(arg(d, 1))}
+		}
+	}
+	return a
+}
+
+func (c *compiler) match(d *ast.Directive) (model.Match, bool) {
+	var m model.Match
+	ok := true
+	for _, st := range body(d) {
+		x, isDir := st.(*ast.Directive)
+		if !isDir {
+			continue
+		}
+		switch x.Name {
+		case "method":
+			m.Methods = strs(arg(x, 0))
+		case "client_ip":
+			op, rest := operatorAndRest(x.Args)
+			if len(rest) == 1 {
+				m.ClientIP = &model.ClientIPCond{Not: op == "!~", Networks: prefixes(rest[0])}
+			}
+		case "header", "query", "cookie":
+			p, good := c.pattern(x)
+			if !good {
+				ok = false
+				continue
+			}
+			switch x.Name {
+			case "header":
+				m.Headers = append(m.Headers, p)
+			case "query":
+				m.Query = append(m.Query, p)
+			default:
+				m.Cookies = append(m.Cookies, p)
+			}
+		case "scheme":
+			m.Scheme = str(arg(x, 0))
+		case "host":
+			for _, h := range strs(arg(x, 0)) {
+				m.Hosts = append(m.Hosts, strings.ToLower(h))
+			}
+		}
+	}
+	m.Actions = actions(body(d))
+	return m, ok
+}
+
+func (c *compiler) pattern(d *ast.Directive) (model.Pattern, bool) {
+	if len(d.Args) < 2 {
+		return model.Pattern{}, false
+	}
+	p := model.Pattern{Name: str(d.Args[0]), Op: "="}
+	valueArg := d.Args[1]
+	if o, ok := d.Args[1].(*ast.Operator); ok && len(d.Args) == 3 {
+		p.Op, valueArg = o.Op, d.Args[2]
+	}
+	p.Value = str(valueArg)
+	switch p.Op {
+	case "~", "~*", "!~", "!~*":
+		pattern := p.Value
+		if strings.HasSuffix(p.Op, "*") {
+			pattern = "(?i)" + pattern
+		}
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			c.diags.Error(valueArg.Position(), diag.CodeInvalidRegex, "invalid regular expression")
+			return p, false
+		}
+		p.Regexp = re
+	}
+	return p, true
+}
+
+// ---- cross checks ----
+
+func (c *compiler) crossChecks(cfg *model.Config) {
+	// Listener addresses must be unique.
+	seenAddr := map[string]claim{}
+	for _, cl := range c.listeners {
+		if prev, dup := seenAddr[cl.key]; dup {
+			c.diags.ErrorHint(cl.pos, diag.CodeDuplicateAddress,
+				fmt.Sprintf("listeners %q and %q both bind %s", prev.owner, cl.owner, cl.key),
+				fmt.Sprintf("first bound at %s; each listener needs its own address and port", prev.pos))
+			continue
+		}
+		seenAddr[cl.key] = cl
+	}
+
+	// A hostname can belong to only one site (compared case-insensitively;
+	// names were lowercased when sites were compiled).
+	seenHost := map[string]claim{}
+	for _, cl := range c.hosts {
+		if prev, dup := seenHost[cl.key]; dup {
+			if prev.idx != cl.idx {
+				c.diags.ErrorHint(cl.pos, diag.CodeDuplicateHost,
+					fmt.Sprintf("hostname %q is claimed by both site %q and site %q", cl.key, prev.owner, cl.owner),
+					fmt.Sprintf("first claimed at %s; hostnames are compared case-insensitively", prev.pos))
+			}
+			continue
+		}
+		seenHost[cl.key] = cl
+	}
+
+	for i, s := range cfg.Sites {
+		pos := c.sitePos[i]
+		if len(s.Listeners) == 0 {
+			c.diags.ErrorHint(pos, diag.CodeNoListener,
+				fmt.Sprintf("site %q is attached to no listener", s.Name),
+				"define a listen block, or list existing ones with `listeners [ ... ]`")
+		}
+		for _, ln := range s.Listeners {
+			for _, l := range cfg.Listeners {
+				if l.Name == ln && l.HTTPS && s.TLS == model.TLSOff {
+					c.diags.ErrorHint(pos, diag.CodeTLSOffOnHTTPS,
+						fmt.Sprintf("site %q has tls off but is attached to the https listener %q", s.Name, ln),
+						"an https listener can only serve sites with TLS; use `tls manual` or `tls automatic`, or attach the site only to http listeners")
+				}
+			}
+		}
+		if s.TLS == model.TLSAutomatic && cfg.TLS.ACME == nil {
+			c.diags.ErrorHint(pos, diag.CodeSiteNoACME,
+				fmt.Sprintf("site %q uses automatic TLS but there is no acme block", s.Name),
+				"add `tls { acme { email \"you@example.com\" } }` to the server block, or set `tls manual` or `tls off` on the site")
+		}
+	}
+}
+
+// baseDir returns the absolute directory of the root configuration file.
+func baseDir(rootFile string) string {
+	dir := filepath.Dir(rootFile)
+	if abs, err := filepath.Abs(dir); err == nil {
+		return abs
+	}
+	return dir
+}
+
+// path resolves a file path from the configuration: absolute paths are only
+// cleaned, relative ones are taken relative to the root configuration file's
+// directory. An empty path stays empty.
+func (c *compiler) path(p string) string {
+	if p == "" {
+		return ""
+	}
+	if filepath.IsAbs(p) {
+		return filepath.Clean(p)
+	}
+	return filepath.Join(c.base, p)
+}

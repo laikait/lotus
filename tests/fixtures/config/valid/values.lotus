@@ -1,0 +1,15 @@
+lotus_config_version 1
+
+let $size = 10mib
+let $names = [ "a", "b", ]   # trailing comma is fine
+
+# every kind of value
+sample 42 10_000 100mb 512kib 15s 1h30m true false null auto
+sample $size "${x}" "plain" 'raw \d+ ${not_interpolated}'
+sample "interp ${size} and {uri} and \{literal\}" "tab\there\u{1F600}"
+sample env("HOME") env("HOME", "/tmp") file("secret.txt")
+sample [
+    1,
+    2,
+    [ "nested", 3 ],
+]

@@ -1,0 +1,6 @@
+# expect: LOTUS-CFG-0133 5:28
+lotus_config_version 1
+server {
+    listen "http" { address "0.0.0.0:80" }
+    site "a" { listeners [ "nope" ] }
+}

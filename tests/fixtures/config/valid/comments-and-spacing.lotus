@@ -1,0 +1,18 @@
+# file header
+
+lotus_config_version 1   # trailing on the version line
+
+
+# comment above a block
+server {   # comment after the brace
+    listen "http" {
+        address "0.0.0.0:80"   # trailing
+
+        # standalone before protocol
+        protocol http
+        # dangling in listen
+    }
+
+    # dangling in server
+}
+# dangling at end of file

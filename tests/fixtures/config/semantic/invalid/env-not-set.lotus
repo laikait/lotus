@@ -1,0 +1,6 @@
+# expect: LOTUS-CFG-0109 5:24
+lotus_config_version 1
+server {
+    listen "http" { address "0.0.0.0:80" }
+    tls { acme { email env("DEFINITELY_NOT_SET_LOTUS") } }
+}

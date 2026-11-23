@@ -1,0 +1,2 @@
+# expect: LOTUS-CFG-0018 2:6
+x env("A"

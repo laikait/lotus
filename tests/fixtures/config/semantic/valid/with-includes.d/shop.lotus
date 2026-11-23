@@ -1,0 +1,4 @@
+site "shop.example.com" {
+    root "/var/www/shop"
+    include "shop-routes.inc"
+}

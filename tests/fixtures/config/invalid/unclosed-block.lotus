@@ -1,0 +1,4 @@
+# expect: LOTUS-CFG-0017 3:6
+lotus_config_version 1
+site {
+    root "/x"

@@ -1,0 +1,96 @@
+File
+  Directive "lotus_config_version" @1:1
+    Int 1 "1" @1:22
+  Let $webroot @3:1 [blank]
+    String @3:16 [text:"/var/www"]
+  Directive "server" @5:1 [blank]
+    Block @5:8-62:1
+      Directive "runtime" @6:5
+        Block @6:13-9:5
+          Directive "max_procs" @7:9
+            Ident auto @7:19
+          Directive "memory_limit" @8:9
+            Size 2147483648 "2gib" @8:22
+      Directive "listen" @11:5 [blank]
+        String @11:12 [text:"http"]
+        Block @11:19-14:5
+          Directive "address" @12:9
+            String @12:17 [text:"0.0.0.0:80"]
+          Directive "protocol" @13:9
+            Ident http @13:18
+      Directive "listen" @16:5 [blank]
+        String @16:12 [text:"https"]
+        Block @16:20-20:5
+          Directive "address" @17:9
+            String @17:17 [text:"0.0.0.0:443"]
+          Directive "protocol" @18:9
+            Ident https @18:18
+          Directive "http3" @19:9
+            Bool true @19:15
+      Directive "trusted_proxies" @22:5 [blank]
+        List @22:21
+          String @22:23 [text:"10.0.0.0/8"]
+      Directive "tls" @24:5 [blank]
+        Block @24:9-29:5
+          Directive "min_version" @25:9
+            String @25:21 [text:"1.2"]
+          Directive "acme" @26:9
+            Block @26:14-28:9
+              Directive "email" @27:13
+                Call env @27:19
+                  String @27:23 [text:"LOTUS_ACME_EMAIL"]
+      Directive "php_backend" @31:5 [blank]
+        String @31:17 [text:"php83"]
+        Block @31:25-34:5
+          Directive "fastcgi_pass" @32:9
+            String @32:22 [text:"unix:/run/php/php8.3-fpm-example.sock"]
+          Directive "timeout" @33:9
+            Duration 60000000000 "60s" @33:17
+      Directive "site" @36:5 [blank]
+        String @36:10 [text:"example.com"]
+        Block @36:24-61:5
+          Directive "listeners" @37:9
+            List @37:19
+              String @37:21 [text:"http"]
+              String @37:29 [text:"https"]
+          Directive "aliases" @38:9
+            List @38:17
+              String @38:19 [text:"www.example.com"]
+          Directive "tls" @39:9
+            Ident automatic @39:13
+          Directive "root" @40:9
+            String @40:14 [var:webroot text:"/example/public"]
+          Directive "index" @41:9
+            List @41:15
+              String @41:17 [text:"index.php"]
+              String @41:30 [text:"index.html"]
+          Directive "security_headers" @43:9 [blank]
+            Block @43:26-46:9
+              Pair @44:13
+                String @44:13 [text:"X-Frame-Options"]
+                String @44:33 [text:"SAMEORIGIN"]
+              Pair @45:13
+                String @45:13 [text:"Referrer-Policy"]
+                String @45:33 [text:"strict-origin-when-cross-origin"]
+          Directive "route" @48:9 [blank]
+            String @48:15 [text:"/"]
+            Block @48:19-50:9
+              Directive "try_files" @49:13
+                List @49:23
+                  String @49:25 [text:"{uri}"]
+                  String @49:34 [text:"{uri}/"]
+                  String @49:44 [text:"/index.php?{query}"]
+          Directive "route" @52:9 [blank]
+            Operator ~ @52:15
+            RawString @52:17 [text:"\\.php$"]
+            Block @52:26-54:9
+              Directive "php" @53:13
+                String @53:17 [text:"php83"]
+          Directive "route" @56:9 [blank]
+            Operator ^~ @56:15
+            String @56:18 [text:"/uploads/"]
+            Block @56:30-58:9
+              Directive "php_deny" @57:13
+                Bool true @57:22
+          Include @60:9 [blank]
+            String @60:17 [text:"sites.d/example/*.lotus"]

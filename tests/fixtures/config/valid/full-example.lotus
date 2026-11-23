@@ -1,0 +1,62 @@
+lotus_config_version 1
+
+let $webroot = "/var/www"
+
+server {
+    runtime {
+        max_procs auto
+        memory_limit 2gib
+    }
+
+    listen "http" {
+        address "0.0.0.0:80"
+        protocol http
+    }
+
+    listen "https" {
+        address "0.0.0.0:443"
+        protocol https
+        http3 true
+    }
+
+    trusted_proxies [ "10.0.0.0/8" ]
+
+    tls {
+        min_version "1.2"
+        acme {
+            email env("LOTUS_ACME_EMAIL")
+        }
+    }
+
+    php_backend "php83" {
+        fastcgi_pass "unix:/run/php/php8.3-fpm-example.sock"
+        timeout 60s
+    }
+
+    site "example.com" {
+        listeners [ "http", "https" ]
+        aliases [ "www.example.com" ]
+        tls automatic
+        root "${webroot}/example/public"
+        index [ "index.php", "index.html" ]
+
+        security_headers {
+            "X-Frame-Options" = "SAMEORIGIN"
+            "Referrer-Policy" = "strict-origin-when-cross-origin"
+        }
+
+        route "/" {
+            try_files [ "{uri}", "{uri}/", "/index.php?{query}" ]
+        }
+
+        route ~ '\.php$' {
+            php "php83"
+        }
+
+        route ^~ "/uploads/" {
+            php_deny true
+        }
+
+        include "sites.d/example/*.lotus"
+    }
+}

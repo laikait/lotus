@@ -1,0 +1,19 @@
+File
+  Directive "lotus_config_version" @1:1
+    Int 1 "1" @1:22
+  Directive "limits" @2:1
+    Block @2:8-2:53
+      Directive "max_request_body" @2:10
+        Size 10485760 "10mib" @2:27
+      Directive "header_timeout" @2:34
+        Duration 15000000000 "15s" @2:49
+  Directive "empty" @3:1
+    Block @3:7-3:8
+  Directive "empty2" @4:1
+    Block @4:8-5:1
+  Directive "a" @6:1
+    Int 1 "1" @6:3
+  Directive "b" @6:6
+    Int 2 "2" @6:8
+  Directive "c" @7:1
+    Int 3 "3" @7:3

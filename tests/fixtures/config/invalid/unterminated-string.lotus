@@ -1,0 +1,3 @@
+# expect: LOTUS-CFG-0003 3:6
+lotus_config_version 1
+root "/var/www

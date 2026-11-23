@@ -1,0 +1,5 @@
+# expect: LOTUS-CFG-0016 4:5
+lotus_config_version 1
+site "x" {
+    let $a = 1
+}

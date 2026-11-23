@@ -1,0 +1,57 @@
+# Routing: redirects, try_files, named routes and match blocks.
+#
+#     lotus start -config configs/examples/routes.lotus
+#
+# Try:  curl -i http://127.0.0.1:8081/old
+#       curl -i http://127.0.0.1:8081/no/such/page
+#       curl -i -X POST http://127.0.0.1:8081/admin/
+#
+# How a route is chosen: docs/architecture/routing-precedence.md
+
+lotus_config_version 1
+
+server {
+    listen "http" {
+        address "127.0.0.1:8081"
+    }
+
+    site "localhost" {
+        root "./www"
+        tls off
+
+        # Exact match: only "/old".
+        route = "/old" {
+            return 301 "/"
+        }
+
+        # Regex: /user/42 -> /profile?id=42  ({re.1} is the first capture group).
+        route ~ '^/user/(\d+)$' {
+            return 302 "/profile?id={re.1}"
+        }
+
+        # Files that exist are served; anything else falls back to the front page.
+        route "/" {
+            try_files [ "{uri}", "{uri}/", "@notfound" ]
+        }
+
+        # Final prefix: regex routes are skipped under /static/.
+        route ^~ "/static/" {
+            try_files [ "{uri}", "=404" ]
+        }
+
+        # A match block changes what a route does when its conditions hold.
+        route "/admin/" {
+            return 200 "admin area"
+
+            match {
+                method [ "POST", "PUT", "DELETE" ]
+                return 405 "read only"
+            }
+        }
+
+        # Named routes are reached only by try_files, never by a request path.
+        route "@notfound" {
+            return 404 "nothing here"
+        }
+    }
+}

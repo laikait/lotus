@@ -1,0 +1,6 @@
+lotus_config_version 1
+security_headers {
+    "X-Frame-Options" = "SAMEORIGIN"
+    "Referrer-Policy" = 'strict-origin'
+    "X-List" = [ "a", "b" ]
+}

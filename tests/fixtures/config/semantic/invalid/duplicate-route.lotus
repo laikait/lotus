@@ -1,0 +1,9 @@
+# expect: LOTUS-CFG-0301 7:15
+lotus_config_version 1
+server {
+    listen "http" { address "0.0.0.0:80" }
+    site "a" {
+        route "/a/" { return 200 }
+        route "/a/" { return 200 }
+    }
+}

@@ -1,0 +1,21 @@
+File
+  leading "# file header" @1:1
+  Directive "lotus_config_version" @3:1 [blank]
+    Int 1 "1" @3:22
+    trailing "# trailing on the version line" @3:26
+  leading "# comment above a block" @6:1 [blank]
+  Directive "server" @7:1
+    Block @7:8-17:1
+      leading "# comment after the brace" @7:12
+      Directive "listen" @8:5
+        String @8:12 [text:"http"]
+        Block @8:19-14:5
+          Directive "address" @9:9
+            String @9:17 [text:"0.0.0.0:80"]
+            trailing "# trailing" @9:32
+          leading "# standalone before protocol" @11:9 [blank]
+          Directive "protocol" @12:9
+            Ident http @12:18
+          dangling "# dangling in listen" @13:9
+      dangling "# dangling in server" @16:5 [blank]
+  dangling "# dangling at end of file" @18:1

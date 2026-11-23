@@ -1,0 +1,54 @@
+lotus_config_version 1
+
+let $webroot = "/var/www"
+
+server {
+    trusted_proxies [ "10.0.0.0/8", "fd00::/8" ]
+
+    tls {
+        min_version "1.3"
+        acme { email "admin@example.com" }
+    }
+
+    limits {
+        max_connections 5000
+        max_request_body 64mib
+        header_timeout 10s
+    }
+
+    listen "https" {
+        address "[::]:443"
+        protocol https
+        http3 true
+    }
+
+    php_backend "php83" {
+        fastcgi_pass "unix:/run/php/php8.3-fpm-blog.sock"
+        timeout 30s
+    }
+
+    site "blog.example.com" {
+        listeners [ "https" ]
+        root "${webroot}/blog/public"
+        index [ "index.php" ]
+
+        route "/" {
+            try_files [ "{uri}", "{uri}/", "/index.php?{query}" ]
+        }
+
+        route ~ '\.php$' {
+            php "php83"
+        }
+
+        route ^~ "/wp-content/uploads/" {
+            php_deny true
+        }
+
+        route "/admin/" {
+            match {
+                client_ip !~ [ "192.0.2.0/24" ]
+                return 403
+            }
+        }
+    }
+}

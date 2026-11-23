@@ -1,0 +1,45 @@
+File
+  Directive "lotus_config_version" @1:1
+    Int 1 "1" @1:22
+  Directive "site" @3:1 [blank]
+    String @3:6 [text:"example.com"]
+    Block @3:20-10:1
+      Directive "route" @4:5
+        String @4:11 [text:"/"]
+        Block @4:30-4:43
+          Directive "return" @4:32
+            Int 200 "200" @4:39
+      Directive "route" @5:5
+        Operator = @5:11
+        String @5:13 [text:"/exact"]
+        Block @5:30-5:43
+          Directive "return" @5:32
+            Int 200 "200" @5:39
+      Directive "route" @6:5
+        Operator ^~ @6:11
+        String @6:14 [text:"/static/"]
+        Block @6:30-6:43
+          Directive "return" @6:32
+            Int 200 "200" @6:39
+      Directive "route" @7:5
+        Operator ~ @7:11
+        RawString @7:13 [text:"\\.php$"]
+        Block @7:30-7:43
+          Directive "return" @7:32
+            Int 200 "200" @7:39
+      Directive "route" @8:5
+        Operator ~* @8:11
+        RawString @8:14 [text:"\\.(png|jpg)$"]
+        Block @8:30-8:43
+          Directive "return" @8:32
+            Int 200 "200" @8:39
+      Directive "match" @9:5
+        Block @9:11-9:67
+          Directive "client_ip" @9:13
+            Operator !~ @9:23
+            List @9:26
+              String @9:28 [text:"10.0.0.0/8"]
+          Directive "header" @9:44
+            String @9:51 [text:"X-A"]
+            Operator !~* @9:57
+            RawString @9:61 [text:"bot"]

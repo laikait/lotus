@@ -1,0 +1,4 @@
+# expect: LOTUS-CFG-0132 3:1
+lotus_config_version 1
+server {
+}
