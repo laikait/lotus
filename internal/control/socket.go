@@ -33,6 +33,18 @@ func DefaultSocketPath() string {
 	return filepath.Join(os.TempDir(), "lotus-"+strconv.Itoa(os.Geteuid()), "control.sock")
 }
 
+// maxSocketPath is the longest Unix socket path the system accepts (the size
+// of sockaddr_un.sun_path minus the terminating NUL). Linux and Windows allow
+// 108 bytes; macOS and the BSDs only 104. Longer paths make bind fail with the
+// unhelpful "invalid argument".
+func maxSocketPath() int {
+	switch runtime.GOOS {
+	case "linux", "android", "windows":
+		return 107
+	}
+	return 103
+}
+
 // Listen creates the control socket at path.
 //
 // The directory is created if it is missing (owner-only) and must not be
@@ -43,6 +55,9 @@ func DefaultSocketPath() string {
 func Listen(path string) (net.Listener, error) {
 	if !filepath.IsAbs(path) {
 		return nil, fmt.Errorf("the control socket path %q must be absolute", path)
+	}
+	if limit := maxSocketPath(); len(path) > limit {
+		return nil, fmt.Errorf("the control socket path is %d bytes long, but this system allows at most %d: use a shorter path (control { socket ... } or --control)", len(path), limit)
 	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o750); err != nil {

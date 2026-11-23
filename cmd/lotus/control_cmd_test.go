@@ -9,10 +9,28 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
+
+// socketDir returns a temporary directory with a short path. Unix socket paths
+// are limited to 104 bytes on macOS, and its default temp directory is longer
+// than t.TempDir() can afford once the test name is added.
+func socketDir(t *testing.T) string {
+	t.Helper()
+	base := ""
+	if runtime.GOOS != "windows" {
+		base = "/tmp"
+	}
+	dir, err := os.MkdirTemp(base, "lt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
+}
 
 // controlled is a running server with a control socket in a temp directory.
 type controlled struct {
@@ -47,7 +65,7 @@ func (c *controlled) waitExit() (code int, ok bool) {
 func startControlled(t *testing.T) *controlled {
 	t.Helper()
 	port := freePort(t)
-	dir := t.TempDir()
+	dir := socketDir(t)
 	sock := filepath.Join(dir, "ctl", "control.sock")
 	cfgPath, root := siteConfig(t, port, fmt.Sprintf(`    control { socket "%s" }`, filepath.ToSlash(sock)))
 
@@ -252,7 +270,7 @@ func TestControlStopNow(t *testing.T) {
 }
 
 func TestControlUnreachableAndUsage(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "none.sock")
+	sock := filepath.Join(socketDir(t), "none.sock")
 	for _, cmd := range []string{"status", "reload", "stop"} {
 		code, out, errOut := runCLI(cmd, "--control", sock)
 		if code != exitUnreachable || out != "" || !strings.Contains(errOut, sock) {
@@ -268,7 +286,7 @@ func TestControlUnreachableAndUsage(t *testing.T) {
 }
 
 func TestExplicitControlSocketFailureStopsTheStart(t *testing.T) {
-	dir := t.TempDir()
+	dir := socketDir(t)
 	blocker := filepath.Join(dir, "file")
 	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)

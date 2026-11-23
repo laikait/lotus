@@ -10,8 +10,35 @@ import (
 	"testing"
 )
 
+// socketDir returns a temporary directory with a short path. Unix socket paths
+// are limited to 104 bytes on macOS, whose default temp directory is long.
+func socketDir(t *testing.T) string {
+	t.Helper()
+	base := ""
+	if runtime.GOOS != "windows" {
+		base = "/tmp"
+	}
+	dir, err := os.MkdirTemp(base, "lt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
+}
+
+func TestListenRefusesAPathThatIsTooLong(t *testing.T) {
+	path := filepath.Join(socketDir(t), strings.Repeat("d", 120), "control.sock")
+	_, err := Listen(path)
+	if err == nil || !strings.Contains(err.Error(), "shorter path") {
+		t.Fatalf("want a clear too-long error, got %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Dir(path)); statErr == nil {
+		t.Error("the directory was created before the path was checked")
+	}
+}
+
 func TestListenAndServeOverARealSocket(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "run", "control.sock")
+	path := filepath.Join(socketDir(t), "run", "control.sock")
 	ln, err := Listen(path)
 	if err != nil {
 		t.Fatal(err)
@@ -48,7 +75,7 @@ func TestSocketIsOwnerOnly(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("permissions are ACLs on Windows")
 	}
-	path := filepath.Join(t.TempDir(), "d", "control.sock")
+	path := filepath.Join(socketDir(t), "d", "control.sock")
 	ln, err := Listen(path)
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +98,7 @@ func TestListenRefusesAWritableDirectory(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("directory modes don't apply on Windows")
 	}
-	dir := t.TempDir()
+	dir := socketDir(t)
 	if err := os.Chmod(dir, 0o777); err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +119,7 @@ func TestListenRefusesAWritableDirectory(t *testing.T) {
 }
 
 func TestListenRemovesAStaleSocket(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "control.sock")
+	path := filepath.Join(socketDir(t), "control.sock")
 	first, err := net.Listen("unix", path)
 	if err != nil {
 		t.Fatal(err)
@@ -110,7 +137,7 @@ func TestListenRemovesAStaleSocket(t *testing.T) {
 }
 
 func TestListenRefusesALiveSocket(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "control.sock")
+	path := filepath.Join(socketDir(t), "control.sock")
 	live, err := Listen(path)
 	if err != nil {
 		t.Fatal(err)
@@ -135,7 +162,7 @@ func TestListenRefusesALiveSocket(t *testing.T) {
 }
 
 func TestListenDoesNotTouchOtherFiles(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "control.sock")
+	path := filepath.Join(socketDir(t), "control.sock")
 	if err := os.WriteFile(path, []byte("precious"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +189,7 @@ func TestDefaultSocketPath(t *testing.T) {
 }
 
 func TestDialReportsAnUnreachableServer(t *testing.T) {
-	_, err := Dial(filepath.Join(t.TempDir(), "nothing.sock"), "x")
+	_, err := Dial(filepath.Join(socketDir(t), "nothing.sock"), "x")
 	if !errors.Is(err, ErrUnreachable) {
 		t.Errorf("err = %v", err)
 	}
