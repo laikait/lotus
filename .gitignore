@@ -1,0 +1,10 @@
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+coverage.*
+/tests/fuzz/**/testdata/fuzz/*/corpus-tmp/
+.idea/
+.vscode/
+.DS_Store
