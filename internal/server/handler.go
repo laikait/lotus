@@ -38,6 +38,7 @@ type listenerHandler struct {
 
 func (h *listenerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	served(r.Context())
 	rec := &recorder{ResponseWriter: w}
 
 	// The whole request uses the configuration that is current now, even if a
@@ -71,6 +72,16 @@ func (h *listenerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 	}()
 	rec.Header().Set("Server", serverHeader)
+	// A chunked request body is framed by Transfer-Encoding. If the request also
+	// had a Content-Length (which net/http removes before we see it), a proxy in
+	// front may have used that one instead and so disagrees with us about where
+	// the request ends: classic request smuggling. RFC 9112 section 6.1 says the
+	// connection must then be closed after the response, so whatever follows is
+	// never read as a request. net/http offers no way to see the conflict, so
+	// the connection is closed after every chunked HTTP/1.x request.
+	if r.ProtoMajor == 1 && len(r.TransferEncoding) > 0 {
+		rec.Header().Set("Connection", "close")
+	}
 
 	host, ok := vhost.NormalizeHost(r.Host)
 	if !ok {

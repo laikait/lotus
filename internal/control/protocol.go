@@ -115,6 +115,7 @@ type Status struct {
 	Goroutines  int        `json:"goroutines"`
 	MemoryBytes uint64     `json:"memory_bytes"`
 	Rejected    uint64     `json:"rejected_connections"`
+	Dropped     uint64     `json:"dropped_requests"`
 }
 
 // Site is one entry of lotus.site.list.

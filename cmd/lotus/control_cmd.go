@@ -182,8 +182,8 @@ func cmdStatus(args []string, stdout, stderr io.Writer) int {
 		}
 		fmt.Fprintf(stdout, "listener %s: %s on %s\n", l.Name, proto, l.Address)
 	}
-	fmt.Fprintf(stdout, "goroutines: %d, memory in use: %.1f MiB, connections refused at the limit: %d\n",
-		st.Goroutines, float64(st.MemoryBytes)/(1<<20), st.Rejected)
+	fmt.Fprintf(stdout, "goroutines: %d, memory in use: %.1f MiB\n", st.Goroutines, float64(st.MemoryBytes)/(1<<20))
+	fmt.Fprintf(stdout, "connections refused at the limit: %d, requests rejected before routing: %d\n", st.Rejected, st.Dropped)
 	return exitOK
 }
 

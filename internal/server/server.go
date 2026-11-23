@@ -50,6 +50,8 @@ type Server struct {
 
 	gen    atomic.Pointer[generation]
 	genSeq atomic.Uint64
+	// tracker notices requests that net/http rejects before the handler runs.
+	tracker *connTracker
 
 	reloadMu sync.Mutex // one reload at a time
 
@@ -95,6 +97,7 @@ func New(cfg *model.Config, opts Options) (*Server, error) {
 		defaultAccess: logging.NewAccess(opts.Stdout),
 		errc:          make(chan error, len(cfg.Listeners)),
 	}
+	s.tracker = newConnTracker(s.log)
 	g, err := s.buildGeneration(cfg)
 	if err != nil {
 		return nil, err
@@ -111,6 +114,8 @@ func New(cfg *model.Config, opts Options) (*Server, error) {
 			IdleTimeout:       time.Duration(cfg.Limits.IdleTimeout),
 			MaxHeaderBytes:    int(cfg.Limits.MaxHeaderBytes),
 			ErrorLog:          slog.NewLogLogger(s.log.Handler(), slog.LevelWarn),
+			ConnState:         s.tracker.hook,
+			ConnContext:       s.tracker.connContext,
 		}
 		if l.HTTPS {
 			srv.TLSConfig = newTLSConfig(cfg.TLS.MinVersion, func() *vhost.Table[*siteRuntime] {
@@ -357,6 +362,10 @@ func (s *Server) Addrs() map[string]net.Addr {
 	}
 	return out
 }
+
+// DroppedRequests reports how many requests net/http rejected or saw abandoned
+// before they reached a handler (malformed, too large, too slow).
+func (s *Server) DroppedRequests() uint64 { return s.tracker.dropped.Load() }
 
 // RejectedConnections reports how many connections were closed because the
 // connection limit was reached.

@@ -117,6 +117,7 @@ func (a *app) Status() control.Status {
 		Goroutines:  runtime.NumGoroutine(),
 		MemoryBytes: m.Alloc,
 		Rejected:    a.srv.RejectedConnections(),
+		Dropped:     a.srv.DroppedRequests(),
 		Listeners:   []control.Listener{},
 	}
 	addrs := a.srv.Addrs()

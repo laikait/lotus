@@ -218,7 +218,7 @@ func buildDefault() *Registry {
 			"Too high a value lets clients exhaust file descriptors and memory."),
 		maxBody,
 		scalar("max_header_bytes", "size", Size(1<<10), "64kib",
-			"Maximum total size of the request line and headers.",
+			"Maximum total size of the request line and headers. A request over the limit gets 431. Go's HTTP server reads a little more before it stops (about 4 KiB), so the effective limit is slightly above this value.",
 			"Large values make header-based memory exhaustion easier."),
 		scalar("header_timeout", "duration", Duration(time.Millisecond), "15s",
 			"Time allowed to receive the request headers after a connection is established.",
