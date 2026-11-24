@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -37,7 +38,9 @@ func (e *RestartRequiredError) Error() string {
 func (s *Server) Reload(cfg *model.Config) error {
 	s.reloadMu.Lock()
 	defer s.reloadMu.Unlock()
-	return s.reloadLocked(cfg)
+	err := s.reloadLocked(cfg)
+	s.countReload(err)
+	return err
 }
 
 // reloadLocked is Reload for callers that hold reloadMu.
@@ -87,6 +90,9 @@ func restartRequired(old, cfg *model.Config) []string {
 	if a != b {
 		out = append(out, "server-wide limits changed (max_connections, max_header_bytes or a timeout)")
 	}
+	if !reflect.DeepEqual(old.Metrics, cfg.Metrics) {
+		out = append(out, "the metrics listener changed")
+	}
 	if old.Control != cfg.Control {
 		out = append(out, "the control settings changed")
 	}
@@ -110,7 +116,9 @@ func (s *Server) TryReload(cfg *model.Config) error {
 		return ErrReloadInProgress
 	}
 	defer s.reloadMu.Unlock()
-	return s.reloadLocked(cfg)
+	err := s.reloadLocked(cfg)
+	s.countReload(err)
+	return err
 }
 
 // ReopenLogs reopens every log file, which is what log rotation needs after a

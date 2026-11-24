@@ -2,6 +2,8 @@ package schema
 
 import (
 	"fmt"
+	"net"
+	"net/netip"
 	"regexp"
 	"strings"
 	"time"
@@ -196,6 +198,13 @@ func buildDefault() *Registry {
 			Security:    "Sites are separated by hostname only. LOTUS reads every site's static files as its own user, so isolate tenants with file permissions and the symlink policy.",
 			Validate:    validateSite,
 		},
+		func() *Directive {
+			d := container("metrics", CtxMetrics,
+				"A separate listener that serves metrics in the Prometheus text format (requests, latency, connections, backends, certificates). Off unless this block is present.",
+				"Metrics tell an attacker what sites exist and how busy they are. Keep the listener on a loopback or private address, and require a bearer_token or an allow list if it is reachable from a network.").withForbidden()
+			d.Validate = validateMetrics
+			return d
+		}(),
 		container("control", CtxControl, "Settings for the local control channel used by the lotus command.", "Anyone who can connect to the control channel can reload or stop the server.").withForbidden(),
 	).Required = []string{"listen"}
 
@@ -653,6 +662,29 @@ func buildDefault() *Registry {
 		},
 	}
 
+	// ---- metrics ----
+
+	r.Define(CtxMetrics,
+		scalar("address", "address", Address(HostPort), "none",
+			"Address to listen on, as host:port. Use 127.0.0.1 unless a collector on another machine must reach it.",
+			"A non-loopback address needs bearer_token or allow."),
+		scalar("path", "path", String(), "/metrics",
+			"URL path that serves the metrics. Any other path is 404.", "None."),
+		func() *Directive {
+			d := scalar("bearer_token", "token", String(), "none",
+				"If set, a request must carry `Authorization: Bearer TOKEN`. Compared in constant time.",
+				"A credential: it is redacted in all output. Prefer env(\"NAME\") over writing it into the file.")
+			d.Secret = true
+			return d
+		}(),
+		&Directive{
+			Name: "allow", Card: Single, Args: []Arg{{Name: "networks", Type: List(CIDR(), 1)}}, TenantForbidden: true,
+			Since: since, Default: "any",
+			Description: "If set, only clients in these networks may read the metrics; others get 403. Checked against the connection's address (not X-Forwarded-For).",
+			Security:    "Without bearer_token or allow, anyone who can reach the address can read the metrics.",
+		},
+	).Required = []string{"address"}
+
 	// ---- control ----
 
 	r.Define(CtxControl,
@@ -670,6 +702,33 @@ func buildDefault() *Registry {
 func (d *Directive) withForbidden() *Directive {
 	d.TenantForbidden = true
 	return d
+}
+
+// validateMetrics checks a metrics block: the path is a URL path, and a listener
+// that isn't on a loopback address is protected by a token or an allow list.
+func validateMetrics(d *ast.Directive, rep Reporter) {
+	if p := child(d, "path"); p != nil && len(p.Args) == 1 {
+		path := strDirective(p.Args[0])
+		if !strings.HasPrefix(path, "/") || strings.ContainsAny(path, " ?#\t\r\n") {
+			rep.Error(p.Pos, diag.CodeInvalidValue, "the metrics path must start with / and contain no space, ? or #", "for example /metrics")
+		}
+	}
+	a := child(d, "address")
+	if a == nil || len(a.Args) != 1 {
+		return
+	}
+	host, _, err := net.SplitHostPort(strDirective(a.Args[0]))
+	if err != nil {
+		return // the type check reports it
+	}
+	if ip, perr := netip.ParseAddr(host); host == "localhost" || (perr == nil && ip.IsLoopback()) {
+		return
+	}
+	if child(d, "bearer_token") == nil && child(d, "allow") == nil {
+		rep.Error(a.Pos, diag.CodeInvalidCombination,
+			"the metrics listener is reachable from the network but nothing protects it",
+			"add bearer_token or allow, or listen on 127.0.0.1")
+	}
 }
 
 func validateListen(d *ast.Directive, rep Reporter) {

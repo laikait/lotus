@@ -59,6 +59,15 @@ type Config struct {
 	Upstreams      []Upstream     `json:"upstreams,omitempty"`
 	Sites          []Site         `json:"sites"`
 	Control        Control        `json:"control"`
+	Metrics        *Metrics       `json:"metrics,omitempty"`
+}
+
+// Metrics configures the metrics listener.
+type Metrics struct {
+	Address     string         `json:"address"`
+	Path        string         `json:"path"`
+	BearerToken Secret         `json:"bearer_token,omitempty"`
+	Allow       []netip.Prefix `json:"allow,omitempty"`
 }
 
 // Runtime holds Go runtime settings. Zero values mean "automatic" / "none".

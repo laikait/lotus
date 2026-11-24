@@ -1,0 +1,33 @@
+# Metrics for Prometheus (or any collector that reads the Prometheus text format).
+#
+# The metrics are served on their own listener, never on a site's. On a loopback
+# address no protection is needed. To scrape from another machine, bind a
+# private address and set bearer_token or allow (LOTUS refuses an unprotected
+# listener that is reachable from a network).
+#
+#     lotus config validate configs/examples/metrics.lotus
+#     lotus start -config configs/examples/metrics.lotus
+#     curl http://127.0.0.1:9180/metrics
+#
+# Full description and example alerts: docs/architecture/metrics.md
+
+lotus_config_version 1
+
+server {
+    listen "http" {
+        address "127.0.0.1:8080"
+    }
+
+    metrics {
+        address "127.0.0.1:9180"
+
+        # For a collector on another machine:
+        #   address "10.0.0.5:9180"
+        #   bearer_token env("LOTUS_METRICS_TOKEN")
+        #   allow [ "10.0.0.0/24" ]
+    }
+
+    site "localhost" {
+        root "./www"
+    }
+}

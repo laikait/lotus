@@ -34,6 +34,7 @@ type siteRuntime struct {
 	php          map[string]phpBackend      // PHP backends of this configuration, by name
 	phpSite      bool                       // some route of the site runs PHP
 	tlsAuto      bool                       // the site gets its certificate from ACME
+	stats        *siteStats                 // what happened to the site's requests
 	upstreams    map[string]*proxy.Upstream // reverse proxy upstreams of this configuration, by name
 
 	// .htaccess support; ht is nil when the site doesn't read .htaccess files.
@@ -56,6 +57,7 @@ func (h *listenerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	served(r.Context())
 	rec := &recorder{ResponseWriter: w}
+	stats := &h.srv.stats.unrouted // replaced by the site's counters once it is known
 	// A certificate authority validating a name by HTTP-01. It is answered
 	// before anything else (no site, limit or log line involved).
 	if h.srv.handleACMEChallenge(w, r) {
@@ -80,6 +82,7 @@ func (h *listenerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	client = gen.clients.Resolve(client, r.Header)
 	clientStr := addrString(client, r)
 	defer func() {
+		stats.observe(r.ProtoMajor, rec.statusCode(), rec.bytes, time.Since(start))
 		access.Log(logging.Entry{
 			Time:      start,
 			RemoteIP:  clientStr,
@@ -120,6 +123,7 @@ func (h *listenerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	access = site.access
+	stats = site.stats
 
 	// With TLS, the Host header must select the same site as the name the
 	// client asked for in the handshake. Otherwise a connection opened (or,

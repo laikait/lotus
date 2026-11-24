@@ -24,8 +24,10 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/caddyserver/certmagic"
 	acmez "github.com/mholt/acmez/v3/acme"
@@ -171,6 +173,39 @@ func (m *Manager) Manage(names []string) (skipped map[string]string) {
 		}
 	}
 	return skipped
+}
+
+// CertStatus is the state of the certificate of one managed name.
+type CertStatus struct {
+	Name     string
+	Ready    bool      // a certificate is loaded
+	NotAfter time.Time // when it expires; zero unless Ready
+}
+
+// Certificates reports, for each managed name, whether its certificate is
+// loaded and when it expires.
+func (m *Manager) Certificates() []CertStatus {
+	m.mu.Lock()
+	names := make([]string, 0, len(m.managed))
+	for n := range m.managed {
+		names = append(names, n)
+	}
+	m.mu.Unlock()
+	sort.Strings(names)
+	out := make([]CertStatus, 0, len(names))
+	for _, n := range names {
+		st := CertStatus{Name: n}
+		for _, c := range m.cache.AllMatchingCertificates(n) {
+			if c.Leaf == nil || !slices.Contains(c.Names, n) {
+				continue
+			}
+			if !st.Ready || c.Leaf.NotAfter.After(st.NotAfter) {
+				st.Ready, st.NotAfter = true, c.Leaf.NotAfter
+			}
+		}
+		out = append(out, st)
+	}
+	return out
 }
 
 // GetCertificate returns the certificate for a TLS handshake: the one that was

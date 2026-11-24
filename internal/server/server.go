@@ -67,6 +67,9 @@ type Server struct {
 
 	listeners []*boundListener
 
+	stats   serverStats
+	metrics *metricsServer // the metrics listener; nil when the configuration has none
+
 	errc chan error
 
 	mu      sync.Mutex
@@ -113,6 +116,9 @@ func New(cfg *model.Config, opts Options) (*Server, error) {
 		errc:          make(chan error, len(cfg.Listeners)),
 	}
 	s.tracker = newConnTracker(s.log)
+	s.stats.started = time.Now()
+	s.stats.sites = map[string]*siteStats{}
+	s.stats.lastReload.Store(time.Now().Unix())
 	if err := s.setupACME(cfg); err != nil {
 		return nil, err
 	}
@@ -235,6 +241,7 @@ func (s *Server) buildGeneration(cfg *model.Config) (*generation, error) {
 		}
 		g.tables[l.Name] = vhost.Build(entries)
 	}
+	g.sites = sites
 	return g, nil
 }
 
@@ -255,6 +262,7 @@ func (s *Server) newSite(g *generation, site *model.Site) (*siteRuntime, error) 
 		php:     g.php,
 		phpSite: site.UsesPHP(),
 		tlsAuto: site.TLS == model.TLSAutomatic,
+		stats:   s.siteStatsFor(site.Name),
 
 		upstreams: g.upstream,
 	}
@@ -392,19 +400,7 @@ func (s *Server) Start() error {
 			ln, err = net.Listen("tcp", bl.conf.Address)
 		}
 		if err != nil {
-			for _, other := range s.listeners {
-				if other.ln != nil {
-					other.ln.Close()
-					other.ln = nil
-				}
-				if other.udp != nil {
-					other.udp.Close()
-					other.udp = nil
-				}
-			}
-			// A server that failed to start can't be started again, so release
-			// the document roots and log files that New opened.
-			s.gen.Load().closeNow()
+			s.releaseBound()
 			return fmt.Errorf("listener %q: %w", bl.conf.Name, err)
 		}
 		bl.ln = s.limiter.wrap(ln)
@@ -415,25 +411,19 @@ func (s *Server) Start() error {
 			continue
 		}
 		if err := s.startH3(bl, limits); err != nil {
-			for _, other := range s.listeners {
-				if other.ln != nil {
-					other.ln.Close()
-					other.ln = nil
-				}
-				if other.udp != nil {
-					other.udp.Close()
-					other.udp = nil
-				}
-				if other.h3 != nil {
-					other.h3.stop(context.Background())
-					other.h3 = nil
-				}
-			}
-			s.gen.Load().closeNow()
+			s.releaseBound()
 			return fmt.Errorf("listener %q: %w", bl.conf.Name, err)
 		}
 	}
+	if err := s.startMetrics(s.gen.Load().cfg); err != nil {
+		s.releaseBound()
+		return err
+	}
 	s.started = true
+	if s.metrics != nil {
+		go s.metrics.serve(s.errc)
+		s.log.Info("metrics listening", "address", s.metrics.ln.Addr().String())
+	}
 	for _, bl := range s.listeners {
 		go s.serve(bl)
 		kind := "http"
@@ -444,6 +434,31 @@ func (s *Server) Start() error {
 	}
 	s.manageCertificates(s.gen.Load().cfg)
 	return nil
+}
+
+// releaseBound closes what Start had bound when it fails. A server that failed
+// to start can't be started again, so the document roots and log files that New
+// opened are released too.
+func (s *Server) releaseBound() {
+	for _, other := range s.listeners {
+		if other.ln != nil {
+			other.ln.Close()
+			other.ln = nil
+		}
+		if other.udp != nil {
+			other.udp.Close()
+			other.udp = nil
+		}
+		if other.h3 != nil {
+			other.h3.stop(context.Background())
+			other.h3 = nil
+		}
+	}
+	if s.metrics != nil {
+		s.metrics.ln.Close()
+		s.metrics = nil
+	}
+	s.gen.Load().closeNow()
 }
 
 func (s *Server) serve(bl *boundListener) {
@@ -490,6 +505,9 @@ func (s *Server) RejectedPerIPConnections() uint64 { return s.limiter.rejectedIP
 func (s *Server) Shutdown(ctx context.Context) error {
 	var wg sync.WaitGroup
 	errs := make(chan error, len(s.listeners))
+	if s.metrics != nil {
+		s.metrics.stop(ctx)
+	}
 	for _, bl := range s.listeners {
 		wg.Add(1)
 		go func() {

@@ -21,6 +21,7 @@ An independent, cross-platform web server written in Go. It's built for PHP and 
 - **Limits:** `max_connections_per_ip`, `rate_limit` (token bucket per client address, per site and per route, answering 429 with `Retry-After` before any file, script, password check or backend is touched), and a lock-out after wrong Basic passwords. Bounded in memory; IPv6 clients are counted per /64; trusted proxies aren't counted as one client. See `docs/architecture/limits.md` and `configs/examples/limits.lotus`.
 - **Automatic HTTPS:** a site on an `https` listener gets its certificate from Let's Encrypt (or any ACME CA) with HTTP-01 or TLS-ALPN-01 (answered by LOTUS's own listeners) or DNS-01 (Cloudflare, or a program of yours; this is what wildcard certificates need), renewed in the background, reused across restarts. Only names of configured sites are ever requested (no on-demand issuance); tested against Pebble. See `docs/architecture/acme.md`, `configs/examples/acme.lotus` and `configs/examples/acme-wildcard.lotus`.
 - **HTTP/3:** `http3 true` on an `https` listener also serves HTTP/3 over UDP on the same port number and announces it with `Alt-Svc`. Same sites, limits, proxy and logs as the other protocols; connection limits count QUIC connections; 0-RTT is refused. See `docs/architecture/http3.md` and `configs/examples/http3.lotus`.
+- **Metrics:** an optional `metrics` listener serves Prometheus-format metrics: requests by site, protocol and status class, latency histograms, connections, proxy backend health, PHP process restarts, reloads and certificate expiry. Labels are only names from the configuration, never client input; a listener that isn't on loopback needs a token or an allow list. See `docs/architecture/metrics.md` and `configs/examples/metrics.lotus`.
 - **Safety:** every URL-to-file mapping goes through one resolver that blocks traversal, hidden files, symlink escapes and (on Windows) device names.
 
 **Not implemented yet.** A configuration that uses any of these is refused at startup with a clear message, never silently ignored: per-site timeouts, control `viewer_group`. PROXY protocol is not available either (no directive for it yet).
@@ -43,6 +44,7 @@ bin/lotus start -config configs/examples/static-site.lotus     # then open http:
 | [Routing precedence](docs/architecture/routing-precedence.md) | How a request is matched to a route |
 | [`.htaccess` support](docs/architecture/htaccess.md) | Which directives are supported, how rewrite rules behave, what is refused |
 | [Automatic certificates](docs/architecture/acme.md) | ACME, challenges, storage, what is requested and what never is |
+| [Metrics](docs/architecture/metrics.md) | The Prometheus endpoint: what it exposes, who can read it, example alerts |
 | [HTTP/3](docs/architecture/http3.md) | QUIC over UDP, Alt-Svc, what is the same and what differs, system settings |
 | [Rate limits](docs/architecture/limits.md) | Connection limits per address, request rate limits, password lock-out |
 | [Reverse proxy](docs/architecture/proxy.md) | Upstreams, balancing, health checks, retries, what is forwarded and what is not |

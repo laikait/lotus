@@ -28,6 +28,7 @@ type generation struct {
 	fallback *logging.Access       // access log for requests that reach no site
 	php      map[string]phpBackend // the PHP backends, by name
 	upstream map[string]*proxy.Upstream
+	sites    map[string]*siteRuntime // by site name
 
 	mu      sync.Mutex
 	refs    int  // requests using this generation

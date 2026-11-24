@@ -90,6 +90,7 @@ func retrySeconds(d time.Duration) string {
 
 // tooManyRequests answers a refused request.
 func (rt *siteRuntime) tooManyRequests(w http.ResponseWriter, r *http.Request, wait time.Duration) {
+	rt.stats.rateLimited.Add(1)
 	w.Header().Set("Retry-After", retrySeconds(wait))
 	rt.status(w, r, http.StatusTooManyRequests, "")
 }

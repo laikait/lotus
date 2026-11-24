@@ -235,6 +235,23 @@ func (c *compiler) server(cfg *model.Config, server *ast.Directive) {
 			cfg.PHPBackends = append(cfg.PHPBackends, c.phpBackend(d))
 		case "upstream":
 			cfg.Upstreams = append(cfg.Upstreams, c.upstream(d))
+		case "metrics":
+			m := &model.Metrics{Path: "/metrics"}
+			for _, s := range body(d) {
+				if r, ok := s.(*ast.Directive); ok {
+					switch r.Name {
+					case "address":
+						m.Address = str(arg(r, 0))
+					case "path":
+						m.Path = str(arg(r, 0))
+					case "bearer_token":
+						m.BearerToken = model.Secret(str(arg(r, 0)))
+					case "allow":
+						m.Allow = prefixes(arg(r, 0))
+					}
+				}
+			}
+			cfg.Metrics = m
 		case "control":
 			for _, s := range body(d) {
 				if r, ok := s.(*ast.Directive); ok {

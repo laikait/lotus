@@ -107,6 +107,9 @@ type backend struct {
 	tr    *http.Transport
 	state atomic.Int64 // connections in use
 
+	requests atomic.Uint64 // requests sent, retries included
+	failures atomic.Uint64 // requests that failed to complete
+
 	current int // smooth round robin, guarded by Upstream.mu
 
 	mu        sync.Mutex
@@ -274,6 +277,9 @@ type BackendStatus struct {
 	Healthy bool
 	Active  int64
 	Weight  int
+	// Requests and Failures count requests sent to the backend (retries
+	// included) and those that failed to complete, since the upstream was made.
+	Requests, Failures uint64
 }
 
 // Status returns the state of every backend.
@@ -281,7 +287,8 @@ func (u *Upstream) Status() []BackendStatus {
 	now := time.Now()
 	out := make([]BackendStatus, len(u.backends))
 	for i, b := range u.backends {
-		out[i] = BackendStatus{Address: b.spec.Address, Healthy: b.usable(now), Active: b.state.Load(), Weight: b.spec.Weight}
+		out[i] = BackendStatus{Address: b.spec.Address, Healthy: b.usable(now), Active: b.state.Load(), Weight: b.spec.Weight,
+			Requests: b.requests.Load(), Failures: b.failures.Load()}
 	}
 	return out
 }
@@ -329,6 +336,7 @@ func (u *Upstream) RoundTrip(req *http.Request) (*http.Response, error) {
 
 		b.state.Add(1)
 		u.active.Add(1)
+		b.requests.Add(1)
 		resp, err := b.tr.RoundTrip(&out)
 		if err == nil {
 			b.succeeded()
@@ -341,6 +349,7 @@ func (u *Upstream) RoundTrip(req *http.Request) (*http.Response, error) {
 		if req.Context().Err() != nil {
 			return nil, err // the client went away; the backend did nothing wrong
 		}
+		b.failures.Add(1)
 		u.failed(b, time.Now())
 		lastErr = err
 		var safe bool
