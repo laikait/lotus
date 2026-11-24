@@ -295,8 +295,23 @@ type sender struct {
 
 	mu          sync.Mutex
 	headersDone bool
+	bodyTouched bool  // the request body has been read from
 	bodyErr     error // reading the request body failed
 	connErr     error // writing to the backend failed
+}
+
+// touchedBody reports whether the request body has been read from (so it can't
+// be sent again). Valid once the sender has finished.
+func (s *sender) touchedBody() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bodyTouched
+}
+
+func (s *sender) connFailed() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.connErr != nil
 }
 
 func (s *sender) failure() (body, conn error) {
@@ -330,31 +345,51 @@ func (c *Client) Do(ctx context.Context, req *Request) (*Response, error) {
 	}
 
 	pc := c.get()
-	if pc == nil {
-		var err error
-		if pc, err = c.dial(ctx); err != nil {
-			release()
-			return nil, err
+	reused := pc != nil
+	for {
+		if pc == nil {
+			var err error
+			if pc, err = c.dial(ctx); err != nil {
+				release()
+				return nil, err
+			}
 		}
-	}
 
-	r := &Response{cl: c, pc: pc, ctx: ctx, release: release}
-	r.st = &stream{br: pc.br}
-	r.s = &sender{done: make(chan struct{})}
-	r.stopCtx = context.AfterFunc(ctx, func() { pc.c.Close() })
-	keep := c.maxIdle() > 0
-	go r.send(req, keep, c.timeout())
+		r := &Response{cl: c, pc: pc, ctx: ctx, release: release}
+		r.st = &stream{br: pc.br}
+		r.s = &sender{done: make(chan struct{})}
+		r.stopCtx = context.AfterFunc(ctx, func() { pc.c.Close() })
+		keep := c.maxIdle() > 0
+		go r.send(req, keep, c.timeout())
 
-	if err := r.readHeaders(); err != nil {
+		err := r.readHeaders()
+		if err == nil {
+			r.Body = &body{r: r}
+			return r, nil
+		}
+		// Taken before abort closes the connection, which would make the sender's
+		// write fail too and look like a broken connection.
+		writeFailed := r.s.connFailed()
 		err = r.explain(err)
 		if msg := r.st.stderr.String(); msg != "" {
 			err = &StderrError{Err: err, Stderr: msg}
 		}
-		r.abort()
+		r.abort(true) // the slot is kept for the retry, and given up below if there is none
+		// A connection that sat in the pool can have been closed by the backend
+		// (PHP-FPM does after pm.max_requests) in the instant before it was
+		// used, too soon for the idle watcher to have seen it. When writing the
+		// request to it fails and nothing came back, the request can't have been
+		// run (the backend runs a script only once it has all of it): send it
+		// again on a connection that is new. A connection that breaks while
+		// waiting for the answer is not retried: the script may have run, or
+		// have killed its worker, and running it twice is worse than an error.
+		if reused && ctx.Err() == nil && r.st.records == 0 && !r.s.touchedBody() && writeFailed {
+			reused, pc = false, nil
+			continue
+		}
+		release()
 		return nil, err
 	}
-	r.Body = &body{r: r}
-	return r, nil
 }
 
 // explain turns a read failure into the most useful error: a failing request
@@ -423,6 +458,9 @@ func (r *Response) send(req *Request, keep bool, timeout time.Duration) {
 
 	if req.Stdin != nil {
 		buf := make([]byte, 32<<10)
+		s.mu.Lock()
+		s.bodyTouched = true
+		s.mu.Unlock()
 		for {
 			n, rerr := req.Stdin.Read(buf)
 			if n > 0 {
@@ -514,12 +552,15 @@ func (r *Response) readHeaders() error {
 	return nil
 }
 
-// abort ends a request that failed before a response existed.
-func (r *Response) abort() {
+// abort ends a request that failed before a response existed. It gives up the
+// concurrency slot unless keepSlot is set (to try again).
+func (r *Response) abort(keepSlot bool) {
 	r.pc.c.Close()
 	r.stopCtx()
 	<-r.s.done
-	r.release()
+	if !keepSlot {
+		r.release()
+	}
 }
 
 type body struct{ r *Response }
@@ -582,6 +623,7 @@ type stream struct {
 	err        error // terminal: io.EOF after a clean end, else why it failed
 	stdoutDone bool
 	sawStdout  bool
+	records    int  // records read from the backend
 	complete   bool // FCGI_END_REQUEST with REQUEST_COMPLETE was received
 	appStatus  uint32
 	stderr     cappedBuffer
@@ -615,6 +657,7 @@ func (s *stream) Read(p []byte) (int, error) {
 			s.err = err
 			return 0, err
 		}
+		s.records++
 		if id != requestID && id != 0 {
 			s.err = protocolError("record for request %d, but only request %d is in progress", id, requestID)
 			return 0, s.err

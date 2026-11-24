@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -8,6 +9,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/miekg/dns"
 	"io"
 	"log/slog"
 	"net"
@@ -15,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -53,8 +56,10 @@ type pebbleEnv struct {
 	dirURL string
 	root   string // PEM file: the root that signed Pebble's own TLS certificate
 	mgmt   string
-	http   int // where Pebble validates HTTP-01
-	tls    int // where Pebble validates TLS-ALPN-01
+	dns    string // the mock DNS server Pebble asks (and LOTUS asks for zones)
+	chMgmt string // its management API: where TXT records are set
+	http   int    // where Pebble validates HTTP-01
+	tls    int    // where Pebble validates TLS-ALPN-01
 }
 
 func startPebble(t *testing.T) *pebbleEnv {
@@ -67,6 +72,8 @@ func startPebble(t *testing.T) *pebbleEnv {
 	acmePort, mgmtPort, dnsPort, chMgmt := freePort(t), freePort(t), freePort(t), freePort(t)
 	env.dirURL = fmt.Sprintf("https://localhost:%d/dir", acmePort)
 	env.mgmt = fmt.Sprintf("localhost:%d", mgmtPort)
+	env.dns = fmt.Sprintf("127.0.0.1:%d", dnsPort)
+	env.chMgmt = fmt.Sprintf("127.0.0.1:%d", chMgmt)
 	env.root = filepath.Join(testDir, "certs", "pebble.minica.pem")
 
 	dir := t.TempDir()
@@ -170,9 +177,20 @@ func (e *pebbleEnv) pebbleRoots(t *testing.T) (roots *x509.CertPool, inters []*x
 // validates, and the given sites using automatic certificates.
 func lotusACME(t *testing.T, env *pebbleEnv, storage string, challenges []string, names ...string) (*Server, *model.Config) {
 	t.Helper()
+	return lotusACMEWith(t, env, storage, challenges, nil, names...)
+}
+
+// lotusACMEWith is lotusACME with a dns block. A name that starts with "*." is
+// an alias of the site named after the rest.
+func lotusACMEWith(t *testing.T, env *pebbleEnv, storage string, challenges []string, dns *model.DNSChallenge, names ...string) (*Server, *model.Config) {
+	t.Helper()
 	root := docroot(t, "acme-site")
 	var sites []model.Site
 	for _, n := range names {
+		if strings.HasPrefix(n, "*.") {
+			sites[len(sites)-1].Aliases = append(sites[len(sites)-1].Aliases, n)
+			continue
+		}
 		s := siteConf(n, root, "http", "https")
 		s.TLS = model.TLSAutomatic
 		sites = append(sites, s)
@@ -184,9 +202,20 @@ func lotusACME(t *testing.T, env *pebbleEnv, storage string, challenges []string
 	}
 	cfg.TLS.ACME = &model.ACME{
 		Email: "admin@example.test", CA: env.dirURL, CARoot: env.root, Storage: storage,
-		HTTPPort: env.http, TLSALPNPort: env.tls, Challenges: challenges,
+		HTTPPort: env.http, TLSALPNPort: env.tls, Challenges: challenges, DNS: dns,
 	}
 	h := start(t, cfg)
+	t.Cleanup(func() {
+		if t.Failed() {
+			var keep []string
+			for _, l := range strings.Split(h.logs.String(), "\n") {
+				if !strings.Contains(l, "TLS handshake error") { // one per poll of waitCert
+					keep = append(keep, l)
+				}
+			}
+			t.Logf("LOTUS log:\n%s", tail(strings.Join(keep, "\n"), 5000))
+		}
+	})
 	return h.srv, cfg
 }
 
@@ -309,6 +338,108 @@ func TestAutomaticCertificatesWithPebble(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// dnsHelper is this test binary acting as the program of the exec DNS provider:
+// it sets or clears the TXT record in the mock DNS server's management API.
+func dnsHelper() {
+	action, name, value := os.Args[1], os.Getenv("LOTUS_ACME_NAME"), os.Getenv("LOTUS_ACME_VALUE")
+	path, body := "/set-txt", map[string]string{"host": name + ".", "value": value}
+	if action == "cleanup" {
+		path, body = "/clear-txt", map[string]string{"host": name + "."}
+	}
+	b, _ := json.Marshal(body)
+	resp, err := http.Post("http://"+os.Getenv("LOTUS_TEST_DNS_MGMT")+path, "application/json", bytes.NewReader(b))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		fmt.Fprintln(os.Stderr, "management API:", resp.Status)
+		os.Exit(1)
+	}
+	os.Exit(0)
+}
+
+// zoneDNS is a DNS server in front of the mock one that also answers SOA
+// queries (the mock doesn't), so that LOTUS can find the zone of a name as it
+// does with a real DNS service. Everything else goes to the mock.
+func zoneDNS(t *testing.T, upstream string) string {
+	t.Helper()
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
+		q := r.Question[0]
+		if q.Qtype == dns.TypeSOA {
+			labels := dns.SplitDomainName(q.Name)
+			if len(labels) >= 2 {
+				zone := strings.Join(labels[len(labels)-2:], ".") + "."
+				m := new(dns.Msg)
+				m.SetReply(r)
+				m.Authoritative = true
+				if q.Name == zone { // the zone itself has an SOA; names below it have none
+					m.Answer = append(m.Answer, &dns.SOA{
+						Hdr: dns.RR_Header{Name: zone, Rrtype: dns.TypeSOA, Class: dns.ClassINET, Ttl: 60},
+						Ns:  "ns." + zone, Mbox: "admin." + zone, Serial: 1, Refresh: 60, Retry: 60, Expire: 60, Minttl: 60,
+					})
+				} else {
+					m.Ns = append(m.Ns, &dns.SOA{
+						Hdr: dns.RR_Header{Name: zone, Rrtype: dns.TypeSOA, Class: dns.ClassINET, Ttl: 60},
+						Ns:  "ns." + zone, Mbox: "admin." + zone, Serial: 1, Refresh: 60, Retry: 60, Expire: 60, Minttl: 60,
+					})
+				}
+				w.WriteMsg(m)
+				return
+			}
+		}
+		resp, _, err := new(dns.Client).Exchange(r, upstream)
+		if err != nil {
+			m := new(dns.Msg)
+			m.SetRcode(r, dns.RcodeServerFailure)
+			w.WriteMsg(m)
+			return
+		}
+		w.WriteMsg(resp)
+	})
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	must(t, err)
+	addr := pc.LocalAddr().String()
+	srv := &dns.Server{PacketConn: pc, Handler: handler}
+	go srv.ActivateAndServe()
+	t.Cleanup(func() { srv.Shutdown() })
+	return addr
+}
+
+func TestWildcardCertificateThroughDNS01(t *testing.T) {
+	env := startPebble(t)
+	self, err := os.Executable()
+	must(t, err)
+	t.Setenv("LOTUS_TEST_DNS_MGMT", env.chMgmt)
+	dns := &model.DNSChallenge{Provider: "exec", Command: self, Resolvers: []string{zoneDNS(t, env.dns)}, SkipPropagationCheck: true}
+	storage := filepath.Join(t.TempDir(), "certs")
+	// A site and a wildcard alias, validated by DNS alone: the HTTP-based
+	// validations can't prove a wildcard, and are switched off here.
+	_, _ = lotusACMEWith(t, env, storage, []string{"dns-01"}, dns, "wild.test", "*.wild.test")
+
+	leaf := waitCert(t, env, "anything.wild.test")
+	if !slices.Contains(leaf.DNSNames, "*.wild.test") {
+		t.Errorf("certificate names: %v", leaf.DNSNames)
+	}
+	roots, inters := env.pebbleRoots(t)
+	st, err := handshake(t, env, "other.wild.test")
+	must(t, err)
+	ip := x509.NewCertPool()
+	for _, c := range inters {
+		ip.AddCert(c)
+	}
+	if _, err := st.PeerCertificates[0].Verify(x509.VerifyOptions{DNSName: "other.wild.test", Roots: roots, Intermediates: ip}); err != nil {
+		t.Errorf("the wildcard certificate does not verify for another name: %v", err)
+	}
+	// The bare name has its own certificate (a wildcard does not cover it).
+	waitCert(t, env, "wild.test")
+	// Names outside the zone are not served.
+	if _, err := handshake(t, env, "x.other.test"); err == nil {
+		t.Error("a handshake for a name outside the wildcard succeeded")
 	}
 }
 

@@ -21,6 +21,7 @@ const (
 	CtxLimits          Context = "limits"
 	CtxTLS             Context = "tls"
 	CtxACME            Context = "acme"
+	CtxDNS             Context = "dns"
 	CtxSite            Context = "site"
 	CtxRoute           Context = "route"
 	CtxMatch           Context = "match"

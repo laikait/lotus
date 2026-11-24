@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"reflect"
+	"time"
 
 	"github.com/laikait/lotus/internal/acme"
 	"github.com/laikait/lotus/internal/config/model"
@@ -59,12 +60,21 @@ func (s *Server) setupACME(cfg *model.Config) error {
 		return nil
 	}
 	a := *cfg.TLS.ACME
-	m, err := acme.New(acme.Config{
+	ac := acme.Config{
 		Email: a.Email, CA: a.CA, CARoot: a.CARoot,
 		EABKeyID: a.EABKeyID, EABHMACKey: string(a.EABHMACKey),
 		Storage: a.Storage, HTTPPort: a.HTTPPort, TLSALPNPort: a.TLSALPNPort, Challenges: a.Challenges,
 		Logger: s.log,
-	})
+	}
+	if d := a.DNS; d != nil {
+		ac.DNS = &acme.DNS{
+			Provider: d.Provider, APIToken: string(d.APIToken), Command: d.Command,
+			PropagationDelay: time.Duration(d.PropagationDelay), PropagationTimeout: time.Duration(d.PropagationTimeout),
+			SkipPropagationCheck: d.SkipPropagationCheck,
+			Resolvers:            d.Resolvers,
+		}
+	}
+	m, err := acme.New(ac)
 	if err != nil {
 		return err
 	}

@@ -277,9 +277,15 @@ func buildDefault() *Registry {
 		scalar("ca_root", "path", Path(), "none",
 			"PEM file with the root certificate of a private or test CA (such as Pebble), trusted only for talking to the ACME server.",
 			"Only for CAs you run yourself. It does not change which certificates browsers trust."),
-		scalar("challenges", "types", List(Enum("http-01", "tls-alpn-01"), 1), `[ "http-01", "tls-alpn-01" ]`,
-			"Which validations LOTUS offers the CA. http-01 needs the CA to reach a plain-HTTP listener on port 80; tls-alpn-01 needs an https listener on port 443. Use one when the other port is closed.",
+		scalar("challenges", "types", List(Enum("http-01", "tls-alpn-01", "dns-01"), 1), `[ "http-01", "tls-alpn-01" ] (plus "dns-01" with a dns block)`,
+			"Which validations LOTUS offers the CA. http-01 needs the CA to reach a plain-HTTP listener on port 80; tls-alpn-01 needs an https listener on port 443; dns-01 needs a dns block and is the only one that works for wildcard names. Use one when the other port is closed.",
 			"None."),
+		&Directive{
+			Name: "dns", Card: Single, Block: BlockRequired, Opens: CtxDNS, TenantForbidden: true,
+			Since: since, Default: "none",
+			Description: "How LOTUS publishes the DNS record for a dns-01 validation. Enables dns-01 and wildcard certificates.",
+			Security:    "The credentials can change the DNS of your domains. Give them the least access that works (one zone, DNS records only).",
+		},
 		scalar("http_port", "port", Int(1, 65535), "80",
 			"Port the CA connects to for HTTP-01 validation, if it is not 80 (for example behind a port forward). A plain-HTTP listener must answer on it.",
 			"None."),
@@ -294,6 +300,30 @@ func buildDefault() *Registry {
 			return d
 		}(),
 	)
+
+	r.Define(CtxDNS,
+		scalar("provider", "name", Enum("cloudflare", "exec"), "none",
+			"cloudflare sets the record through the Cloudflare API. exec runs a program you provide with `present` or `cleanup` and the record in LOTUS_ACME_ZONE, LOTUS_ACME_NAME, LOTUS_ACME_VALUE and LOTUS_ACME_TTL (see docs/architecture/acme.md).",
+			"exec runs with the privileges of the LOTUS user. Only the administrator configuration can name it."),
+		func() *Directive {
+			d := scalar("api_token", "token", String(), "none",
+				"Cloudflare API token with Zone.DNS:Edit (and Zone:Read unless limited to one zone). Not a global API key.",
+				"A credential: it is redacted in all output. Prefer env(\"NAME\") over writing it into the file.")
+			d.Secret = true
+			return d
+		}(),
+		scalar("command", "path", Path(), "none",
+			"Program for the exec provider. Started without a shell.", "It runs as the LOTUS user; make it writable by administrators only."),
+		scalar("propagation_delay", "duration", Duration(0), "0s",
+			"Time to wait after the record is published before checking that it is visible.", "None."),
+		scalar("propagation_timeout", "duration", Duration(0), "2m",
+			"How long to wait for the record to become visible before the CA is asked to check. 0 uses the default.", "None."),
+		scalar("propagation_check", "enabled", Bool(), "true",
+			"Check, before asking the CA to validate, that the record can be seen in DNS. Turn it off when the name servers you can query don't show what the CA sees (split-horizon DNS).",
+			"Off means the CA may be asked too early; the attempt then fails and is retried later."),
+		scalar("resolvers", "servers", List(String(), 1), "the system's",
+			"DNS servers (host:port) asked whether the record is visible and which zone a name belongs to.", "None."),
+	).Required = []string{"provider"}
 
 	// ---- site ----
 

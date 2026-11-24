@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -332,16 +333,82 @@ func (c *compiler) tlsSettings(base model.TLS, d *ast.Directive) model.TLS {
 						a.HTTPPort = int(integer(arg(f, 0)))
 					case "tls_alpn_port":
 						a.TLSALPNPort = int(integer(arg(f, 0)))
+					case "dns":
+						a.DNS = c.dnsChallenge(f)
 					}
 				}
 			}
 			if a.Storage == "" {
 				a.Storage = defaultACMEStorage()
 			}
+			c.checkChallenges(r, a)
 			base.ACME = a
 		}
 	}
 	return base
+}
+
+// dnsChallenge reads a dns block.
+func (c *compiler) dnsChallenge(d *ast.Directive) *model.DNSChallenge {
+	n := &model.DNSChallenge{}
+	for _, s := range body(d) {
+		f, ok := s.(*ast.Directive)
+		if !ok {
+			continue
+		}
+		switch f.Name {
+		case "provider":
+			n.Provider = str(arg(f, 0))
+		case "api_token":
+			n.APIToken = model.Secret(str(arg(f, 0)))
+		case "command":
+			cmd := str(arg(f, 0))
+			if filepath.Base(cmd) == cmd {
+				n.Command = cmd
+			} else {
+				n.Command = c.path(cmd)
+			}
+		case "propagation_delay":
+			n.PropagationDelay = model.Duration(dur(arg(f, 0)))
+		case "propagation_timeout":
+			n.PropagationTimeout = model.Duration(dur(arg(f, 0)))
+		case "propagation_check":
+			n.SkipPropagationCheck = !boolean(arg(f, 0))
+		case "resolvers":
+			n.Resolvers = strs(arg(f, 0))
+		}
+	}
+	return n
+}
+
+// dnsEnabled says whether dns-01 will be offered to the CA.
+func dnsEnabled(a *model.ACME) bool {
+	return a != nil && a.DNS != nil && (len(a.Challenges) == 0 || slices.Contains(a.Challenges, "dns-01"))
+}
+
+// checkChallenges rejects settings that contradict each other.
+func (c *compiler) checkChallenges(d *ast.Directive, a *model.ACME) {
+	asked := slices.Contains(a.Challenges, "dns-01")
+	switch {
+	case asked && a.DNS == nil:
+		c.diags.ErrorHint(d.Pos, diag.CodeInvalidValue, "challenges lists dns-01 but there is no dns block",
+			"add `dns { provider ... }` to the acme block, or remove dns-01")
+	case a.DNS != nil && len(a.Challenges) > 0 && !asked:
+		c.diags.ErrorHint(d.Pos, diag.CodeInvalidValue, "there is a dns block but challenges does not list dns-01",
+			"add \"dns-01\" to challenges, or remove the dns block")
+	}
+	if n := a.DNS; n != nil {
+		switch {
+		case n.Provider == "cloudflare" && n.APIToken == "":
+			c.diags.ErrorHint(d.Pos, diag.CodeInvalidValue, "the cloudflare dns provider needs an api_token", "api_token env(\"CLOUDFLARE_API_TOKEN\")")
+		case n.Provider == "cloudflare" && n.Command != "":
+			c.diags.Error(d.Pos, diag.CodeInvalidValue, "command belongs to the exec dns provider, not cloudflare")
+		case n.Provider == "exec" && n.Command == "":
+			c.diags.Error(d.Pos, diag.CodeInvalidValue, "the exec dns provider needs a command")
+		case n.Provider == "exec" && n.APIToken != "":
+			c.diags.Error(d.Pos, diag.CodeInvalidValue, "api_token belongs to the cloudflare dns provider, not exec")
+		}
+	}
 }
 
 func (c *compiler) phpBackend(d *ast.Directive) model.PHPBackend {
@@ -891,10 +958,10 @@ func (c *compiler) crossChecks(cfg *model.Config) {
 		}
 		if s.TLS == model.TLSAutomatic {
 			for _, n := range append([]string{s.Name}, s.Aliases...) {
-				if strings.Contains(n, "*") {
+				if strings.Contains(n, "*") && !dnsEnabled(cfg.TLS.ACME) {
 					c.diags.ErrorHint(pos, diag.CodeInvalidValue,
 						fmt.Sprintf("site %q uses automatic TLS but %q is a wildcard name", s.Name, n),
-						"wildcard certificates need the DNS-01 challenge, which is not supported yet; list the host names, or use `tls manual` with a wildcard certificate")
+						"wildcard certificates need the DNS-01 challenge: add a dns block to acme, or list the host names, or use `tls manual` with a wildcard certificate")
 				}
 			}
 		}

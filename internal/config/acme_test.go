@@ -1,10 +1,12 @@
 package config
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/laikait/lotus/internal/config/diag"
 )
@@ -90,5 +92,76 @@ func TestACMESettingsAreAdminOnly(t *testing.T) {
 	_, diags := Check("main.lotus", optsFor(files))
 	if !strings.Contains(format(diags), diag.CodeTenantBoundary) {
 		t.Errorf("a tenant file chose how its site gets a certificate:\n%s", format(diags))
+	}
+}
+
+func acmeWith(acme, site string) string {
+	return portable(strings.Replace(strings.Replace(acmeServer, "%s", acme, 1), "%s", site, 1))
+}
+
+func TestCompileDNSSettings(t *testing.T) {
+	c := compile(t, acmeWith(`email "a@b.c"
+        dns {
+            provider "cloudflare"
+            api_token "tok-123"
+            propagation_delay 5s
+            propagation_timeout 90s
+            propagation_check false
+            resolvers [ "1.1.1.1:53", "8.8.8.8:53" ]
+        }`, `aliases [ "*.example.com" ]`))
+	d := c.TLS.ACME.DNS
+	if d == nil || d.Provider != "cloudflare" || string(d.APIToken) != "tok-123" || time.Duration(d.PropagationDelay) != 5*time.Second ||
+		time.Duration(d.PropagationTimeout) != 90*time.Second || !d.SkipPropagationCheck || len(d.Resolvers) != 2 {
+		t.Errorf("%+v", d)
+	}
+	// The token never appears in a dump of the configuration.
+	b, _ := json.Marshal(c)
+	if strings.Contains(string(b), "tok-123") {
+		t.Errorf("the API token is in the JSON form: %s", b)
+	}
+	// With a dns block the wildcard alias is accepted, and dns-01 is among the defaults.
+	if len(c.TLS.ACME.Challenges) != 0 {
+		t.Errorf("challenges: %v", c.TLS.ACME.Challenges)
+	}
+
+	e := compile(t, acmeWith(`dns {
+            provider "exec"
+            command "/usr/local/bin/lotus-dns"
+        }
+        challenges [ "dns-01" ]`, ""))
+	if d := e.TLS.ACME.DNS; d == nil || d.Provider != "exec" || !strings.HasSuffix(filepath.ToSlash(d.Command), "/usr/local/bin/lotus-dns") || d.SkipPropagationCheck {
+		t.Errorf("%+v", d)
+	}
+}
+
+func TestDNSErrors(t *testing.T) {
+	for name, tc := range map[string]struct{ acme, site, text string }{
+		"dns-01 without a dns block":    {`challenges [ "dns-01" ]`, "", "no dns block"},
+		"dns block without dns-01":      {"challenges [ \"http-01\" ]\n dns { provider \"exec\"\n command \"x\" }", "", "does not list dns-01"},
+		"cloudflare without a token":    {`dns { provider "cloudflare" }`, "", "api_token"},
+		"cloudflare with a command":     {"dns { provider \"cloudflare\"\n api_token \"t\"\n command \"x\" }", "", "exec dns provider"},
+		"exec without a command":        {`dns { provider "exec" }`, "", "needs a command"},
+		"exec with a token":             {"dns { provider \"exec\"\n command \"x\"\n api_token \"t\" }", "", "cloudflare dns provider"},
+		"no provider":                   {`dns { propagation_delay 1s }`, "", "provider"},
+		"unknown provider":              {`dns { provider "route66" }`, "", ""},
+		"wildcard without dns":          {`email "a@b.c"`, `aliases [ "*.example.com" ]`, "DNS-01"},
+		"wildcard when dns is excluded": {"challenges [ \"http-01\" ]", `aliases [ "*.example.com" ]`, "DNS-01"},
+	} {
+		_, diags := Check("main.lotus", optsFor(map[string]string{"main.lotus": acmeWith(tc.acme, tc.site)}))
+		out := format(diags)
+		if len(errorsOf(diags)) == 0 || !strings.Contains(out, tc.text) {
+			t.Errorf("%s: want an error mentioning %q:\n%s", name, tc.text, out)
+		}
+	}
+}
+
+func TestDNSSettingsAreAdminOnly(t *testing.T) {
+	files := map[string]string{
+		"main.lotus":   acmeWith(`email "a@b.c"`, `include "tenant.lotus"`),
+		"tenant.lotus": "dns { provider \"exec\"\n command \"/bin/sh\" }",
+	}
+	_, diags := Check("main.lotus", optsFor(files))
+	if len(errorsOf(diags)) == 0 {
+		t.Errorf("a tenant file configured DNS credentials or a command:\n%s", format(diags))
 	}
 }

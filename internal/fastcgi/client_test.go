@@ -290,6 +290,169 @@ func TestAConnectionTheBackendClosedIsNotReused(t *testing.T) {
 	}
 }
 
+// brokenWrites is a connection on which writing fails, as on one the backend
+// has closed and reset.
+type brokenWrites struct{ net.Conn }
+
+func (brokenWrites) Write([]byte) (int, error) { return 0, errors.New("broken pipe") }
+
+// putIdle puts conn into the client's pool as an idle connection whose watcher
+// has seen nothing.
+func putIdle(c *Client, conn net.Conn) {
+	p := newPooled(conn)
+	p.idleSince = time.Now()
+	p.done = make(chan struct{})
+	close(p.done)
+	c.init()
+	c.mu.Lock()
+	c.idle = append(c.idle, p)
+	c.mu.Unlock()
+}
+
+func TestARequestIsRepeatedWhenItCouldNotBeWrittenToAPooledConnection(t *testing.T) {
+	for name, req := range map[string]func() *Request{
+		"no body": func() *Request { return get(Param{"REQUEST_METHOD", "GET"}) },
+		"a body": func() *Request {
+			return &Request{Params: []Param{{"REQUEST_METHOD", "POST"}}, Stdin: strings.NewReader("payload")}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFake(t, func(r *fakeReq) { r.Respond("", "ok") })
+			c := f.client()
+			defer c.Close()
+			c1, c2 := net.Pipe()
+			defer c2.Close()
+			putIdle(c, brokenWrites{c1})
+			resp, err := c.Do(context.Background(), req())
+			if err != nil {
+				t.Fatalf("a dead pooled connection failed a request that never reached the backend: %v", err)
+			}
+			if got := readAll(t, resp); got != "ok" {
+				t.Errorf("%q", got)
+			}
+			if n := f.Accepted(); n != 1 {
+				t.Errorf("%d connections to the backend, want 1", n)
+			}
+		})
+	}
+}
+
+// secondWriteFails accepts the first write (the request's parameters) and
+// fails the next ones (the body).
+type secondWriteFails struct {
+	net.Conn
+	writes int
+}
+
+func (c *secondWriteFails) Write(b []byte) (int, error) {
+	c.writes++
+	if c.writes > 1 {
+		return 0, errors.New("broken pipe")
+	}
+	return len(b), nil
+}
+
+func TestARequestWhoseBodyWasReadIsNotRepeated(t *testing.T) {
+	f := newFake(t, func(r *fakeReq) { r.Respond("", "ok") })
+	c := f.client()
+	defer c.Close()
+	c1, c2 := net.Pipe()
+	defer c2.Close()
+	go io.Copy(io.Discard, c2)
+	putIdle(c, &secondWriteFails{Conn: c1})
+	req := &Request{Params: []Param{{"REQUEST_METHOD", "POST"}}, Stdin: strings.NewReader("payload")}
+	if resp, err := c.Do(context.Background(), req); err == nil {
+		resp.Body.Close()
+		t.Error("a request whose body had been consumed was sent again")
+	}
+	if n := f.Accepted(); n != 0 {
+		t.Errorf("%d connections to the backend, want 0", n)
+	}
+}
+
+func TestAFailedRequestGivesBackItsSlot(t *testing.T) {
+	// The backend closes every connection without answering. With room for one
+	// connection, each failure (and each retry) must hand the slot back.
+	f := newFake(t, func(r *fakeReq) { r.Close() })
+	c := f.client()
+	c.MaxConns = 1
+	defer c.Close()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 5; i++ {
+			if resp, err := c.Do(context.Background(), get()); err == nil {
+				resp.Body.Close()
+			}
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("a failed request kept its connection slot")
+	}
+}
+
+// A connection that breaks while waiting for the answer is not retried: the
+// script may have run, or killed its worker.
+func TestARequestThatMayHaveRunIsNotRepeated(t *testing.T) {
+	var mu sync.Mutex
+	runs := 0
+	f := newFake(t, func(r *fakeReq) {
+		mu.Lock()
+		runs++
+		mu.Unlock()
+		r.Respond("", "ok")
+	})
+	c := f.client()
+	defer c.Close()
+
+	// A pooled connection the backend closed. Writing to it may succeed or fail
+	// depending on the system; either way the backend must see the request at
+	// most once.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		if conn, err := ln.Accept(); err == nil {
+			conn.Close()
+		}
+	}()
+	conn, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond) // the close has arrived
+	putIdle(c, conn)
+
+	resp, err := c.Do(context.Background(), get(Param{"REQUEST_METHOD", "GET"}))
+	if err == nil {
+		readAll(t, resp)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if runs > 1 || (err != nil && runs != 0) || (err == nil && runs != 1) {
+		t.Errorf("err = %v, the backend ran the request %d times", err, runs)
+	}
+}
+
+func TestACrashOnAFreshConnectionIsNotRepeated(t *testing.T) {
+	// A backend that answers nothing: with a connection that was not reused,
+	// the failure must be reported, not retried.
+	f := newFake(t, func(r *fakeReq) { r.Close() })
+	c := f.client()
+	defer c.Close()
+	if resp, err := c.Do(context.Background(), get(Param{"REQUEST_METHOD", "GET"})); err == nil {
+		resp.Body.Close()
+		t.Fatal("no error")
+	}
+	if n := f.Accepted(); n != 1 {
+		t.Errorf("%d connections, want 1", n)
+	}
+}
+
 func TestIdleConnectionsExpire(t *testing.T) {
 	f := newFake(t, func(r *fakeReq) { r.Respond("", "ok") })
 	c := f.client()

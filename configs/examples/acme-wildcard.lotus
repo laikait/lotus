@@ -1,0 +1,38 @@
+# Wildcard certificate through DNS-01 (Cloudflare).
+#
+# A wildcard name (*.example.com) can only be proved by publishing a DNS record,
+# so LOTUS needs credentials for your DNS. Create a Cloudflare API token that can
+# edit DNS records of this one zone, and put it in the environment of the LOTUS
+# process (never in this file):
+#
+#     export CLOUDFLARE_API_TOKEN=...
+#     lotus config validate configs/examples/acme-wildcard.lotus
+#     lotus start -config configs/examples/acme-wildcard.lotus
+#
+# Other DNS services: provider "exec" runs a program of yours. See
+# docs/architecture/acme.md.
+
+lotus_config_version 1
+
+server {
+    listen "http"  { address "0.0.0.0:80" }
+    listen "https" { address "0.0.0.0:443"
+                     protocol https }
+
+    tls {
+        acme {
+            email "admin@example.com"
+            ca "https://acme-staging-v02.api.letsencrypt.org/directory"
+
+            dns {
+                provider "cloudflare"
+                api_token env("CLOUDFLARE_API_TOKEN")
+            }
+        }
+    }
+
+    site "example.com" {
+        aliases [ "*.example.com" ]     # every subdomain, one wildcard certificate
+        root "/var/www/example"
+    }
+}

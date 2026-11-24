@@ -47,9 +47,12 @@ type Config struct {
 	// HTTPPort and TLSALPNPort are the ports the CA reaches this server on when
 	// they are not 80 and 443 (for example behind a port forward, or in tests).
 	HTTPPort, TLSALPNPort int
-	// Challenges limits the validations offered: "http-01", "tls-alpn-01". Empty means both.
+	// Challenges limits the validations offered: "http-01", "tls-alpn-01",
+	// "dns-01". Empty means every one that can work (dns-01 needs DNS).
 	Challenges []string
-	Logger     *slog.Logger
+	// DNS enables DNS-01, which is what wildcard names need.
+	DNS    *DNS
+	Logger *slog.Logger
 }
 
 // Manager obtains and renews the certificates of the names it is given.
@@ -106,6 +109,13 @@ func New(c Config) (*Manager, error) {
 	if len(c.Challenges) > 0 {
 		is.DisableHTTPChallenge = !slices.Contains(c.Challenges, "http-01")
 		is.DisableTLSALPNChallenge = !slices.Contains(c.Challenges, "tls-alpn-01")
+	}
+	if c.DNS != nil && (len(c.Challenges) == 0 || slices.Contains(c.Challenges, "dns-01")) {
+		solver, err := c.DNS.solver()
+		if err != nil {
+			return nil, fmt.Errorf("acme: dns: %w", err)
+		}
+		is.DNS01Solver = solver
 	}
 	if c.EABKeyID != "" {
 		is.ExternalAccount = &acmez.EAB{KeyID: c.EABKeyID, MACKey: c.EABHMACKey}

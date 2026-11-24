@@ -124,6 +124,20 @@ type ACME struct {
 	// Challenges limits which validations are used: "http-01", "tls-alpn-01".
 	// Empty means both.
 	Challenges []string `json:"challenges,omitempty"`
+	// DNS is how DNS-01 challenges are answered (nil: dns-01 is off).
+	DNS *DNSChallenge `json:"dns,omitempty"`
+}
+
+// DNSChallenge says how the DNS record of a dns-01 validation is published.
+type DNSChallenge struct {
+	Provider           string   `json:"provider"` // "cloudflare" or "exec"
+	APIToken           Secret   `json:"api_token,omitempty"`
+	Command            string   `json:"command,omitempty"`
+	PropagationDelay   Duration `json:"propagation_delay,omitempty"`
+	PropagationTimeout Duration `json:"propagation_timeout,omitempty"`
+	// SkipPropagationCheck asks the CA without first looking for the record.
+	SkipPropagationCheck bool     `json:"skip_propagation_check,omitempty"`
+	Resolvers            []string `json:"resolvers,omitempty"`
 }
 
 // PHPBackend is a FastCGI backend: either an existing server at Address, or
