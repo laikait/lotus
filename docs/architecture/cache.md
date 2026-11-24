@@ -138,6 +138,12 @@ uncacheable page does not queue its visitors. A waiter that has waited
 `lock_timeout` goes to the backend without storing. When the backend failed and an
 old copy exists, the waiters get that copy.
 
+## Compression
+
+Compression (`compression.md`) sits outside the cache: a stored page is kept as the backend
+sent it, and each client gets it compressed as it asks. A `Range` request on a hit is
+answered from the stored bytes and is not compressed.
+
 ## Headers
 
 - `X-Cache: HIT | MISS | STALE | BYPASS`. A backend's own `X-Cache` is replaced.

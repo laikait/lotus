@@ -229,6 +229,38 @@ func TestExplainDescribesProxyRoutes(t *testing.T) {
 	}
 }
 
+func TestExplainMentionsCompression(t *testing.T) {
+	s := site("a.test", nil, "web")
+	s.Root = "/srv/a"
+	s.Routes = []model.Route{{Kind: model.RoutePrefix, Path: "/", Actions: ret(200, "ok")}}
+	cfg := cfgWith(s)
+	steps := func() string {
+		var b strings.Builder
+		for _, st := range Explain(cfg, Request{Host: "a.test", Path: "/"}, nil).Steps {
+			b.WriteString(st.Phase + ": " + st.Detail + "\n")
+		}
+		return b.String()
+	}
+	if strings.Contains(steps(), "compression") {
+		t.Errorf("a site without compression mentions it:\n%s", steps())
+	}
+	c := model.DefaultCompression()
+	cfg.Sites[0].Compression = &c
+	out := steps()
+	for _, want := range []string{"compression: ", "br, zstd, gzip", "at least 1024 bytes"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "precompressed") {
+		t.Errorf("precompressed copies mentioned while off:\n%s", out)
+	}
+	c.Precompressed = true
+	if !strings.Contains(steps(), "precompressed copies") {
+		t.Errorf("precompressed not mentioned:\n%s", steps())
+	}
+}
+
 func TestExplainDescribesTheCacheOfARoute(t *testing.T) {
 	s := site("a.test", nil, "web")
 	s.Root = "/srv/a"

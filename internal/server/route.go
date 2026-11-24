@@ -46,6 +46,10 @@ type errorState struct {
 
 // serve runs the routing engine for one request and writes the response.
 func (rt *siteRuntime) serve(w0 http.ResponseWriter, r *http.Request, clientIP netip.Addr) {
+	// Compression sits outermost: whatever answers (files, a proxy, PHP, an error
+	// page) is compressed by the same rules.
+	w0, done := rt.compressed(w0, r)
+	defer done()
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"

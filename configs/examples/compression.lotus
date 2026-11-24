@@ -1,0 +1,47 @@
+# Response compression, with precompressed static files.
+#
+#     lotus start -config configs/examples/compression.lotus
+#
+# Try:  curl -s -D - -o /dev/null -H "Accept-Encoding: br" http://127.0.0.1:8089/    (Content-Encoding: br)
+#       curl -s -D - -o /dev/null -H "Accept-Encoding: gzip" http://127.0.0.1:8089/app.js
+#       curl -s -D - -o /dev/null http://127.0.0.1:8089/                              (no encoding, Vary: Accept-Encoding)
+#
+# To use precompressed copies, make them when you deploy:
+#     brotli -k www/app.js ; zstd -k www/app.js ; gzip -k www/app.js
+# LOTUS then serves app.js.br, app.js.zst or app.js.gz to clients that accept them,
+# with no CPU spent per request. A copy older than its file is ignored.
+#
+# Full description: docs/architecture/compression.md
+
+lotus_config_version 1
+
+server {
+    listen "http" {
+        address "127.0.0.1:8089"
+    }
+
+    # The default for every site. Without a compression block nothing is compressed.
+    compression {
+        algorithms [ "br", "zstd", "gzip" ]   # the client's weights win; this order breaks ties
+        min_size 1kib                          # smaller bodies are sent as they are
+        level default                          # fast, default or best
+
+        # Only these media types are touched. The default list covers text, JSON,
+        # JavaScript, XML, SVG and TTF/OTF fonts. Images, video and archives are
+        # compressed already and should stay out.
+        # types [ "text/*", "application/json" ]
+
+        precompressed true
+    }
+
+    site "example.test" {
+        root "./www"
+    }
+
+    # A site that must not be compressed (for instance because its pages mix
+    # secrets with text a visitor can make the page repeat: see "BREACH" in the docs).
+    site "bank.example.test" {
+        root "./bank"
+        compression { enabled false }
+    }
+}

@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/laikait/lotus/internal/compress"
 	"github.com/laikait/lotus/internal/fspath"
 )
 
@@ -28,6 +29,7 @@ type Handler struct {
 	index  []string
 	log    *slog.Logger
 	mimeBy map[string]string
+	pre    []string // codings of the precompressed copies served, in the server's order
 }
 
 // Options configure a Handler.
@@ -38,7 +40,14 @@ type Options struct {
 	Logger *slog.Logger
 	// MIME overrides or adds content types by extension, e.g. ".wasm": "application/wasm".
 	MIME map[string]string
+	// Precompressed lists the codings ("br", "zstd", "gzip") for which a file's
+	// copy (file.css.br, .zst, .gz) is served in place of the file when the
+	// client accepts that coding, in the server's order of preference.
+	Precompressed []string
 }
+
+// extensions of precompressed copies.
+var copyExt = map[string]string{compress.Brotli: ".br", compress.Zstd: ".zst", compress.Gzip: ".gz"}
 
 // New creates a handler that serves files from res.
 func New(res *fspath.Resolver, opts Options) *Handler {
@@ -48,6 +57,11 @@ func New(res *fspath.Resolver, opts Options) *Handler {
 	}
 	for ext, typ := range opts.MIME {
 		h.mimeBy[strings.ToLower(ext)] = typ
+	}
+	for _, c := range opts.Precompressed {
+		if _, ok := copyExt[c]; ok {
+			h.pre = append(h.pre, c)
+		}
 	}
 	return h
 }
@@ -210,10 +224,51 @@ func (h *Handler) serveFile(w http.ResponseWriter, r *http.Request, f *fspath.Fi
 			hdr.Set("Content-Type", typ)
 		}
 	}
-	if hdr.Get("Etag") == "" {
-		hdr.Set("Etag", etag(f))
+	body := f // what is sent: the file, or a precompressed copy of it
+	if len(h.pre) > 0 {
+		// The answer now depends on what the client accepts.
+		if !varies(hdr, "Accept-Encoding") {
+			hdr.Add("Vary", "Accept-Encoding")
+		}
+		if coding, c := h.copyFor(r, f); c != nil {
+			defer c.Close()
+			hdr.Set("Content-Encoding", coding)
+			body = c
+		}
 	}
-	http.ServeContent(w, r, f.Info.Name(), f.Info.ModTime(), f.File)
+	if hdr.Get("Etag") == "" {
+		hdr.Set("Etag", etag(body)) // a copy has its own, as its bytes differ
+	}
+	http.ServeContent(w, r, f.Info.Name(), f.Info.ModTime(), body.File)
+}
+
+// copyFor opens the precompressed copy of f that the client accepts best, if
+// there is one that is not older than f. The copy is opened through the same
+// resolver as every file, so the symlink and dotfile rules apply to it.
+func (h *Handler) copyFor(r *http.Request, f *fspath.File) (string, *fspath.File) {
+	for _, coding := range compress.Negotiate(r.Header.Get("Accept-Encoding"), h.pre) {
+		c, err := h.res.Open("/" + f.Rel + copyExt[coding])
+		if err != nil {
+			continue
+		}
+		if c.Info.IsDir() || c.Info.Size() == 0 || c.Info.ModTime().Before(f.Info.ModTime()) {
+			c.Close()
+			continue
+		}
+		return coding, c
+	}
+	return "", nil
+}
+
+func varies(h http.Header, name string) bool {
+	for _, line := range h.Values("Vary") {
+		for _, v := range strings.Split(line, ",") {
+			if v = strings.TrimSpace(v); v == "*" || strings.EqualFold(v, name) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // etag is a weak validator built from size and modification time.

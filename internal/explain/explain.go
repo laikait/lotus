@@ -202,6 +202,14 @@ func (e *explainer) route() Outcome {
 	if cur.path != e.req.Path {
 		e.step("path", "the path %q is normalized to %q before routing", e.req.Path, cur.path)
 	}
+	if c := e.site.Compression; c != nil {
+		pre := ""
+		if c.Precompressed {
+			pre = ", and files are served from precompressed copies (file.css.br, .zst, .gz) when they exist"
+		}
+		e.step("compression", "responses of the configured media types (%d) of at least %d bytes are compressed with %s for a client that accepts it%s",
+			len(c.Types), c.MinSize, strings.Join(c.Algorithms, ", "), pre)
+	}
 
 	for hops := 0; ; hops++ {
 		if hops > maxInternalRedirects {

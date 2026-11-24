@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/laikait/lotus/internal/cache"
+	"github.com/laikait/lotus/internal/compress"
 	"github.com/laikait/lotus/internal/config/model"
 	"github.com/laikait/lotus/internal/fspath"
 	"github.com/laikait/lotus/internal/logging"
@@ -38,6 +39,7 @@ type siteRuntime struct {
 	stats        *siteStats                 // what happened to the site's requests
 	upstreams    map[string]*proxy.Upstream // reverse proxy upstreams of this configuration, by name
 	caches       map[string]*cache.Store    // response cache zones, by name
+	compress     *compress.Config           // on-the-fly compression; nil when the site doesn't compress
 
 	// .htaccess support; ht is nil when the site doesn't read .htaccess files.
 	rate          *rateLimit                  // limit on all requests of the site

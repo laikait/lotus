@@ -21,6 +21,7 @@ import (
 
 	"github.com/laikait/lotus/internal/cache"
 	"github.com/laikait/lotus/internal/clientip"
+	"github.com/laikait/lotus/internal/compress"
 	"github.com/laikait/lotus/internal/config/model"
 	"github.com/laikait/lotus/internal/fastcgi"
 	"github.com/laikait/lotus/internal/fspath"
@@ -57,6 +58,9 @@ type Server struct {
 	genSeq atomic.Uint64
 	// tracker notices requests that net/http rejects before the handler runs.
 	tracker *connTracker
+
+	// compLimiter bounds the responses compressed at the same time.
+	compLimiter *compress.Limiter
 
 	reloadMu sync.Mutex // one reload at a time
 
@@ -122,6 +126,7 @@ func New(cfg *model.Config, opts Options) (*Server, error) {
 		errc:          make(chan error, len(cfg.Listeners)),
 	}
 	s.tracker = newConnTracker(s.log)
+	s.compLimiter = compress.NewLimiter(0)
 	s.stats.started = time.Now()
 	s.stats.sites = map[string]*siteStats{}
 	s.stats.lastReload.Store(time.Now().Unix())
@@ -278,6 +283,7 @@ func (s *Server) newSite(g *generation, site *model.Site) (*siteRuntime, error) 
 		upstreams: g.upstream,
 		caches:    g.caches,
 	}
+	rt.compress = s.compressConfig(site, rt.stats)
 
 	access, err := s.logWriter(g, site.Logs.Access, s.opts.Stdout)
 	if err != nil {
@@ -318,7 +324,11 @@ func (s *Server) newSite(g *generation, site *model.Site) (*siteRuntime, error) 
 			resolvers[root] = res
 			g.closers = append(g.closers, res)
 		}
-		rt.handlers[key] = staticfiles.New(res, staticfiles.Options{Index: index, Logger: siteLog})
+		opts := staticfiles.Options{Index: index, Logger: siteLog}
+		if c := site.Compression; c != nil && c.Precompressed {
+			opts.Precompressed = c.Algorithms
+		}
+		rt.handlers[key] = staticfiles.New(res, opts)
 		return nil
 	}
 	var walk func(routes []model.Route) error

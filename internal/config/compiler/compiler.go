@@ -237,6 +237,8 @@ func (c *compiler) server(cfg *model.Config, server *ast.Directive) {
 			cfg.Upstreams = append(cfg.Upstreams, c.upstream(d))
 		case "cache":
 			cfg.Caches = append(cfg.Caches, c.cacheZone(d))
+		case "compression":
+			cfg.Compression = c.compression(nil, d)
 		case "metrics":
 			m := &model.Metrics{Path: "/metrics"}
 			for _, s := range body(d) {
@@ -492,6 +494,44 @@ func rateLimit(d *ast.Directive) *model.RateLimit {
 	return rl
 }
 
+// compression compiles a compression block on top of base (the server's
+// settings for a site, nil for the server itself, which starts from the
+// defaults). A block that says `enabled false` gives nil.
+func (c *compiler) compression(base *model.Compression, d *ast.Directive) *model.Compression {
+	cp := model.DefaultCompression()
+	if base != nil {
+		cp = *base
+	}
+	enabled := true
+	for _, s := range body(d) {
+		r, ok := s.(*ast.Directive)
+		if !ok {
+			continue
+		}
+		switch r.Name {
+		case "enabled":
+			enabled = boolean(arg(r, 0))
+		case "algorithms":
+			cp.Algorithms = strs(arg(r, 0))
+		case "types":
+			cp.Types = nil
+			for _, t := range strs(arg(r, 0)) {
+				cp.Types = append(cp.Types, strings.ToLower(t))
+			}
+		case "min_size":
+			cp.MinSize = size(arg(r, 0))
+		case "level":
+			cp.Level = str(arg(r, 0))
+		case "precompressed":
+			cp.Precompressed = boolean(arg(r, 0))
+		}
+	}
+	if !enabled {
+		return nil
+	}
+	return &cp
+}
+
 func (c *compiler) cacheZone(d *ast.Directive) model.CacheZone {
 	z := model.CacheZone{Name: str(arg(d, 0)), MaxSize: model.DefaultCacheMaxSize, MaxEntrySize: model.DefaultCacheMaxEntrySize}
 	entrySet := false
@@ -667,11 +707,12 @@ func (c *compiler) errorPages(stmts []ast.Statement, parent map[int]string) map[
 
 func (c *compiler) site(cfg *model.Config, d *ast.Directive) model.Site {
 	s := model.Site{
-		Name:     strings.ToLower(str(arg(d, 0))),
-		Index:    []string{"index.html"},
-		Limits:   cfg.Limits,
-		Symlinks: model.SymlinksOwnerMatch,
-		Dotfiles: model.DotfilesDeny,
+		Name:        strings.ToLower(str(arg(d, 0))),
+		Index:       []string{"index.html"},
+		Limits:      cfg.Limits,
+		Compression: cfg.Compression,
+		Symlinks:    model.SymlinksOwnerMatch,
+		Dotfiles:    model.DotfilesDeny,
 	}
 	idx := len(cfg.Sites)
 	c.sitePos = append(c.sitePos, arg(d, 0).Position())
@@ -687,6 +728,8 @@ func (c *compiler) site(cfg *model.Config, d *ast.Directive) model.Site {
 		switch r.Name {
 		case "rate_limit":
 			s.RateLimit = rateLimit(r)
+		case "compression":
+			s.Compression = c.compression(cfg.Compression, r)
 		case "htaccess", "htaccess_allow", "htaccess_unsupported", "htaccess_recheck", "htaccess_auth_failures", "htaccess_auth_lockout":
 			if ht == nil {
 				ht = &model.HTAccess{Allow: append([]string(nil), htaccess.Categories...),

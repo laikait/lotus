@@ -3,7 +3,9 @@ module github.com/laikait/lotus
 go 1.26.0
 
 require (
+	github.com/andybalholm/brotli v1.3.0
 	github.com/caddyserver/certmagic v0.25.6
+	github.com/klauspost/compress v1.20.5
 	github.com/libdns/cloudflare v0.2.2
 	github.com/libdns/libdns v1.1.1
 	github.com/mholt/acmez/v3 v3.1.7

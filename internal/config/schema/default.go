@@ -141,6 +141,14 @@ func buildDefault() *Registry {
 		Security:    "Headers such as Content-Security-Policy and Strict-Transport-Security harden browsers against attacks. Values can't contain control characters, so they can't inject extra headers.",
 	}
 
+	compression := &Directive{
+		Name: "compression", Card: Single, Block: BlockOptional, Opens: CtxCompression, TenantForbidden: true,
+		Since: since, Default: "off",
+		Description: "Compresses responses (Brotli, Zstandard, gzip) for clients that accept it. Off unless a compression block is present; in a site it overrides the server's block setting by setting. Static files can also be served from precompressed copies.",
+		Security:    "Compressing a page that mixes a secret (a CSRF token) with text an attacker can make the page repeat can leak the secret to an attacker who watches the sizes (BREACH). Compress only types you need, and keep secrets out of pages that reflect input. Compression also costs CPU; LOTUS stops compressing when too many responses are being compressed at once.",
+		Validate:    validateCompression,
+	}
+
 	// ---- root ----
 
 	r.Define(CtxRoot, &Directive{
@@ -212,6 +220,7 @@ func buildDefault() *Registry {
 			d.Validate = validateMetrics
 			return d
 		}(),
+		compression,
 		container("control", CtxControl, "Settings for the local control channel used by the lotus command.", "Anyone who can connect to the control channel can reload or stop the server.").withForbidden(),
 	).Required = []string{"listen"}
 
@@ -424,9 +433,33 @@ func buildDefault() *Registry {
 		"The window in which wrong attempts are counted, and how long a client is locked out afterwards.", "A long lock-out also locks out a legitimate user behind the same address.")
 	htAuthLockout.TenantForbidden = true
 	siteLimits := *limits
+	siteCompression := *compression
 	r.Define(CtxSite,
-		listeners, aliases, siteTLS, certificate, certificateKey, symlinks, dotfiles, root, index, route, logs, &siteLimits, secHeaders,
+		listeners, aliases, siteTLS, certificate, certificateKey, symlinks, dotfiles, root, index, route, logs, &siteLimits, secHeaders, &siteCompression,
 		errorPage, htOn, htAllow, htUnsupported, htRecheck, htAuthFailures, htAuthLockout, rateLimit,
+	)
+
+	// ---- compression ----
+
+	r.Define(CtxCompression,
+		scalar("enabled", "enabled", Bool(), "true",
+			"With false, compression is off (in a site: for this site even if the server's block turns it on).",
+			"None."),
+		scalar("algorithms", "codings", List(Enum("br", "zstd", "gzip"), 1), `[ "br", "zstd", "gzip" ]`,
+			"The codings LOTUS may use, most preferred first. A client's own weights win; this order breaks ties. Brotli (br) shrinks most, Zstandard (zstd) is fastest at a similar size, gzip works everywhere.",
+			"None."),
+		scalar("types", "media_types", List(String(), 1), "text/*, application/json, application/javascript, application/xml, image/svg+xml, fonts in TTF and OTF, ...",
+			"The media types that are compressed: exact (\"application/json\") or a whole family (\"text/*\"). A response with another type, or none, is sent as it is.",
+			"Don't add types that are already compressed (images, video, archives, WOFF fonts): it costs CPU for nothing, and compressing responses that mix secrets with reflected input enables BREACH-style attacks."),
+		scalar("min_size", "size", Size(0), "1kib",
+			"Smallest body that is compressed. Smaller ones are sent as they are. A response of unknown length is held back until it reaches this size or ends.",
+			"A very small value compresses responses that don't shrink and holds back streams."),
+		scalar("level", "level", Enum("default", "fast", "best"), "default",
+			"default balances size and CPU for responses made on the fly; fast uses the least CPU; best the most.",
+			"best costs several times the CPU of default for a few percent less data. Under load it is a way to slow the server down."),
+		scalar("precompressed", "enabled", Bool(), "false",
+			"For files served from disk, send file.css.br, file.css.zst or file.css.gz (made beforehand, one per algorithm) in place of file.css when the client accepts that coding, with no CPU spent per request. A copy older than its original is ignored.",
+			"The copies are read under the same rules as every file (symlinks, dotfiles). Keep them in step with the originals: a stale copy is never served, but a wrong one is."),
 	)
 
 	// ---- cache ----
@@ -748,6 +781,44 @@ func (d *Directive) withForbidden() *Directive {
 
 // validateMetrics checks a metrics block: the path is a URL path, and a listener
 // that isn't on a loopback address is protected by a token or an allow list.
+// validateCompression checks a compression block: media types are written as
+// type/subtype or type/*, algorithms are not repeated, and min_size is bounded
+// (a response is held in memory up to that size while its length is unknown).
+func validateCompression(d *ast.Directive, rep Reporter) {
+	if t := child(d, "types"); t != nil && len(t.Args) == 1 {
+		if l, ok := t.Args[0].(*ast.List); ok {
+			for _, it := range l.Items {
+				s, ok := plainString(it)
+				if ok && !mediaTypeRe.MatchString(s) {
+					rep.Error(it.Position(), diag.CodeInvalidValue, fmt.Sprintf("%q is not a media type", s),
+						`write "type/subtype", all lower case, or "type/*" for a family, such as "text/*" or "application/json"`)
+				}
+			}
+		}
+	}
+	if a := child(d, "algorithms"); a != nil && len(a.Args) == 1 {
+		if l, ok := a.Args[0].(*ast.List); ok {
+			seen := map[string]bool{}
+			for _, it := range l.Items {
+				if s, ok := plainString(it); ok {
+					if seen[s] {
+						rep.Error(it.Position(), diag.CodeInvalidValue, fmt.Sprintf("algorithm %q is listed twice", s), "")
+					}
+					seen[s] = true
+				}
+			}
+		}
+	}
+	if m := child(d, "min_size"); m != nil && len(m.Args) == 1 {
+		if n, ok := m.Args[0].(*ast.Size); ok && n.Bytes > 1<<20 {
+			rep.Error(m.Pos, diag.CodeInvalidValue, "min_size can't be more than 1mib",
+				"a response of unknown length is held in memory until it reaches min_size")
+		}
+	}
+}
+
+var mediaTypeRe = regexp.MustCompile(`^[a-z0-9][a-z0-9!#$&^_.+-]*/([a-z0-9][a-z0-9!#$&^_.+-]*|\*)$`)
+
 func validateMetrics(d *ast.Directive, rep Reporter) {
 	if p := child(d, "path"); p != nil && len(p.Args) == 1 {
 		path := strDirective(p.Args[0])

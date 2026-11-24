@@ -392,9 +392,23 @@ func TestHTTP3ShutdownReleasesThePort(t *testing.T) {
 }
 
 func TestAnUnavailableUDPPortStopsTheStart(t *testing.T) {
-	busy, err := net.ListenPacket("udp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	// A UDP port whose TCP twin is free (on Windows some ports are reserved or in
+	// use for TCP, which would fail the start for another reason).
+	var busy net.PacketConn
+	for i := 0; busy == nil; i++ {
+		pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ln, err := net.Listen("tcp", pc.LocalAddr().String()); err == nil {
+			ln.Close()
+			busy = pc
+			break
+		}
+		pc.Close()
+		if i > 50 {
+			t.Fatal("no UDP port with a free TCP twin")
+		}
 	}
 	defer busy.Close()
 	cfg, _ := h3Config(t, func(c *model.Config) { c.Listeners[0].Address = busy.LocalAddr().String() })

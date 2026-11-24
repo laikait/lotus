@@ -58,9 +58,52 @@ type Config struct {
 	PHPBackends    []PHPBackend   `json:"php_backends"`
 	Upstreams      []Upstream     `json:"upstreams,omitempty"`
 	Caches         []CacheZone    `json:"caches,omitempty"`
-	Sites          []Site         `json:"sites"`
-	Control        Control        `json:"control"`
-	Metrics        *Metrics       `json:"metrics,omitempty"`
+	// Compression is the server-wide default; a site starts from it. Nil: off.
+	Compression *Compression `json:"compression,omitempty"`
+	Sites       []Site       `json:"sites"`
+	Control     Control      `json:"control"`
+	Metrics     *Metrics     `json:"metrics,omitempty"`
+}
+
+// Compression says which responses are compressed, and how.
+type Compression struct {
+	// Algorithms are the codings offered, in the server's order of preference
+	// ("br", "zstd", "gzip").
+	Algorithms []string `json:"algorithms"`
+	// Types are the media types that are compressed ("text/*" or "text/html").
+	Types []string `json:"types"`
+	// MinSize is the smallest body that is compressed.
+	MinSize int64 `json:"min_size"`
+	// Level is "default", "fast" or "best".
+	Level string `json:"level"`
+	// Precompressed serves file.css.br, .zst and .gz next to file.css when the
+	// client accepts that coding.
+	Precompressed bool `json:"precompressed"`
+}
+
+// Compression defaults.
+const DefaultCompressionMinSize = 1 << 10
+
+// DefaultCompressionTypes are the media types worth compressing: text and the
+// structured formats built on it. Images, video, audio and archives are
+// compressed already.
+var DefaultCompressionTypes = []string{
+	"text/*",
+	"application/json", "application/ld+json", "application/manifest+json", "application/geo+json",
+	"application/javascript", "application/x-javascript", "application/xml", "application/xhtml+xml",
+	"application/rss+xml", "application/atom+xml", "application/wasm",
+	"image/svg+xml", "image/x-icon", "image/vnd.microsoft.icon",
+	"font/ttf", "font/otf", "application/vnd.ms-fontobject",
+}
+
+// DefaultCompression returns the settings of a `compression` block that says nothing.
+func DefaultCompression() Compression {
+	return Compression{
+		Algorithms: []string{"br", "zstd", "gzip"},
+		Types:      append([]string(nil), DefaultCompressionTypes...),
+		MinSize:    DefaultCompressionMinSize,
+		Level:      "default",
+	}
 }
 
 // Defaults of a cache zone.
@@ -295,6 +338,8 @@ type Site struct {
 	HTAccess *HTAccess `json:"htaccess,omitempty"`
 	// RateLimit limits the requests of every client of the site.
 	RateLimit *RateLimit `json:"rate_limit,omitempty"`
+	// Compression is the effective compression of the site; nil means off.
+	Compression *Compression `json:"compression,omitempty"`
 }
 
 // RateLimit is a token-bucket limit on requests.

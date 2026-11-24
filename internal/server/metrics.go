@@ -58,6 +58,9 @@ type siteStats struct {
 	requests    [numProtos][numClasses]atomic.Uint64
 	bytes       atomic.Uint64
 	rateLimited atomic.Uint64
+	compressed  [3]atomic.Uint64                    // responses compressed on the fly, by coding (see codingIndex)
+	compIn      atomic.Uint64                       // body bytes before compression
+	compOut     atomic.Uint64                       // and after
 	latency     [numLatencyBounds + 1]atomic.Uint64 // per bucket, not cumulative
 	latencySum  atomic.Int64                        // nanoseconds
 }
@@ -151,20 +154,16 @@ func (s *Server) WriteMetrics(w *metrics.Writer) {
 		sites = append(sites, g.cfg.Sites[i].Name)
 	}
 	sort.Strings(sites)
-	type named struct {
-		name string
-		st   *siteStats
-	}
-	var all []named
+	var all []namedStats
 	for _, name := range sites {
 		s.stats.mu.RLock()
 		st := s.stats.sites[name]
 		s.stats.mu.RUnlock()
 		if st != nil {
-			all = append(all, named{name, st})
+			all = append(all, namedStats{name, st})
 		}
 	}
-	all = append(all, named{"", &s.stats.unrouted}) // site="" is requests no site answered
+	all = append(all, namedStats{"", &s.stats.unrouted}) // site="" is requests no site answered
 
 	w.Family("lotus_http_requests_total", "counter", "Requests answered, by site, protocol and status class. site is empty for requests that matched no site.")
 	for _, n := range all {
@@ -188,6 +187,7 @@ func (s *Server) WriteMetrics(w *metrics.Writer) {
 			w.Sample(float64(v), metrics.L("site", n.name))
 		}
 	}
+	s.writeCompressionMetrics(w, all)
 	w.Family("lotus_http_request_duration_seconds", "histogram", "Time from the start of a request until its response was written, by site.")
 	for _, n := range all {
 		counts := make([]uint64, len(n.st.latency))
