@@ -180,6 +180,8 @@ type CertStatus struct {
 	Name     string
 	Ready    bool      // a certificate is loaded
 	NotAfter time.Time // when it expires; zero unless Ready
+	Names    []string  // the names the certificate covers; nil unless Ready
+	Issuer   string    // who issued it; empty unless Ready
 }
 
 // Certificates reports, for each managed name, whether its certificate is
@@ -201,11 +203,28 @@ func (m *Manager) Certificates() []CertStatus {
 			}
 			if !st.Ready || c.Leaf.NotAfter.After(st.NotAfter) {
 				st.Ready, st.NotAfter = true, c.Leaf.NotAfter
+				st.Names, st.Issuer = slices.Clone(c.Names), IssuerName(c.Leaf)
 			}
 		}
 		out = append(out, st)
 	}
 	return out
+}
+
+// IssuerName is the organisation and common name of whoever signed cert, for
+// people to read ("Let's Encrypt R10").
+func IssuerName(cert *x509.Certificate) string {
+	org := ""
+	if len(cert.Issuer.Organization) > 0 {
+		org = cert.Issuer.Organization[0]
+	}
+	switch {
+	case org != "" && cert.Issuer.CommonName != "":
+		return org + " " + cert.Issuer.CommonName
+	case cert.Issuer.CommonName != "":
+		return cert.Issuer.CommonName
+	}
+	return org
 }
 
 // GetCertificate returns the certificate for a TLS handshake: the one that was

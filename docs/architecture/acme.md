@@ -85,6 +85,34 @@ LOTUS answers the checks with its own listeners, so no extra port is bound.
 If the CA reaches none of the checks it is offered, issuance fails and is retried with growing
 delays; the log says which name failed and why.
 
+## Seeing the certificates
+
+```
+$ lotus certs
+NAME         SOURCE                  STATUS    EXPIRES     LEFT  ISSUER             COVERS
+example.com  acme (renewed by lotus) ok        2026-09-14  81d   Let's Encrypt R10  -
+www.example.com acme (renewed by lotus) pending -         -     -                  -
+shop.test    file                    expiring  2026-06-06  5d    Example CA         shop.test, www.shop.test
+```
+
+It asks the running server, so it shows what is loaded now, for `tls manual`
+certificates (from files) and for the names obtained from a CA. `pending` is a
+name whose certificate has not been obtained yet (the first issuance, or a CA
+that refuses); the log says why. Options: `--json`, `--warn-days N` (default 14),
+`--control SOCKET`.
+
+The exit code is **8** when any certificate is pending, expired or ends within the
+warning window, so it works as a monitoring check:
+
+```sh
+lotus certs --warn-days 21 || echo "certificate problem"
+```
+
+A certificate obtained by ACME is renewed about 30 days before it ends, so one
+that shows `expiring` (under 14 days) means renewal has been failing for weeks.
+The metrics `lotus_certificate_expiry_timestamp_seconds` and
+`lotus_certificate_ready` carry the same facts for alerting.
+
 ## DNS-01 and wildcard certificates
 
 ```
@@ -194,8 +222,9 @@ variables they are skipped.
 
 - The first issuance happens after the listeners are up; there is no option to
   hold start until it completes.
-- Renewal failures are logged. There is no command yet that lists certificates
-  and expiry dates, and no metric.
+- Renewal failures are logged. `lotus certs` lists every certificate with its
+  expiry (see below), and the metrics endpoint exports expiry for alerting. There
+  is no command to force a renewal; renewal is automatic.
 - Let's Encrypt has stopped OCSP; LOTUS doesn't staple.
 - One ACME account and CA per server, and one DNS provider.
 - The zone of a name is found by asking DNS for its SOA record. A provider that

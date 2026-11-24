@@ -59,7 +59,7 @@ Methods that change something require `operator`. Methods that only read are all
 | `lotus.config.explain` | viewer | `{ "site", "method", "url", "headers"? , "client_ip"? }` | vhost, route chain, chosen `match`, handler, internal redirect trace |
 | `lotus.site.list` | viewer | — | `[ { name, aliases, listeners, tls, status } ]` |
 | `lotus.site.inspect` | viewer | `{ "name" }` | site details |
-| `lotus.cert.list` | viewer | — | `[ { domains, issuer, not_after, managed, status } ]` |
+| `lotus.cert.list` | viewer | — | `[ { name, domains, issuer, not_after, managed, source, site, status } ]`. `status` is `ok`, `expiring` (under 14 days), `expired` or `pending` (a certificate that is to be obtained from a CA and isn't there yet; `not_after` is absent). `source` is `file` (`tls manual`) or `acme` |
 | `lotus.cert.renew` | operator | `{ "domain", "force": bool }` | `{ "scheduled": true }` |
 | `lotus.cache.status` | viewer | `{ "zone"? }` | sizes, entries, hit ratio |
 | `lotus.cache.purge` | operator | `{ "zone", "key"? , "prefix"? , "tag"? , "all": bool }` | `{ "purged": n }`. `all` must be explicit. |
@@ -83,6 +83,7 @@ Standard JSON-RPC codes plus LOTUS codes:
 | -32021 | reload already in progress | 5 |
 | -32030 | not supported on this platform | 6 |
 | -32040 | not found (site, domain, cache zone) | 7 |
+| (CLI only) | `lotus certs`: a certificate is pending, expired or inside the warning window | 8 |
 | -32050 | internal error (details only in the server log) | 10 |
 
 If the CLI can't connect at all, it exits with **3** ("runtime unreachable") and prints the endpoint it tried.
@@ -118,8 +119,8 @@ Windows service control: `SERVICE_CONTROL_STOP` → graceful stop. `SERVICE_CONT
 
 What exists today:
 
-- **Methods:** `lotus.hello`, `lotus.status`, `lotus.health`, `lotus.reload`, `lotus.stop`, `lotus.logs.reopen`, `lotus.config.inspect`, `lotus.site.list`. The others (`explain`, `upgrade`, `cert.*`, `cache.*`, `module.list`, `metrics`) arrive with the features they operate on. `lotus config explain` works offline from the configuration file, so it doesn't need the channel.
-- **CLI:** `lotus status [--json]`, `lotus reload [--config FILE]`, `lotus stop [--now] [--timeout D]`, `lotus logs reopen`. Each takes `--control SOCKET` (or `LOTUS_CONTROL`).
+- **Methods:** `lotus.hello`, `lotus.status`, `lotus.health`, `lotus.reload`, `lotus.stop`, `lotus.logs.reopen`, `lotus.config.inspect`, `lotus.site.list`, `lotus.cert.list`. The others (`explain`, `upgrade`, `cert.renew`, `cache.*`, `module.list`, `metrics`) arrive with the features they operate on. Metrics are served on their own listener instead (`docs/architecture/metrics.md`); `cert.renew` isn't built because renewal is automatic (about 30 days before expiry) and a manual renewal would need the certificate cache refreshed by hand. `lotus config explain` works offline from the configuration file, so it doesn't need the channel.
+- **CLI:** `lotus status [--json]`, `lotus certs [--json] [--warn-days N]`, `lotus reload [--config FILE]`, `lotus stop [--now] [--timeout D]`, `lotus logs reopen`. Each takes `--control SOCKET` (or `LOTUS_CONTROL`).
 - **Always on:** the channel is opened at start. Without a `control { socket }` setting it uses the platform default; if that location can't be used, the server logs a warning and runs without the channel. A socket path the administrator chose that can't be used stops the start.
 - **Stop:** the server answers `lotus.stop` before it shuts down. Closing the channel lets a request in progress finish its reply (up to 5 s) and closes idle connections at once.
 

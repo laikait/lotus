@@ -42,6 +42,7 @@ const (
 	MethodLogsReopen     = "lotus.logs.reopen"
 	MethodConfigInspect  = "lotus.config.inspect"
 	MethodSiteList       = "lotus.site.list"
+	MethodCertList       = "lotus.cert.list"
 	MethodHello          = "lotus.hello"
 	roleOperator         = "operator"
 )
@@ -124,6 +125,45 @@ type Site struct {
 	Aliases   []string `json:"aliases"`
 	Listeners []string `json:"listeners"`
 	TLS       string   `json:"tls"`
+}
+
+// CertWarnDays is how many days before expiry a certificate is reported as
+// expiring, unless the client asks for another window.
+const CertWarnDays = 14
+
+// Certificate statuses.
+const (
+	CertOK       = "ok"
+	CertExpiring = "expiring" // expires within the warning window
+	CertExpired  = "expired"
+	CertPending  = "pending" // to be obtained from a CA, not there yet
+)
+
+// Certificate is one entry of lotus.cert.list.
+type Certificate struct {
+	Name     string     `json:"name"`
+	Domains  []string   `json:"domains"`
+	Issuer   string     `json:"issuer,omitempty"`
+	NotAfter *time.Time `json:"not_after,omitempty"`
+	// Managed is true for a certificate that LOTUS obtains and renews (tls automatic).
+	Managed bool   `json:"managed"`
+	Source  string `json:"source"` // "file" or "acme"
+	Site    string `json:"site,omitempty"`
+	Status  string `json:"status"`
+}
+
+// CertStatus classifies a certificate: pending until one is loaded, expired
+// after its end date, expiring within warn of it, else ok.
+func CertStatus(ready bool, notAfter, now time.Time, warn time.Duration) string {
+	switch {
+	case !ready:
+		return CertPending
+	case !now.Before(notAfter):
+		return CertExpired
+	case notAfter.Sub(now) < warn:
+		return CertExpiring
+	}
+	return CertOK
 }
 
 // ReloadParams are the parameters of lotus.reload.

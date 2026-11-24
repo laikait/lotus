@@ -258,7 +258,7 @@ func (s *Server) WriteMetrics(w *metrics.Writer) {
 		}
 	}
 
-	s.writeCertificateMetrics(w, g)
+	s.writeCertificateMetrics(w)
 
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
@@ -272,46 +272,28 @@ func (s *Server) WriteMetrics(w *metrics.Writer) {
 // writeCertificateMetrics reports when certificates expire: the ones loaded
 // from files (tls manual) and the ones obtained from a CA (tls automatic). An
 // alert on the smallest expiry catches a renewal that has silently failed.
-func (s *Server) writeCertificateMetrics(w *metrics.Writer, g *generation) {
-	type row struct {
-		name, site, source string
-		notAfter           time.Time
-		ready              bool
-	}
-	var rows []row
-	for i := range g.cfg.Sites {
-		site := &g.cfg.Sites[i]
-		if site.TLS != model.TLSManual {
-			continue
-		}
-		if rt := g.sites[site.Name]; rt != nil && rt.cert != nil && rt.cert.Leaf != nil {
-			rows = append(rows, row{name: site.Name, site: site.Name, source: "file", notAfter: rt.cert.Leaf.NotAfter, ready: true})
-		}
-	}
-	if m := s.acmeManager(); m != nil {
-		for _, c := range m.Certificates() {
-			rows = append(rows, row{name: c.Name, source: "acme", notAfter: c.NotAfter, ready: c.Ready})
-		}
-	}
+func (s *Server) writeCertificateMetrics(w *metrics.Writer) {
+	type row = CertInfo
+	rows := s.Certificates()
 	lab := func(r row) []metrics.Label {
-		l := []metrics.Label{metrics.L("name", r.name), metrics.L("source", r.source)}
-		if r.site != "" {
-			l = append(l, metrics.L("site", r.site))
+		l := []metrics.Label{metrics.L("name", r.Name), metrics.L("source", r.Source)}
+		if r.Site != "" {
+			l = append(l, metrics.L("site", r.Site))
 		}
 		return l
 	}
 	w.Family("lotus_certificate_ready", "gauge", "1 if a certificate for the name is loaded, 0 if one is still to be obtained (tls automatic).")
 	for _, r := range rows {
 		v := 0.0
-		if r.ready {
+		if r.Ready {
 			v = 1
 		}
 		w.Sample(v, lab(r)...)
 	}
 	w.Family("lotus_certificate_expiry_timestamp_seconds", "gauge", "When the certificate expires, in seconds since the epoch. Alert when this is less than about 14 days away.")
 	for _, r := range rows {
-		if r.ready {
-			w.Sample(float64(r.notAfter.Unix()), lab(r)...)
+		if r.Ready {
+			w.Sample(float64(r.NotAfter.Unix()), lab(r)...)
 		}
 	}
 }

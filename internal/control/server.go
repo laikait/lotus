@@ -18,6 +18,8 @@ type Backend interface {
 	Status() Status
 	Health() Health
 	Sites() []Site
+	// Certificates lists the certificates in use and those still to be obtained.
+	Certificates() []Certificate
 	// Reload switches to the configuration in path (empty: the file the server
 	// started with) and returns when it is published or rejected. A rejected
 	// configuration is an *Error with CodeConfigInvalid (diagnostics in Data),
@@ -271,7 +273,7 @@ func fail(id json.RawMessage, code int, msg string) response {
 }
 
 func (s *Server) methods() []string {
-	return []string{MethodStatus, MethodHealth, MethodReload, MethodStop, MethodLogsReopen, MethodConfigInspect, MethodSiteList}
+	return []string{MethodStatus, MethodHealth, MethodReload, MethodStop, MethodLogsReopen, MethodConfigInspect, MethodSiteList, MethodCertList}
 }
 
 func (s *Server) hello(params json.RawMessage) (any, *Error) {
@@ -319,6 +321,11 @@ func (s *Server) call(method string, params json.RawMessage, peer peerInfo) (res
 			return nil, err
 		}
 		return b.Sites(), nil
+	case MethodCertList:
+		if err := noParams(params); err != nil {
+			return nil, err
+		}
+		return b.Certificates(), nil
 	case MethodReload:
 		var p ReloadParams
 		if err := decodeParams(params, &p); err != nil {

@@ -511,3 +511,17 @@ func TestObservePlacesRequestsInTheRightSeries(t *testing.T) {
 		t.Errorf("+Inf bucket has %d", st.latency[numLatencyBounds].Load())
 	}
 }
+
+func TestCertificatesListsAManualCertificate(t *testing.T) {
+	cfg, cert := h3Config(t)
+	h := start(t, cfg)
+	list := h.srv.Certificates()
+	if len(list) != 1 {
+		t.Fatalf("%+v", list)
+	}
+	c := list[0]
+	if c.Name != "h3.test" || c.Site != "h3.test" || c.Source != "file" || !c.Ready || !c.NotAfter.Equal(cert.cert.NotAfter) ||
+		len(c.Domains) != 1 || c.Domains[0] != "h3.test" {
+		t.Errorf("%+v", c)
+	}
+}

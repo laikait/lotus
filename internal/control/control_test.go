@@ -36,6 +36,10 @@ func (f *fakeBackend) Health() Health { return Health{Status: "ok", Checks: []He
 func (f *fakeBackend) Sites() []Site {
 	return []Site{{Name: "a.test", Aliases: []string{"www.a.test"}, Listeners: []string{"http"}, TLS: "off"}}
 }
+func (f *fakeBackend) Certificates() []Certificate {
+	na := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+	return []Certificate{{Name: "a.test", Domains: []string{"a.test"}, Issuer: "Test CA", NotAfter: &na, Managed: true, Source: "acme", Status: CertOK}}
+}
 func (f *fakeBackend) Reload(path string) (ReloadResult, *Error) {
 	f.mu.Lock()
 	f.reloaded = append(f.reloaded, path)

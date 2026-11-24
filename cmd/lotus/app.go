@@ -161,6 +161,32 @@ func (a *app) Sites() []control.Site {
 	return out
 }
 
+// Certificates implements control.Backend.
+func (a *app) Certificates() []control.Certificate {
+	return toControlCerts(a.srv.Certificates(), time.Now())
+}
+
+// toControlCerts describes the server's certificates for the control channel.
+func toControlCerts(infos []server.CertInfo, now time.Time) []control.Certificate {
+	out := make([]control.Certificate, 0, len(infos))
+	for _, c := range infos {
+		domains := c.Domains
+		if domains == nil {
+			domains = []string{c.Name}
+		}
+		cert := control.Certificate{
+			Name: c.Name, Domains: domains, Issuer: c.Issuer, Managed: c.Source == "acme", Source: c.Source, Site: c.Site,
+			Status: control.CertStatus(c.Ready, c.NotAfter, now, control.CertWarnDays*24*time.Hour),
+		}
+		if c.Ready {
+			na := c.NotAfter
+			cert.NotAfter = &na
+		}
+		out = append(out, cert)
+	}
+	return out
+}
+
 // Stop implements control.Backend.
 func (a *app) Stop(graceful bool, timeout time.Duration) {
 	select {

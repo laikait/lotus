@@ -40,6 +40,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cmdStop(args[1:], stdout, stderr)
 	case "status":
 		return cmdStatus(args[1:], stdout, stderr)
+	case "certs":
+		return cmdCerts(args[1:], stdout, stderr)
 	case "logs":
 		return cmdLogs(args[1:], stdout, stderr)
 	case "compat":
@@ -94,16 +96,19 @@ Commands:
   stop [--now] [--timeout 30s]
                               Stop the running server, letting requests finish
   status [--json]             Show the running server's state
+  certs [--json] [--warn-days N]
+                              List the certificates in use and when they expire
   logs reopen                 Reopen the log files (after log rotation)
   compat htaccess check [--json] [--all] <file>
                               Report which directives of a .htaccess file LOTUS can apply
   help                        Show this help
 
-The reload, stop, status and logs commands talk to the running server through its control
+The reload, stop, status, certs and logs commands talk to the running server through its control
 socket (default %s; set another with --control or LOTUS_CONTROL).
 
 Exit codes: 0 success, 1 usage error, 2 invalid configuration, 3 no running server,
 4 permission denied, 5 reload already running, 6 uses a feature not implemented yet,
-7 not found, 10 the server could not start or failed.
+7 not found, 8 a certificate is missing, expired or about to expire (lotus certs),
+10 the server could not start or failed.
 `, control.DefaultSocketPath())
 }

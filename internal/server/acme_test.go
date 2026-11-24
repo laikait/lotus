@@ -265,6 +265,18 @@ func TestAutomaticCertificatesWithPebble(t *testing.T) {
 				t.Errorf("certificate names: %v", leaf.DNSNames)
 			}
 
+			// The certificate is listed with its issuer and expiry (lotus certs, metrics).
+			var listed bool
+			for _, c := range srv.Certificates() {
+				if c.Name == "lotus-acme.test" && c.Source == "acme" && c.Ready && strings.Contains(c.Issuer, "Pebble") &&
+					len(c.Domains) == 1 && c.Domains[0] == "lotus-acme.test" && c.NotAfter.Equal(leaf.NotAfter) {
+					listed = true
+				}
+			}
+			if !listed {
+				t.Errorf("the obtained certificate is not listed: %+v", srv.Certificates())
+			}
+
 			// The chain verifies against Pebble's root, for the right name.
 			roots, inters := env.pebbleRoots(t)
 			st, err := handshake(t, env, "lotus-acme.test")
