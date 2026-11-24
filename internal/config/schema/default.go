@@ -9,6 +9,7 @@ import (
 	"github.com/laikait/lotus/internal/config/ast"
 	"github.com/laikait/lotus/internal/config/diag"
 	"github.com/laikait/lotus/internal/htaccess"
+	"github.com/laikait/lotus/internal/proxy"
 )
 
 const since = "0.1"
@@ -79,6 +80,11 @@ func buildDefault() *Registry {
 		"Document root: the directory that URLs are mapped into.",
 		"Everything below this directory can be served. Pointing it at a directory with secrets exposes them; LOTUS still refuses to follow paths outside it according to the symlink policy.")
 	root.TenantForbidden = true
+	proxyDir := scalar("proxy", "upstream", String(), "none",
+		"Sends matching requests to the named upstream (a reverse proxy). Takes the place of try_files and php for the route.",
+		"The request, with its headers and body, goes to a server of that upstream. Only administrators may choose upstreams.")
+	proxyDir.Args[0].Ref = "upstream"
+	proxyDir.TenantForbidden = true
 	phpDeny := scalar("php_deny", "enabled", Bool(), "false",
 		"When true, PHP files under this route are never executed, even if a PHP backend is configured.",
 		"Use it on upload directories so a file uploaded by a visitor can't be run as code.")
@@ -174,6 +180,13 @@ func buildDefault() *Registry {
 			Since: since, Default: "none",
 			Description: "A FastCGI backend (for example a PHP-FPM pool). Routes use it with the php directive.",
 			Security:    "Use one pool, with its own OS user, per site. Sites that share a pool can read each other's files and sessions.",
+		},
+		&Directive{
+			Name: "upstream", Card: Keyed, Args: []Arg{{Name: "name", Type: String()}},
+			Block: BlockRequired, Opens: CtxUpstream, Defines: "upstream", TenantForbidden: true,
+			Since: since, Default: "none",
+			Description: "A group of backend servers that routes send requests to with the proxy directive, with load balancing and health checks.",
+			Security:    "Which servers a site can reach is an administrator decision: a route that proxies to an internal address can expose internal services.",
 		},
 		&Directive{
 			Name: "site", Card: Keyed, Args: []Arg{{Name: "name", Type: Hostname()}},
@@ -345,6 +358,30 @@ func buildDefault() *Registry {
 	routeLimits := *maxBody
 	r.Define(CtxRoute,
 		route, tryFiles, php, phpDeny, ret, rewrite, errorPage, &routeIndex, &routeLimits,
+		proxyDir,
+		&Directive{
+			Name: "proxy_set_header", Card: Repeated, Args: []Arg{{Name: "name", Type: String()}, {Name: "value", Type: String()}},
+			Since: since, Default: "none",
+			Description: "Sets a header on the request sent to the upstream. An empty value removes the header. Forwarding headers (X-Forwarded-For, -Host, -Proto, Forwarded) are set by LOTUS and can't be changed here.",
+			Security:    "Headers such as X-Forwarded-User are trusted by many applications. Only set them to fixed values.",
+			Validate: func(d *ast.Directive, rep Reporter) {
+				if len(d.Args) != 2 {
+					return
+				}
+				name, _ := plainString(d.Args[0])
+				if !headerNameRe.MatchString(name) {
+					rep.Error(d.Args[0].Position(), diag.CodeInvalidValue, fmt.Sprintf("%q is not a valid header name", name), "")
+				} else if proxyOwnedHeader(name) {
+					rep.Error(d.Args[0].Position(), diag.CodeInvalidValue, fmt.Sprintf("%s is set by LOTUS and can't be changed with proxy_set_header", name), "")
+				}
+				if v, ok := plainString(d.Args[1]); ok && !validHeaderValue(v) {
+					rep.Error(d.Args[1].Position(), diag.CodeInvalidValue, "header values must not contain control characters", "")
+				}
+			},
+		},
+		scalar("proxy_host", "host", Enum("client", "upstream"), "client",
+			"Which Host header the upstream gets: client keeps the one the client sent (and the application sees its own public name); upstream uses the backend's own address.",
+			"None."),
 		&Directive{
 			Name: "match", Card: Repeated, Block: BlockRequired, Opens: CtxMatch,
 			Since: since, Default: "none",
@@ -388,7 +425,7 @@ func buildDefault() *Registry {
 		scalar("scheme", "scheme", Enum("http", "https"), "none", "True if the request used this scheme.", "None."),
 		scalar("host", "hostnames", List(Hostname(), 1), "none", "True if the Host header is one of these.", "None."),
 		// actions
-		ret, tryFiles, php, phpDeny,
+		ret, tryFiles, php, phpDeny, proxyDir,
 	)
 
 	// ---- logs ----
@@ -441,6 +478,87 @@ func buildDefault() *Registry {
 		}
 		return "", "", ""
 	}
+
+	// ---- upstream ----
+
+	backendAddr := func(d *ast.Directive, rep Reporter) {
+		if len(d.Args) != 1 {
+			return
+		}
+		s, ok := plainString(d.Args[0])
+		if !ok {
+			return
+		}
+		if _, err := proxy.ParseBackend(s); err != nil {
+			rep.Error(d.Args[0].Position(), diag.CodeInvalidValue, err.Error(),
+				`examples: backend "http://10.0.0.5:8080"   backend "https://api.internal:443"   backend "unix:/run/app.sock"`)
+		}
+	}
+	up := r.Define(CtxUpstream,
+		&Directive{
+			Name: "backend", Card: Keyed, Args: []Arg{{Name: "address", Type: String()}},
+			Block: BlockOptional, Opens: CtxBackend, Since: since, Default: "none", Validate: backendAddr,
+			Description: "A server that requests are sent to: http://host:port, https://host:port or unix:/path. A block can give it a weight and a connection limit.",
+			Security:    "Requests are sent to this address as they are. Use https:// across networks you don't control, and keep tls_verify on.",
+		},
+		scalar("balance", "method", Enum("round_robin", "least_conn", "random", "ip_hash", "uri_hash"), "round_robin",
+			"How requests are spread over the backends. round_robin follows the weights; least_conn picks the backend with the fewest active requests; random picks the less loaded of two random backends; ip_hash and uri_hash send the same client address, or the same path, to the same backend.",
+			"ip_hash and uri_hash don't balance load evenly if a few clients or paths are very busy."),
+		scalar("connect_timeout", "duration", Duration(time.Millisecond), "5s",
+			"Time allowed to connect to a backend (and finish its TLS handshake).",
+			"A long timeout keeps requests waiting on a backend that is down."),
+		scalar("response_timeout", "duration", Duration(time.Millisecond), "60s",
+			"Time to wait for a backend's response headers after the request was sent. A request that times out is not repeated.",
+			"Long timeouts let slow backends tie up connections."),
+		scalar("idle_timeout", "duration", Duration(time.Second), "90s",
+			"How long an unused connection to a backend is kept for reuse.", "None."),
+		scalar("retries", "count", Int(0, 10), "1",
+			"How many other backends a request may be tried on after a failure. Only requests that are safe to repeat are: those that never connected, and GET, HEAD, OPTIONS, PUT and DELETE without a body that failed before a response.",
+			"A POST that reached a backend is never repeated, so this can't make a payment twice."),
+		scalar("max_fails", "count", IntAtLeast(0), "3",
+			"After this many failures within fail_timeout a backend is taken out of rotation for fail_timeout. 0 turns passive checking off.",
+			"None."),
+		scalar("fail_timeout", "duration", Duration(time.Second), "10s",
+			"The window in which max_fails failures are counted, and how long a backend stays out afterwards.", "None."),
+		scalar("max_conns", "count", IntAtLeast(1), "unlimited",
+			"Most requests in progress across the whole upstream. Beyond it requests get 503 at once.",
+			"Protects the backends from a flood; set it to what they can serve."),
+		&Directive{
+			Name: "health_check", Card: Single, Block: BlockRequired, Opens: CtxHealthCheck, Since: since, Default: "none",
+			Description: "Probes every backend regularly and takes failing ones out of rotation until they recover. Without a path it only tries to connect.",
+			Security:    "A health path is requested without credentials. Don't point it at something that changes data.",
+		},
+		scalar("tls_verify", "enabled", Bool(), "true",
+			"Check the certificate of https backends against the trusted authorities and the backend's name.",
+			"false lets anyone between LOTUS and the backend read and change the traffic. Use tls_ca for a private authority instead."),
+		scalar("tls_ca", "path", Path(), "system certificates",
+			"PEM file of the authority that signed the backends' certificates. It replaces the system list for this upstream.", "None."),
+		scalar("tls_server_name", "name", String(), "the backend's host",
+			"Name to expect in the backend's certificate and to send as SNI.", "None."),
+		scalar("tls_client_cert", "path", Path(), "none",
+			"Certificate that LOTUS presents to https backends that require client certificates (with tls_client_key).",
+			"The key file must be readable only by the LOTUS user."),
+		scalar("tls_client_key", "path", Path(), "none", "Private key for tls_client_cert.", "Keep the file private."),
+	)
+	up.Required = []string{"backend"}
+	up.Check = func(present map[string]bool) (string, string, string) {
+		if present["tls_client_cert"] != present["tls_client_key"] {
+			return diag.CodeMissingRequired, "tls_client_cert and tls_client_key go together", "give both or neither"
+		}
+		return "", "", ""
+	}
+	r.Define(CtxBackend,
+		scalar("weight", "weight", Int(1, 1000), "1", "Share of requests relative to the other backends (round_robin, ip_hash, uri_hash, random and least_conn).", "None."),
+		scalar("max_conns", "count", IntAtLeast(1), "unlimited", "Most requests in progress on this backend. Requests go to other backends while it is full.", "None."),
+	)
+	r.Define(CtxHealthCheck,
+		scalar("path", "path", String(), "none (connect only)",
+			"URL path requested with GET. A status from 200 to 399 is healthy.", "None."),
+		scalar("interval", "duration", Duration(100*time.Millisecond), "10s", "Time between probes of a backend.", "Short intervals add load to the backends."),
+		scalar("timeout", "duration", Duration(10*time.Millisecond), "3s", "Time a probe may take.", "None."),
+		scalar("healthy_threshold", "count", Int(1, 20), "2", "Successful probes in a row that bring a backend back.", "None."),
+		scalar("unhealthy_threshold", "count", Int(1, 20), "3", "Failed probes in a row that take a backend out.", "None."),
+	)
 
 	// ---- security_headers ----
 
@@ -542,4 +660,14 @@ func strDirective(v ast.Value) string {
 		return s
 	}
 	return ""
+}
+
+// proxyOwnedHeader says whether LOTUS sets a header itself on proxied requests.
+func proxyOwnedHeader(name string) bool {
+	switch strings.ToLower(name) {
+	case "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-forwarded-port", "forwarded", "x-real-ip",
+		"host", "connection", "upgrade", "transfer-encoding", "content-length", "te", "trailer", "keep-alive", "proxy-authorization", "proxy-connection":
+		return true
+	}
+	return false
 }

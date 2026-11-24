@@ -26,6 +26,8 @@ func (o Outcome) Summary() string {
 		s = fmt.Sprintf("%d, serves the file %s", o.Status, o.File)
 	case KindPHP:
 		s = fmt.Sprintf("runs the PHP script %s", o.File)
+	case KindProxy:
+		s = "proxied to an upstream"
 	case KindRedirect:
 		s = fmt.Sprintf("%d %s, redirects to %s", o.Status, http.StatusText(o.Status), o.Location)
 	case KindStatus:

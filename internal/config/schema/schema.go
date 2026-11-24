@@ -26,6 +26,9 @@ const (
 	CtxMatch           Context = "match"
 	CtxLogs            Context = "logs"
 	CtxPHPBackend      Context = "php_backend"
+	CtxUpstream        Context = "upstream"
+	CtxBackend         Context = "backend"
+	CtxHealthCheck     Context = "health_check"
 	CtxSecurityHeaders Context = "security_headers"
 	CtxControl         Context = "control"
 )

@@ -51,6 +51,7 @@ type Step struct {
 const (
 	KindFile     = "file"     // a file is served
 	KindPHP      = "php"      // a PHP script is run
+	KindProxy    = "proxy"    // the request goes to an upstream
 	KindStatus   = "status"   // an error or fixed response
 	KindRedirect = "redirect" // 301, 302, ...
 	KindDepends  = "depends"  // can't be known without checking files
@@ -330,11 +331,47 @@ func (e *explainer) action(route *model.Route, a model.Actions, root string, ind
 	case a.Return != nil:
 		return e.doReturn(a.Return, vars), target{}, false
 
+	case a.Proxy != "":
+		return e.describeProxy(a, cur), target{}, false
+
 	case len(a.TryFiles) > 0:
 		return e.tryFiles(a, root, index, vars, cur)
 
 	}
 	return e.static(root, index, cur, a)
+}
+
+// describeProxy is what serveProxy does: the request leaves for a backend, and
+// which one is decided by the balancer and the backends' health at that moment.
+func (e *explainer) describeProxy(a model.Actions, cur target) Outcome {
+	var up *model.Upstream
+	for i := range e.cfg.Upstreams {
+		if e.cfg.Upstreams[i].Name == a.Proxy {
+			up = &e.cfg.Upstreams[i]
+		}
+	}
+	if up == nil {
+		e.step("proxy", "the upstream %q does not exist", a.Proxy)
+		return Outcome{Kind: KindError, Status: 500, Note: "no such upstream"}
+	}
+	uri := cur.path
+	if cur.query != "" {
+		uri += "?" + cur.query
+	}
+	host := "the client's Host"
+	if a.ProxyHostUpstream {
+		host = "the backend's own Host"
+	}
+	e.step("proxy", "sends %s to upstream %q (%d backend(s), %s) with %s; X-Forwarded-For/-Host/-Proto are set by LOTUS", uri, up.Name, len(up.Backends), up.Balance, host)
+	for _, h := range a.ProxyHeaders {
+		if h.Value == "" {
+			e.step("proxy", "removes the request header %s", h.Name)
+		} else {
+			e.step("proxy", "sets the request header %s", h.Name)
+		}
+	}
+	e.step("proxy", "the response of the backend is sent as it is (error pages don't replace it); a backend that is down gives 502, none available 503, a timeout 504")
+	return Outcome{Kind: KindProxy, Note: "which backend answers depends on balancing and health"}
 }
 
 func unsafeValue(e *explainer) Outcome {

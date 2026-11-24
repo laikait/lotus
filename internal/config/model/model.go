@@ -56,6 +56,7 @@ type Config struct {
 	Limits         Limits         `json:"limits"`
 	TLS            TLS            `json:"tls"`
 	PHPBackends    []PHPBackend   `json:"php_backends"`
+	Upstreams      []Upstream     `json:"upstreams,omitempty"`
 	Sites          []Site         `json:"sites"`
 	Control        Control        `json:"control"`
 }
@@ -126,6 +127,52 @@ type PHPBackend struct {
 	MaxRequests int    `json:"max_requests,omitempty"` // 0: never recycle
 	PHPIni      string `json:"php_ini,omitempty"`
 }
+
+// Upstream is a group of reverse-proxy backends.
+type Upstream struct {
+	Name            string            `json:"name"`
+	Backends        []UpstreamBackend `json:"backends"`
+	Balance         string            `json:"balance"`
+	ConnectTimeout  Duration          `json:"connect_timeout"`
+	ResponseTimeout Duration          `json:"response_timeout"`
+	IdleTimeout     Duration          `json:"idle_timeout"`
+	Retries         int               `json:"retries"`
+	MaxFails        int               `json:"max_fails"`
+	FailTimeout     Duration          `json:"fail_timeout"`
+	MaxConns        int               `json:"max_conns,omitempty"`
+	Health          *HealthCheck      `json:"health_check,omitempty"`
+	TLSVerify       bool              `json:"tls_verify"`
+	TLSCA           string            `json:"tls_ca,omitempty"`
+	TLSServerName   string            `json:"tls_server_name,omitempty"`
+	TLSClientCert   string            `json:"tls_client_cert,omitempty"`
+	TLSClientKey    string            `json:"tls_client_key,omitempty"`
+}
+
+// UpstreamBackend is one server of an upstream.
+type UpstreamBackend struct {
+	Address  string `json:"address"` // as written: http://host:port, https://host:port or unix:/path
+	Weight   int    `json:"weight"`
+	MaxConns int    `json:"max_conns,omitempty"`
+}
+
+// HealthCheck is the active health check of an upstream.
+type HealthCheck struct {
+	Path               string   `json:"path,omitempty"`
+	Interval           Duration `json:"interval"`
+	Timeout            Duration `json:"timeout"`
+	HealthyThreshold   int      `json:"healthy_threshold"`
+	UnhealthyThreshold int      `json:"unhealthy_threshold"`
+}
+
+// Defaults of an upstream.
+const (
+	DefaultUpstreamConnectTimeout  = 5 * time.Second
+	DefaultUpstreamResponseTimeout = 60 * time.Second
+	DefaultUpstreamIdleTimeout     = 90 * time.Second
+	DefaultUpstreamRetries         = 1
+	DefaultUpstreamMaxFails        = 3
+	DefaultUpstreamFailTimeout     = 10 * time.Second
+)
 
 // Managed reports whether LOTUS starts the backend's processes.
 func (b *PHPBackend) Managed() bool { return b.Command != "" }
@@ -267,7 +314,12 @@ type Actions struct {
 	TryFiles []string `json:"try_files,omitempty"`
 	PHP      string   `json:"php,omitempty"` // name of a PHP backend
 	PHPDeny  bool     `json:"php_deny,omitempty"`
-	Return   *Return  `json:"return,omitempty"`
+	Proxy    string   `json:"proxy,omitempty"` // name of an upstream
+	// ProxyHeaders are set on proxied requests (an empty value removes the
+	// header); ProxyHostUpstream sends the backend's own Host instead of the client's.
+	ProxyHeaders      []Header `json:"proxy_headers,omitempty"`
+	ProxyHostUpstream bool     `json:"proxy_host_upstream,omitempty"`
+	Return            *Return  `json:"return,omitempty"`
 }
 
 // Return is an immediate response.

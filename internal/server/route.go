@@ -102,7 +102,7 @@ func (rt *siteRuntime) serve(w0 http.ResponseWriter, r *http.Request, clientIP n
 			htStatus int
 			htPHPEnv htScript
 		)
-		if rt.ht != nil && actions.Return == nil && files != nil && !es.inPage {
+		if rt.ht != nil && actions.Return == nil && actions.Proxy == "" && files != nil && !es.inPage {
 			root := rt.site.Root
 			if route != nil {
 				root = route.Root
@@ -239,6 +239,10 @@ func (rt *siteRuntime) serve(w0 http.ResponseWriter, r *http.Request, clientIP n
 				// An explicit body is final and skips error pages, but while an
 				// error page is being served it must still carry the original status.
 				rt.respond(final, out, req, actions.Return, vars)
+				return target{}, false
+
+			case actions.Proxy != "":
+				rt.serveProxy(final, out, req, actions, clientStr, reqID)
 				return target{}, false
 
 			case len(actions.TryFiles) > 0:

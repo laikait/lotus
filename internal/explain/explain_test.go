@@ -200,3 +200,30 @@ func TestExplainSaysWhenHtaccessIsNotApplied(t *testing.T) {
 		}
 	}
 }
+
+func TestExplainDescribesProxyRoutes(t *testing.T) {
+	s := site("a.test", nil, "web")
+	s.Root = "/srv/a"
+	s.Routes = []model.Route{
+		{Kind: model.RoutePrefix, Path: "/api/", Actions: model.Actions{Proxy: "app", ProxyHeaders: []model.Header{{Name: "X-Env", Value: "prod"}, {Name: "X-Drop"}}}},
+		{Kind: model.RoutePrefix, Path: "/gone/", Actions: model.Actions{Proxy: "missing"}},
+	}
+	cfg := cfgWith(s)
+	cfg.Upstreams = []model.Upstream{{Name: "app", Balance: "least_conn", Backends: []model.UpstreamBackend{{Address: "http://h:1"}, {Address: "http://h:2"}}}}
+	rep := Explain(cfg, Request{Host: "a.test", Path: "/api/users?id=7"}, nil)
+	if rep.Outcome.Kind != KindProxy || !strings.Contains(rep.Outcome.Summary(), "proxied") {
+		t.Fatalf("%+v", rep.Outcome)
+	}
+	var all strings.Builder
+	for _, st := range rep.Steps {
+		all.WriteString(st.Phase + " " + st.Detail + "\n")
+	}
+	for _, want := range []string{"/api/users?id=7", `upstream "app"`, "2 backend(s)", "least_conn", "sets the request header X-Env", "removes the request header X-Drop"} {
+		if !strings.Contains(all.String(), want) {
+			t.Errorf("steps lack %q:\n%s", want, all.String())
+		}
+	}
+	if rep := Explain(cfg, Request{Host: "a.test", Path: "/gone/x"}, nil); rep.Outcome.Kind != KindError {
+		t.Errorf("an unknown upstream: %+v", rep.Outcome)
+	}
+}

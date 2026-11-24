@@ -43,6 +43,9 @@ func Effective(route *model.Route, m *model.Match) model.Actions {
 	if m.Actions.PHPDeny {
 		a.PHPDeny = true
 	}
+	if m.Actions.Proxy != "" {
+		a.Proxy = m.Actions.Proxy
+	}
 	if m.Actions.Return != nil {
 		a.Return = m.Actions.Return
 	}

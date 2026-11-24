@@ -10,6 +10,7 @@ import (
 	"github.com/laikait/lotus/internal/fastcgi"
 	"github.com/laikait/lotus/internal/logging"
 	"github.com/laikait/lotus/internal/phpproc"
+	"github.com/laikait/lotus/internal/proxy"
 	"github.com/laikait/lotus/internal/vhost"
 )
 
@@ -26,6 +27,7 @@ type generation struct {
 	clients  *clientip.Resolver
 	fallback *logging.Access       // access log for requests that reach no site
 	php      map[string]phpBackend // the PHP backends, by name
+	upstream map[string]*proxy.Upstream
 
 	mu      sync.Mutex
 	refs    int  // requests using this generation

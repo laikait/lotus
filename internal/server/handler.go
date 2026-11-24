@@ -12,6 +12,7 @@ import (
 	"github.com/laikait/lotus/internal/config/model"
 	"github.com/laikait/lotus/internal/fspath"
 	"github.com/laikait/lotus/internal/logging"
+	"github.com/laikait/lotus/internal/proxy"
 	"github.com/laikait/lotus/internal/staticfiles"
 	"github.com/laikait/lotus/internal/vhost"
 )
@@ -29,9 +30,10 @@ type siteRuntime struct {
 	log          *slog.Logger
 	headers      []model.Header
 	maxBody      int64
-	cert         *tls.Certificate      // set for tls manual
-	php          map[string]phpBackend // PHP backends of this configuration, by name
-	phpSite      bool                  // some route of the site runs PHP
+	cert         *tls.Certificate           // set for tls manual
+	php          map[string]phpBackend      // PHP backends of this configuration, by name
+	phpSite      bool                       // some route of the site runs PHP
+	upstreams    map[string]*proxy.Upstream // reverse proxy upstreams of this configuration, by name
 
 	// .htaccess support; ht is nil when the site doesn't read .htaccess files.
 	ht            *htRuntime

@@ -230,6 +230,8 @@ func (c *compiler) server(cfg *model.Config, server *ast.Directive) {
 			cfg.TLS = tlsSettings(cfg.TLS, d)
 		case "php_backend":
 			cfg.PHPBackends = append(cfg.PHPBackends, c.phpBackend(d))
+		case "upstream":
+			cfg.Upstreams = append(cfg.Upstreams, c.upstream(d))
 		case "control":
 			for _, s := range body(d) {
 				if r, ok := s.(*ast.Directive); ok {
@@ -362,6 +364,85 @@ func (c *compiler) phpBackend(d *ast.Directive) model.PHPBackend {
 		b.Processes, b.MaxRequests = processes, maxRequests
 	}
 	return b
+}
+
+func (c *compiler) upstream(d *ast.Directive) model.Upstream {
+	u := model.Upstream{
+		Name: str(arg(d, 0)), Balance: "round_robin", TLSVerify: true,
+		ConnectTimeout:  model.Duration(model.DefaultUpstreamConnectTimeout),
+		ResponseTimeout: model.Duration(model.DefaultUpstreamResponseTimeout),
+		IdleTimeout:     model.Duration(model.DefaultUpstreamIdleTimeout),
+		Retries:         model.DefaultUpstreamRetries,
+		MaxFails:        model.DefaultUpstreamMaxFails,
+		FailTimeout:     model.Duration(model.DefaultUpstreamFailTimeout),
+	}
+	for _, s := range body(d) {
+		r, ok := s.(*ast.Directive)
+		if !ok {
+			continue
+		}
+		switch r.Name {
+		case "backend":
+			b := model.UpstreamBackend{Address: str(arg(r, 0)), Weight: 1}
+			for _, bs := range body(r) {
+				if bd, ok := bs.(*ast.Directive); ok {
+					switch bd.Name {
+					case "weight":
+						b.Weight = int(integer(arg(bd, 0)))
+					case "max_conns":
+						b.MaxConns = int(integer(arg(bd, 0)))
+					}
+				}
+			}
+			u.Backends = append(u.Backends, b)
+		case "balance":
+			u.Balance = str(arg(r, 0))
+		case "connect_timeout":
+			u.ConnectTimeout = model.Duration(dur(arg(r, 0)))
+		case "response_timeout":
+			u.ResponseTimeout = model.Duration(dur(arg(r, 0)))
+		case "idle_timeout":
+			u.IdleTimeout = model.Duration(dur(arg(r, 0)))
+		case "retries":
+			u.Retries = int(integer(arg(r, 0)))
+		case "max_fails":
+			u.MaxFails = int(integer(arg(r, 0)))
+		case "fail_timeout":
+			u.FailTimeout = model.Duration(dur(arg(r, 0)))
+		case "max_conns":
+			u.MaxConns = int(integer(arg(r, 0)))
+		case "tls_verify":
+			u.TLSVerify = boolean(arg(r, 0))
+		case "tls_ca":
+			u.TLSCA = c.path(str(arg(r, 0)))
+		case "tls_server_name":
+			u.TLSServerName = str(arg(r, 0))
+		case "tls_client_cert":
+			u.TLSClientCert = c.path(str(arg(r, 0)))
+		case "tls_client_key":
+			u.TLSClientKey = c.path(str(arg(r, 0)))
+		case "health_check":
+			h := &model.HealthCheck{Interval: model.Duration(10 * time.Second), Timeout: model.Duration(3 * time.Second), HealthyThreshold: 2, UnhealthyThreshold: 3}
+			for _, hs := range body(r) {
+				if hd, ok := hs.(*ast.Directive); ok {
+					switch hd.Name {
+					case "path":
+						h.Path = str(arg(hd, 0))
+					case "interval":
+						h.Interval = model.Duration(dur(arg(hd, 0)))
+					case "timeout":
+						h.Timeout = model.Duration(dur(arg(hd, 0)))
+					case "healthy_threshold":
+						h.HealthyThreshold = int(integer(arg(hd, 0)))
+					case "unhealthy_threshold":
+						h.UnhealthyThreshold = int(integer(arg(hd, 0)))
+					}
+				}
+			}
+			u.Health = h
+		}
+	}
+	return u
 }
 
 // ---- sites ----
@@ -632,6 +713,12 @@ func actions(stmts []ast.Statement) model.Actions {
 			a.PHP = str(arg(d, 0))
 		case "php_deny":
 			a.PHPDeny = boolean(arg(d, 0))
+		case "proxy":
+			a.Proxy = str(arg(d, 0))
+		case "proxy_set_header":
+			a.ProxyHeaders = append(a.ProxyHeaders, model.Header{Name: str(arg(d, 0)), Value: str(arg(d, 1))})
+		case "proxy_host":
+			a.ProxyHostUpstream = str(arg(d, 0)) == "upstream"
 		case "return":
 			a.Return = &model.Return{Status: int(integer(arg(d, 0))), Target: tmpl(arg(d, 1))}
 		}

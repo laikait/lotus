@@ -1,0 +1,78 @@
+# Reverse proxy with load balancing and health checks.
+#
+# Start two small backends (any HTTP servers will do). The route below sends the
+# path as it is, so each backend needs an app/ directory:
+#
+#     mkdir one && mkdir one/app && echo one > one/app/index.html
+#     mkdir two && mkdir two/app && echo two > two/app/index.html
+#     (cd one && python -m http.server 9001 --bind 127.0.0.1) &
+#     (cd two && python -m http.server 9002 --bind 127.0.0.1) &
+#
+# then:
+#
+#     lotus start -config configs/examples/proxy.lotus
+#
+# Try:  curl http://127.0.0.1:8087/app/             -> "one" twice for every "two" (weight 2:1)
+#       curl -i http://127.0.0.1:8087/health        -> answered by LOTUS itself
+#       (stop one backend: after a few seconds all requests go to the other)
+#
+# Full description: docs/architecture/proxy.md
+
+lotus_config_version 1
+
+server {
+    listen "http" {
+        address "127.0.0.1:8087"
+    }
+
+    # A group of backends. Only an administrator can define one.
+    upstream "app" {
+        backend "http://127.0.0.1:9001" {
+            weight 2
+        }
+        backend "http://127.0.0.1:9002"
+
+        balance round_robin           # round_robin, least_conn, random, ip_hash, uri_hash
+        connect_timeout 2s
+        response_timeout 30s
+
+        # A request that couldn't reach a backend (or a GET that failed before a
+        # response) is tried on one more backend. A POST that was read is never repeated.
+        retries 1
+
+        # Passive checks: 3 failures within 10s take a backend out for 10s.
+        max_fails 3
+        fail_timeout 10s
+
+        # Active checks: a GET to /, every 5s; a bad status or no answer three
+        # times in a row takes the backend out until it answers twice in a row.
+        health_check {
+            path "/"
+            interval 5s
+            unhealthy_threshold 3
+            healthy_threshold 2
+        }
+    }
+
+    site "localhost" {
+        root "./htaccess-site"
+        tls off
+
+        # Everything under /app/ goes to the upstream; the path is sent as it is.
+        route "/app/" {
+            proxy "app"
+            proxy_set_header "X-Env" "example"
+        }
+
+        # LOTUS answers this one itself.
+        route = "/health" {
+            return 200 "ok"
+        }
+
+        # Pages for errors LOTUS produces (502 backend down, 503 none available,
+        # 504 timeout). They're served from files, not through the proxy.
+        error_page 502 "/404.html"
+        error_page 503 "/404.html"
+        error_page 504 "/404.html"
+    }
+}

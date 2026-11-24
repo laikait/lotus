@@ -23,6 +23,7 @@ import (
 	"github.com/laikait/lotus/internal/fastcgi"
 	"github.com/laikait/lotus/internal/fspath"
 	"github.com/laikait/lotus/internal/logging"
+	"github.com/laikait/lotus/internal/proxy"
 	"github.com/laikait/lotus/internal/staticfiles"
 	"github.com/laikait/lotus/internal/vhost"
 )
@@ -179,6 +180,21 @@ func (s *Server) buildGeneration(cfg *model.Config) (*generation, error) {
 		g.php[b.Name] = c
 		g.closers = append(g.closers, poolCloser{c})
 	}
+	g.upstream = make(map[string]*proxy.Upstream, len(cfg.Upstreams))
+	for _, mu := range cfg.Upstreams {
+		pc, err := upstreamConfig(mu, s.log)
+		if err == nil {
+			var up *proxy.Upstream
+			if up, err = proxy.New(pc, s.log); err == nil {
+				g.upstream[mu.Name] = up
+				g.closers = append(g.closers, upstreamCloser{up})
+			}
+		}
+		if err != nil {
+			g.closeNow()
+			return nil, fmt.Errorf("upstream %q: %w", mu.Name, err)
+		}
+	}
 	sites := make(map[string]*siteRuntime, len(cfg.Sites))
 	for i := range cfg.Sites {
 		rt, err := s.newSite(g, &cfg.Sites[i])
@@ -221,6 +237,8 @@ func (s *Server) newSite(g *generation, site *model.Site) (*siteRuntime, error) 
 		maxBody: site.Limits.MaxRequestBody,
 		php:     g.php,
 		phpSite: site.UsesPHP(),
+
+		upstreams: g.upstream,
 	}
 
 	access, err := s.logWriter(g, site.Logs.Access, s.opts.Stdout)
@@ -288,12 +306,14 @@ func (s *Server) newSite(g *generation, site *model.Site) (*siteRuntime, error) 
 	}
 	rt.defaultFiles = rt.handlers[filesKey(site.Root, site.Index)]
 	rt.resolvers = resolvers
+	// The names of the site's security_headers: .htaccess files and proxied
+	// backends can't change them.
+	rt.protected = map[string]bool{}
+	for _, h := range site.SecurityHeaders {
+		rt.protected[http.CanonicalHeaderKey(h.Name)] = true
+	}
 	if site.HTAccess != nil {
 		rt.ht = newHTRuntime(site.HTAccess, siteLog)
-		rt.protected = map[string]bool{}
-		for _, h := range site.SecurityHeaders {
-			rt.protected[http.CanonicalHeaderKey(h.Name)] = true
-		}
 	}
 
 	if site.TLS == model.TLSManual {

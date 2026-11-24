@@ -116,8 +116,32 @@ func validateRoute(d *ast.Directive, rep Reporter) {
 				"routes match the path only; use a match block to test the query string")
 		}
 	}
+	checkProxyConflicts(d, rep)
 	if d.Block != nil {
 		checkRoutesWith(rep, d, childRoutes(d.Block))
+	}
+}
+
+// checkProxyConflicts reports a route that both proxies and serves files: only
+// one of them can answer, and which one wins would be a guess.
+func checkProxyConflicts(d *ast.Directive, rep Reporter) {
+	if d.Block == nil {
+		return
+	}
+	hasProxy := false
+	for _, s := range d.Block.Statements {
+		if c, ok := s.(*ast.Directive); ok && c.Name == "proxy" {
+			hasProxy = true
+		}
+	}
+	if !hasProxy {
+		return
+	}
+	for _, s := range d.Block.Statements {
+		if c, ok := s.(*ast.Directive); ok && (c.Name == "try_files" || c.Name == "php") {
+			rep.Error(c.Pos, diag.CodeInvalidValue, fmt.Sprintf("%s can't be combined with proxy in one route", c.Name),
+				"a route either proxies or serves files; use a separate route for each")
+		}
 	}
 }
 
