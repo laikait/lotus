@@ -52,6 +52,7 @@ type Server struct {
 	defaultAccess *logging.Access
 
 	gen    atomic.Pointer[generation]
+	acmeRT atomic.Pointer[acmeRuntime] // automatic certificates; nil without `tls automatic`
 	genSeq atomic.Uint64
 	// tracker notices requests that net/http rejects before the handler runs.
 	tracker *connTracker
@@ -107,6 +108,9 @@ func New(cfg *model.Config, opts Options) (*Server, error) {
 		errc:          make(chan error, len(cfg.Listeners)),
 	}
 	s.tracker = newConnTracker(s.log)
+	if err := s.setupACME(cfg); err != nil {
+		return nil, err
+	}
 	s.limiter.exempt = func(a netip.Addr) bool {
 		g := s.gen.Load()
 		return g != nil && g.clients.Trusted(a)
@@ -133,7 +137,7 @@ func New(cfg *model.Config, opts Options) (*Server, error) {
 		if l.HTTPS {
 			srv.TLSConfig = newTLSConfig(cfg.TLS.MinVersion, func() *vhost.Table[*siteRuntime] {
 				return s.gen.Load().tables[name]
-			})
+			}, s.acmeManager)
 		}
 		s.listeners = append(s.listeners, &boundListener{conf: l, srv: srv, https: l.HTTPS})
 	}
@@ -242,6 +246,7 @@ func (s *Server) newSite(g *generation, site *model.Site) (*siteRuntime, error) 
 		maxBody: site.Limits.MaxRequestBody,
 		php:     g.php,
 		phpSite: site.UsesPHP(),
+		tlsAuto: site.TLS == model.TLSAutomatic,
 
 		upstreams: g.upstream,
 	}
@@ -395,6 +400,7 @@ func (s *Server) Start() error {
 		}
 		s.log.Info("listening", "listener", bl.conf.Name, "address", bl.ln.Addr().String(), "protocol", kind)
 	}
+	s.manageCertificates(s.gen.Load().cfg)
 	return nil
 }
 
@@ -456,6 +462,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	close(errs)
 	s.reloadMu.Lock() // a reload in progress finishes first
 	s.gen.Load().closeNow()
+	s.closeACME()
 	s.reloadMu.Unlock()
 	return errors.Join(drain(errs)...)
 }

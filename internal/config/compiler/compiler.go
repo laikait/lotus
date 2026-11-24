@@ -10,8 +10,10 @@ package compiler
 import (
 	"fmt"
 	"net/netip"
+	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -227,7 +229,7 @@ func (c *compiler) server(cfg *model.Config, server *ast.Directive) {
 		case "limits":
 			cfg.Limits = applyLimits(cfg.Limits, d)
 		case "tls":
-			cfg.TLS = tlsSettings(cfg.TLS, d)
+			cfg.TLS = c.tlsSettings(cfg.TLS, d)
 		case "php_backend":
 			cfg.PHPBackends = append(cfg.PHPBackends, c.phpBackend(d))
 		case "upstream":
@@ -298,7 +300,7 @@ func applyLimits(base model.Limits, d *ast.Directive) model.Limits {
 	return base
 }
 
-func tlsSettings(base model.TLS, d *ast.Directive) model.TLS {
+func (c *compiler) tlsSettings(base model.TLS, d *ast.Directive) model.TLS {
 	for _, s := range body(d) {
 		r, ok := s.(*ast.Directive)
 		if !ok {
@@ -320,8 +322,21 @@ func tlsSettings(base model.TLS, d *ast.Directive) model.TLS {
 						a.EABKeyID = str(arg(f, 0))
 					case "eab_hmac_key":
 						a.EABHMACKey = model.Secret(str(arg(f, 0)))
+					case "storage":
+						a.Storage = c.path(str(arg(f, 0)))
+					case "ca_root":
+						a.CARoot = c.path(str(arg(f, 0)))
+					case "challenges":
+						a.Challenges = strs(arg(f, 0))
+					case "http_port":
+						a.HTTPPort = int(integer(arg(f, 0)))
+					case "tls_alpn_port":
+						a.TLSALPNPort = int(integer(arg(f, 0)))
 					}
 				}
+			}
+			if a.Storage == "" {
+				a.Storage = defaultACMEStorage()
 			}
 			base.ACME = a
 		}
@@ -874,12 +889,33 @@ func (c *compiler) crossChecks(cfg *model.Config) {
 				}
 			}
 		}
+		if s.TLS == model.TLSAutomatic {
+			for _, n := range append([]string{s.Name}, s.Aliases...) {
+				if strings.Contains(n, "*") {
+					c.diags.ErrorHint(pos, diag.CodeInvalidValue,
+						fmt.Sprintf("site %q uses automatic TLS but %q is a wildcard name", s.Name, n),
+						"wildcard certificates need the DNS-01 challenge, which is not supported yet; list the host names, or use `tls manual` with a wildcard certificate")
+				}
+			}
+		}
 		if s.TLS == model.TLSAutomatic && cfg.TLS.ACME == nil {
 			c.diags.ErrorHint(pos, diag.CodeSiteNoACME,
 				fmt.Sprintf("site %q uses automatic TLS but there is no acme block", s.Name),
 				"add `tls { acme { email \"you@example.com\" } }` to the server block, or set `tls manual` or `tls off` on the site")
 		}
 	}
+}
+
+// defaultACMEStorage is where certificates are kept when the configuration
+// doesn't say.
+func defaultACMEStorage() string {
+	if runtime.GOOS == "windows" {
+		if pd := os.Getenv("ProgramData"); pd != "" {
+			return filepath.Join(pd, "lotus", "certs")
+		}
+		return `C:\ProgramData\lotus\certs`
+	}
+	return "/var/lib/lotus/certs"
 }
 
 // baseDir returns the absolute directory of the root configuration file.

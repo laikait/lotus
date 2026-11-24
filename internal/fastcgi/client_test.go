@@ -248,6 +248,24 @@ func TestReuseDisabled(t *testing.T) {
 	}
 }
 
+// waitNoIdle waits until the watchers of the idle connections have seen that
+// the backend closed them. A fixed sleep is too short on a busy machine, and
+// reusing a connection before its watcher noticed the close is the very race
+// this test is not about.
+func waitNoIdle(t *testing.T, c *Client) {
+	t.Helper()
+	c.mu.Lock()
+	idle := append([]*pooled(nil), c.idle...)
+	c.mu.Unlock()
+	for _, p := range idle {
+		select {
+		case <-p.done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the idle watcher never noticed that the backend closed the connection")
+		}
+	}
+}
+
 func TestAConnectionTheBackendClosedIsNotReused(t *testing.T) {
 	// The backend answers and then drops the connection (as PHP-FPM does after
 	// pm.max_requests) even though KEEP_CONN was asked for.
@@ -265,7 +283,7 @@ func TestAConnectionTheBackendClosedIsNotReused(t *testing.T) {
 		if got := readAll(t, resp); got != "ok" {
 			t.Fatalf("request %d: %q", i, got)
 		}
-		time.Sleep(30 * time.Millisecond) // let the close reach the idle watcher
+		waitNoIdle(t, c) // the watcher has noticed that the backend closed the connection
 	}
 	if n := f.Accepted(); n != 4 {
 		t.Errorf("%d connections, want 4 (a dead one must never be reused)", n)

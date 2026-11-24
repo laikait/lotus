@@ -48,16 +48,22 @@ func (s *Server) reloadLocked(cfg *model.Config) error {
 		return &UnsupportedError{Items: items}
 	}
 	old := s.gen.Load()
-	if items := restartRequired(old.cfg, cfg); len(items) > 0 {
+	if items := append(restartRequired(old.cfg, cfg), s.restartRequiredACME(cfg)...); len(items) > 0 {
 		return &RestartRequiredError{Items: items}
 	}
 
+	if s.acmeManager() == nil {
+		if err := s.setupACME(cfg); err != nil {
+			return fmt.Errorf("reload failed, the running configuration was kept: %w", err)
+		}
+	}
 	g, err := s.buildGeneration(cfg)
 	if err != nil {
 		return fmt.Errorf("reload failed, the running configuration was kept: %w", err)
 	}
 	s.publish(g)
 	old.retire()
+	s.manageCertificates(cfg)
 	s.log.Info("configuration reloaded", "sites", len(cfg.Sites), "took", time.Since(start).Round(time.Millisecond).String())
 	return nil
 }
@@ -89,6 +95,10 @@ func restartRequired(old, cfg *model.Config) []string {
 	}
 	return out
 }
+
+// restartRequiredACME is restartRequired for what depends on the running
+// manager: how certificates are obtained can't change in a reload.
+func (s *Server) restartRequiredACME(cfg *model.Config) []string { return s.acmeRestartRequired(cfg) }
 
 // ErrReloadInProgress is returned by TryReload when another reload is running.
 var ErrReloadInProgress = errors.New("a reload is already in progress")

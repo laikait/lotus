@@ -43,6 +43,25 @@ jobs:
       - name: Unit tests with race detector
         run: go test -race -count=1 ./...
 
+  acme:
+    name: ACME against Pebble
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: stable
+      - name: Install Pebble (Let's Encrypt's test CA) and its mock DNS
+        run: |
+          mkdir -p "$RUNNER_TEMP/pebble"
+          GOBIN="$RUNNER_TEMP/pebble" go install github.com/letsencrypt/pebble/v2/cmd/pebble@v2.10.3
+          GOBIN="$RUNNER_TEMP/pebble" go install github.com/letsencrypt/pebble/v2/cmd/pebble-challtestsrv@v2.10.3
+          echo "LOTUS_PEBBLE_DIR=$RUNNER_TEMP/pebble" >> "$GITHUB_ENV"
+          DIR=$(cd "$RUNNER_TEMP" && go mod download -json github.com/letsencrypt/pebble/v2@v2.10.3 | jq -r .Dir)
+          echo "LOTUS_PEBBLE_TESTDIR=$DIR/test" >> "$GITHUB_ENV"
+      - name: Certificates over HTTP-01 and TLS-ALPN-01, with the race detector
+        run: go test -race -count=1 -run AutomaticCertificates -v ./internal/server
+
   freebsd:
     name: Test (FreeBSD)
     runs-on: ubuntu-latest

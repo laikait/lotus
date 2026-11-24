@@ -113,6 +113,17 @@ type ACME struct {
 	CA         string `json:"ca,omitempty"` // empty = Let's Encrypt production
 	EABKeyID   string `json:"eab_key_id,omitempty"`
 	EABHMACKey Secret `json:"eab_hmac_key,omitempty"`
+	// Storage holds account keys, certificates and private keys.
+	Storage string `json:"storage"`
+	// CARoot is a PEM file with the root of a private or test CA to trust.
+	CARoot string `json:"ca_root,omitempty"`
+	// HTTPPort and TLSALPNPort are where the CA reaches this server for the
+	// challenges, when not 80 and 443.
+	HTTPPort    int `json:"http_port,omitempty"`
+	TLSALPNPort int `json:"tls_alpn_port,omitempty"`
+	// Challenges limits which validations are used: "http-01", "tls-alpn-01".
+	// Empty means both.
+	Challenges []string `json:"challenges,omitempty"`
 }
 
 // PHPBackend is a FastCGI backend: either an existing server at Address, or

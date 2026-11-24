@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/laikait/lotus/internal/acme"
 	"github.com/laikait/lotus/internal/config/model"
 	"github.com/laikait/lotus/internal/vhost"
 )
@@ -66,16 +67,34 @@ func tlsVersion(v string) uint16 {
 //
 // table returns the listener's current virtual host table, so a reload
 // changes the certificates served to new handshakes.
-func newTLSConfig(minVersion string, table func() *vhost.Table[*siteRuntime]) *tls.Config {
+//
+// acmeMgr returns the manager of automatic certificates (nil when no site uses
+// them). It answers TLS-ALPN-01 validations, and supplies the certificate of
+// sites with `tls automatic`. A certificate is never obtained during a
+// handshake, and only names of configured sites are ever looked up.
+func newTLSConfig(minVersion string, table func() *vhost.Table[*siteRuntime], acmeMgr func() *acme.Manager) *tls.Config {
 	return &tls.Config{
 		MinVersion: tlsVersion(minVersion),
+		// The validation protocol must be negotiable; HTTP/2 and HTTP/1.1 are
+		// added by net/http.
+		NextProtos: []string{acme.ALPNProtocol},
 		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			mgr := acmeMgr()
+			if mgr != nil && acme.IsChallenge(hello) {
+				return mgr.GetCertificate(hello)
+			}
 			name, _ := vhost.NormalizeHost(hello.ServerName) // empty (no SNI) picks the default site
 			site, _, ok := table().Lookup(name)
-			if !ok || site.cert == nil {
+			if !ok {
 				return nil, fmt.Errorf("no certificate for %q", hello.ServerName)
 			}
-			return site.cert, nil
+			if site.cert != nil {
+				return site.cert, nil
+			}
+			if site.tlsAuto && mgr != nil {
+				return mgr.GetCertificate(hello)
+			}
+			return nil, fmt.Errorf("no certificate for %q", hello.ServerName)
 		},
 	}
 }

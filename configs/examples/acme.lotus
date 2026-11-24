@@ -1,0 +1,46 @@
+# Automatic HTTPS: certificates from Let's Encrypt (or another ACME CA),
+# obtained and renewed by LOTUS.
+#
+# This needs a real server: the host names below must point at this machine, and
+# ports 80 and/or 443 must be reachable from the internet. Change the names and
+# the email, and start with the staging CA (as set here) to avoid rate limits.
+#
+#     lotus config validate configs/examples/acme.lotus
+#     lotus start -config configs/examples/acme.lotus
+#
+# Full description: docs/architecture/acme.md
+
+lotus_config_version 1
+
+server {
+    listen "http" {
+        address "0.0.0.0:80"      # answers HTTP-01 challenges
+    }
+    listen "https" {
+        address "0.0.0.0:443"     # answers TLS-ALPN-01 challenges, and serves the sites
+        protocol https
+    }
+
+    tls {
+        min_version "1.2"
+        acme {
+            email "admin@example.com"
+
+            # Let's Encrypt's staging CA: certificates it issues are not trusted by
+            # browsers, but it has generous limits. Remove this line for real certificates.
+            ca "https://acme-staging-v02.api.letsencrypt.org/directory"
+
+            # Account key, certificates and private keys. Keep it private, and back it up.
+            storage "/var/lib/lotus/certs"
+
+            # Use only one validation when the other port is closed:
+            # challenges [ "tls-alpn-01" ]
+        }
+    }
+
+    site "example.com" {
+        aliases [ "www.example.com" ]
+        root "/var/www/example"
+        # tls automatic is the default on an https listener.
+    }
+}

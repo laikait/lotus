@@ -33,6 +33,7 @@ type siteRuntime struct {
 	cert         *tls.Certificate           // set for tls manual
 	php          map[string]phpBackend      // PHP backends of this configuration, by name
 	phpSite      bool                       // some route of the site runs PHP
+	tlsAuto      bool                       // the site gets its certificate from ACME
 	upstreams    map[string]*proxy.Upstream // reverse proxy upstreams of this configuration, by name
 
 	// .htaccess support; ht is nil when the site doesn't read .htaccess files.
@@ -54,6 +55,11 @@ func (h *listenerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	served(r.Context())
 	rec := &recorder{ResponseWriter: w}
+	// A certificate authority validating a name by HTTP-01. It is answered
+	// before anything else (no site, limit or log line involved).
+	if h.srv.handleACMEChallenge(w, r) {
+		return
+	}
 
 	// The whole request uses the configuration that is current now, even if a
 	// reload happens while it runs. The generation is released at the end.

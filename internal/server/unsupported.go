@@ -35,8 +35,8 @@ func Unsupported(cfg *model.Config) []string {
 	}
 	server := cfg.Limits
 	for _, s := range cfg.Sites {
-		if s.TLS == model.TLSAutomatic {
-			add("site %q: automatic certificates (ACME arrive with the TLS phase); use `tls manual` with a certificate", s.Name)
+		if s.TLS == model.TLSAutomatic && cfg.TLS.ACME == nil {
+			add("site %q: automatic certificates need an acme block in tls", s.Name)
 		}
 		// Connection-level limits belong to a listener, not a site, so a site
 		// can't have its own values yet. Only the request body limit is per site.
