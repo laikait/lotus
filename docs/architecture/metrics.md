@@ -70,6 +70,9 @@ address) is ever a label, so a client can't make the number of series grow.
 | `lotus_upstream_backend_active_requests` | gauge | `upstream`, `backend` | requests in progress |
 | `lotus_upstream_backend_requests_total`, `_failures_total` | counter | `upstream`, `backend` | requests sent (retries included) and those that failed |
 | `lotus_php_process_restarts_total` | counter | `backend` | managed PHP processes replaced |
+| `lotus_cache_requests_total` | counter | `zone`, `result` (`hit`, `miss`, `stale`, `bypass`) | requests of cached routes; `stale` is an old copy that covered for a failing backend |
+| `lotus_cache_entries`, `lotus_cache_size_bytes`, `lotus_cache_max_size_bytes` | gauge | `zone` | responses stored, the memory they use, the zone's limit |
+| `lotus_cache_stored_total`, `_evictions_total`, `_purged_total` | counter | `zone` | responses added, dropped to make room, removed by a purge or a write |
 | `lotus_certificate_ready` | gauge | `name`, `source` (`file`, `acme`), `site` (files) | 1 if a certificate is loaded |
 | `lotus_certificate_expiry_timestamp_seconds` | gauge | same | when it expires |
 | `lotus_config_generation` | gauge | | the configuration number (1 at start, +1 per reload that changed it) |

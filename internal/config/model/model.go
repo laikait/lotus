@@ -57,9 +57,45 @@ type Config struct {
 	TLS            TLS            `json:"tls"`
 	PHPBackends    []PHPBackend   `json:"php_backends"`
 	Upstreams      []Upstream     `json:"upstreams,omitempty"`
+	Caches         []CacheZone    `json:"caches,omitempty"`
 	Sites          []Site         `json:"sites"`
 	Control        Control        `json:"control"`
 	Metrics        *Metrics       `json:"metrics,omitempty"`
+}
+
+// Defaults of a cache zone.
+const (
+	DefaultCacheMaxSize      = 64 << 20
+	DefaultCacheMaxEntrySize = 1 << 20
+	DefaultCacheLockTimeout  = 5 * time.Second
+)
+
+// CacheZone is a response cache: a memory budget that routes share by naming it.
+type CacheZone struct {
+	Name         string `json:"name"`
+	MaxSize      int64  `json:"max_size"`
+	MaxEntrySize int64  `json:"max_entry_size"`
+}
+
+// Cookie modes of a route's cache.
+const (
+	CookiesBypassAny   = "any"   // a request with a cookie never uses the cache
+	CookiesBypassNone  = "none"  // cookies are ignored
+	CookiesBypassNamed = "named" // only the cookies in BypassCookies matter
+)
+
+// RouteCache turns the cache on for a route that proxies or runs PHP.
+type RouteCache struct {
+	Zone         string   `json:"zone"`
+	TTL          Duration `json:"ttl"`
+	NegativeTTL  Duration `json:"negative_ttl"`
+	StaleIfError Duration `json:"stale_if_error"`
+	LockTimeout  Duration `json:"lock_timeout"`
+	// Cookies is CookiesBypassAny (the default), CookiesBypassNone or
+	// CookiesBypassNamed; with the last, BypassCookies lists the names (a
+	// trailing * matches a prefix).
+	Cookies       string   `json:"bypass_cookies"`
+	BypassCookies []string `json:"bypass_cookie_names,omitempty"`
 }
 
 // Metrics configures the metrics listener.
@@ -350,6 +386,8 @@ type Route struct {
 	Children   []Route        `json:"children,omitempty"`
 	// RateLimit is this route's own limit; the site's applies as well.
 	RateLimit *RateLimit `json:"rate_limit,omitempty"`
+	// Cache keeps the responses of this route's proxy or PHP.
+	Cache *RouteCache `json:"cache,omitempty"`
 }
 
 // LiteralBrace is written before a '{' in a request-time template (try_files

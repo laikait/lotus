@@ -32,6 +32,8 @@ const (
 	CtxBackend         Context = "backend"
 	CtxHealthCheck     Context = "health_check"
 	CtxRateLimit       Context = "rate_limit"
+	CtxCache           Context = "cache"
+	CtxRouteCache      Context = "route_cache"
 	CtxSecurityHeaders Context = "security_headers"
 	CtxControl         Context = "control"
 )

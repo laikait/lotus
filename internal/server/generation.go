@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/laikait/lotus/internal/cache"
 	"github.com/laikait/lotus/internal/clientip"
 	"github.com/laikait/lotus/internal/config/model"
 	"github.com/laikait/lotus/internal/fastcgi"
@@ -28,6 +29,7 @@ type generation struct {
 	fallback *logging.Access       // access log for requests that reach no site
 	php      map[string]phpBackend // the PHP backends, by name
 	upstream map[string]*proxy.Upstream
+	caches   map[string]*cache.Store // the response cache zones, by name (owned by the Server)
 	sites    map[string]*siteRuntime // by site name
 
 	mu      sync.Mutex

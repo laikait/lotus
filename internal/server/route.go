@@ -182,6 +182,12 @@ func (rt *siteRuntime) serve(w0 http.ResponseWriter, r *http.Request, clientIP n
 			Captures: caps,
 		}
 
+		// The response cache of the route (not while an error page is served).
+		var cc *cacheCall
+		if !es.inPage {
+			cc = rt.cacheFor(route, r, scheme)
+		}
+
 		// final is where a response that error pages must not replace goes.
 		final := http.ResponseWriter(w)
 		if es.force != 0 {
@@ -191,7 +197,7 @@ func (rt *siteRuntime) serve(w0 http.ResponseWriter, r *http.Request, clientIP n
 		// serveFiles serves a file request of this route, running PHP where the
 		// route says so.
 		serveFiles := func(rq *http.Request) (target, bool) {
-			return rt.serveFiles(final, out, rq, clientStr, files, actions.PHP, actions.PHPDeny, htPHPEnv)
+			return rt.serveFiles(final, out, rq, clientStr, files, actions.PHP, actions.PHPDeny, htPHPEnv, cc)
 		}
 
 		// One step: it writes a response, or says where to route next.
@@ -256,7 +262,7 @@ func (rt *siteRuntime) serve(w0 http.ResponseWriter, r *http.Request, clientIP n
 				return target{}, false
 
 			case actions.Proxy != "":
-				rt.serveProxy(final, out, req, actions, clientStr, reqID)
+				rt.serveProxy(final, out, req, actions, clientStr, reqID, cc)
 				return target{}, false
 
 			case len(actions.TryFiles) > 0:

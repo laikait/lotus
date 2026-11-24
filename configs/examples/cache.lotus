@@ -1,0 +1,67 @@
+# Response cache in front of a proxied application and a PHP site.
+#
+# Start any HTTP backend on port 9001 (for example `python -m http.server 9001
+# --bind 127.0.0.1` in a directory that has a blog/ folder), then:
+#
+#     lotus start -config configs/examples/cache.lotus
+#
+# Try:  curl -i http://127.0.0.1:8088/blog/        first X-Cache: MISS, then HIT
+#       lotus cache status                          sizes, entries, hit rate
+#       lotus cache purge --prefix /blog/           the next request is a MISS again
+#       curl -i -H "Cookie: session=1" http://127.0.0.1:8088/blog/   X-Cache: BYPASS
+#
+# Full description: docs/architecture/cache.md
+
+lotus_config_version 1
+
+server {
+    listen "http" {
+        address "127.0.0.1:8088"
+    }
+
+    upstream "app" {
+        backend "http://127.0.0.1:9001"
+    }
+
+    # A zone is a memory budget; routes share it by naming it. Only an
+    # administrator can define one.
+    cache "pages" {
+        max_size 256mib          # least recently used entries go when it is full
+        max_entry_size 4mib      # bigger responses are passed on and not kept
+    }
+
+    site "example.test" {
+        root "./www"
+
+        route "/blog/" {
+            proxy "app"
+
+            cache "pages" {
+                # For responses that don't say how long they are good for (no
+                # max-age, s-maxage or Expires). A backend that does say wins.
+                ttl 5m
+
+                # 404 and 410 are kept for a short time only, when you say so.
+                negative_ttl 30s
+
+                # While the backend is down or answers 500, 502, 503 or 504, an
+                # entry up to an hour past its lifetime is still served.
+                stale_if_error 1h
+
+                # When a popular page expires, one request refills it and the
+                # others wait up to this long for the answer.
+                lock_timeout 5s
+
+                # By default a request with any cookie skips the cache. Name the
+                # cookies that mean "a person is logged in" to cache for everyone
+                # else; a trailing * matches a prefix.
+                bypass_cookies [ "session", "wordpress_logged_in_*" ]
+            }
+        }
+
+        # Static files are never cached here: the operating system already does it.
+        route "/" {
+            try_files [ "{uri}", "{uri}/", "=404" ]
+        }
+    }
+}

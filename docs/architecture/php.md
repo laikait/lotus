@@ -4,7 +4,9 @@ Status: implemented for FastCGI backends reached over TCP or a Unix socket
 (PHP-FPM, or `php-cgi -b`), and for `php-cgi` processes that LOTUS starts and
 supervises itself (the way to run PHP on Windows). Not built yet: per-site pools
 and OS users, `max_conns` and `fastcgi_param` directives, PHP extensions other
-than `.php`.
+than `.php`. A route that runs PHP can keep its responses in a cache zone
+(`cache`, see `cache.md`): a session or a cookie-bearing request is never served from
+it.
 
 ## Configuration
 

@@ -191,6 +191,13 @@ func buildDefault() *Registry {
 			Security:    "Which servers a site can reach is an administrator decision: a route that proxies to an internal address can expose internal services.",
 		},
 		&Directive{
+			Name: "cache", Card: Keyed, Args: []Arg{{Name: "name", Type: String()}},
+			Block: BlockOptional, Opens: CtxCache, Defines: "cache", TenantForbidden: true,
+			Since: since, Default: "none",
+			Description: "A response cache: a memory budget that routes use by naming it with cache. Zones keep their entries across reloads.",
+			Security:    "A cache holds copies of responses in memory. What is stored for one visitor can be sent to another, so only routes whose responses are the same for everybody should use one.",
+		},
+		&Directive{
 			Name: "site", Card: Keyed, Args: []Arg{{Name: "name", Type: Hostname()}},
 			Block: BlockRequired, Opens: CtxSite, TenantForbidden: true,
 			Since: since, Default: "none",
@@ -422,6 +429,34 @@ func buildDefault() *Registry {
 		errorPage, htOn, htAllow, htUnsupported, htRecheck, htAuthFailures, htAuthLockout, rateLimit,
 	)
 
+	// ---- cache ----
+
+	r.Define(CtxCache,
+		scalar("max_size", "size", Size(1<<20), "64mib",
+			"Most memory the zone's stored responses (bodies, headers and bookkeeping) may use. When it is full the least recently used entries are dropped. Responses being copied while they stream also count against it.",
+			"Memory the cache uses is not available to the rest of the system. Keep it well below the machine's memory (see runtime memory_limit)."),
+		scalar("max_entry_size", "size", Size(1), "1mib",
+			"Largest response body that is stored. Larger responses are passed on and not kept. Must not exceed max_size.",
+			"Large entries squeeze out many small ones; keep it small unless the routes serve big files that are worth keeping."),
+	)
+	r.Define(CtxRouteCache,
+		scalar("ttl", "duration", Duration(0), "0s",
+			"How long a response stays fresh when the backend gives no lifetime of its own (no max-age, s-maxage or Expires). With 0s only responses that carry a lifetime are kept.",
+			"A response is served unchanged for this long. Content that changes sooner shows stale data."),
+		scalar("negative_ttl", "duration", Duration(0), "0s",
+			"How long a 404 or 410 response is kept when the backend gives no lifetime. With 0s they are not kept.",
+			"A page that appears after a miss stays invisible for this long."),
+		scalar("stale_if_error", "duration", Duration(0), "0s",
+			"How long past its lifetime an entry may still be served when the backend fails (500, 502, 503, 504 or no answer). With 0s a failing backend's errors are passed on. Responses with must-revalidate are never served stale.",
+			"Visitors may see old content while the backend is down. That is usually better than an error page."),
+		scalar("lock_timeout", "duration", Duration(0), "5s",
+			"When several requests miss on the same URL at once, one goes to the backend and the others wait up to this long for its answer. 0s lets every request go to the backend.",
+			"Without the wait, a popular page that expires can send a burst of identical requests to the backend."),
+		scalar("bypass_cookies", "cookies", OneOf(Enum("any", "none"), List(String(), 1)), "any",
+			"Which request cookies keep a request out of the cache: any (a request with a cookie never uses it), none (cookies are ignored), or a list of cookie names, where a trailing * matches a prefix, such as [ \"wordpress_logged_in_*\", \"PHPSESSID\" ].",
+			"A request with credentials in a cookie must never be answered from, or stored in, a cache that other visitors use. Requests with an Authorization header are never cached whatever this says."),
+	)
+
 	// ---- route ----
 
 	routeIndex := *index
@@ -449,6 +484,13 @@ func buildDefault() *Registry {
 					rep.Error(d.Args[1].Position(), diag.CodeInvalidValue, "header values must not contain control characters", "")
 				}
 			},
+		},
+		&Directive{
+			Name: "cache", Card: Single, Args: []Arg{{Name: "zone", Type: String(), Ref: "cache"}},
+			Block: BlockOptional, Opens: CtxRouteCache, TenantForbidden: true,
+			Since: since, Default: "none",
+			Description: "Keeps the responses of this route's proxy or PHP in the named cache zone and answers repeated GET requests from there. Responses the backend marks private or no-store, that set cookies, or that answer requests with credentials are never kept. See the cache documentation.",
+			Security:    "A cached response is sent to every visitor who asks for the same URL. Use it only where that is what you want, and keep cookies set to bypass (the default) for pages that differ per user.",
 		},
 		scalar("proxy_host", "host", Enum("client", "upstream"), "client",
 			"Which Host header the upstream gets: client keeps the one the client sent (and the application sees its own public name); upstream uses the backend's own address.",

@@ -117,8 +117,45 @@ func validateRoute(d *ast.Directive, rep Reporter) {
 		}
 	}
 	checkProxyConflicts(d, rep)
+	checkCacheNeeds(d, rep)
 	if d.Block != nil {
 		checkRoutesWith(rep, d, childRoutes(d.Block))
+	}
+}
+
+// checkCacheNeeds reports a cache on a route that has nothing to cache: only the
+// responses of a proxy or of PHP are kept, never static files.
+func checkCacheNeeds(d *ast.Directive, rep Reporter) {
+	if d.Block == nil {
+		return
+	}
+	var cache *ast.Directive
+	dynamic := false
+	var scan func(stmts []ast.Statement)
+	scan = func(stmts []ast.Statement) {
+		for _, s := range stmts {
+			c, ok := s.(*ast.Directive)
+			if !ok {
+				continue
+			}
+			switch c.Name {
+			case "cache":
+				if cache == nil {
+					cache = c
+				}
+			case "proxy", "php":
+				dynamic = true
+			case "match":
+				if c.Block != nil {
+					scan(c.Block.Statements)
+				}
+			}
+		}
+	}
+	scan(d.Block.Statements)
+	if cache != nil && !dynamic {
+		rep.Error(cache.Pos, diag.CodeInvalidValue, "cache needs a route that proxies or runs PHP",
+			"only responses of a backend are kept; static files are already served from the file system cache of the operating system")
 	}
 }
 

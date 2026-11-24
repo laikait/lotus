@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/laikait/lotus/internal/config/model"
 	"github.com/laikait/lotus/internal/router"
@@ -327,6 +328,10 @@ func (e *explainer) action(route *model.Route, a model.Actions, root string, ind
 		}
 	}
 
+	if route != nil && route.Cache != nil && (a.Proxy != "" || a.PHP != "") {
+		e.describeCache(route.Cache)
+	}
+
 	switch {
 	case a.Return != nil:
 		return e.doReturn(a.Return, vars), target{}, false
@@ -339,6 +344,19 @@ func (e *explainer) action(route *model.Route, a model.Actions, root string, ind
 
 	}
 	return e.static(root, index, cur, a)
+}
+
+// describeCache says how the route's response cache treats the request.
+func (e *explainer) describeCache(rc *model.RouteCache) {
+	skips := "an Authorization header or any cookie"
+	switch rc.Cookies {
+	case model.CookiesBypassNone:
+		skips = "an Authorization header"
+	case model.CookiesBypassNamed:
+		skips = "an Authorization header or one of the cookies " + strings.Join(rc.BypassCookies, ", ")
+	}
+	e.step("cache", "cache zone %q: a GET request is answered from a fresh stored copy when there is one; requests with %s never use the cache", rc.Zone, skips)
+	e.step("cache", "otherwise the backend answers and the response is kept if it may be shared (not private, no-store or Set-Cookie) and has a lifetime (its own, or ttl %s)", time.Duration(rc.TTL))
 }
 
 // describeProxy is what serveProxy does: the request leaves for a backend, and

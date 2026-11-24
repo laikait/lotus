@@ -1,7 +1,7 @@
 # Reverse proxy
 
-Status: the core of Phase 4. Not built yet: response caching, buffering of
-request bodies to disk, `Forwarded` generation, PROXY protocol to backends,
+Status: the core of Phase 4. Responses can be cached (`cache`, see `cache.md`).
+Not built yet: buffering of request bodies to disk, `Forwarded` generation, PROXY protocol to backends,
 `proxy_pass` translation from Nginx, sticky sessions by cookie, HTTP/3 to
 backends, per-upstream metrics.
 

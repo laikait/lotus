@@ -71,7 +71,7 @@ func (c upstreamCloser) Close() error {
 
 // serveProxy forwards the request. out is where LOTUS's own errors go (so
 // error pages apply); final is where the backend's response goes.
-func (rt *siteRuntime) serveProxy(final, out http.ResponseWriter, r *http.Request, a model.Actions, client, reqID string) {
+func (rt *siteRuntime) serveProxy(final, out http.ResponseWriter, r *http.Request, a model.Actions, client, reqID string, cc *cacheCall) {
 	up := rt.upstreams[a.Proxy]
 	if up == nil {
 		rt.log.Error("proxy: no such upstream", "upstream", a.Proxy)
@@ -123,9 +123,20 @@ func (rt *siteRuntime) serveProxy(final, out http.ResponseWriter, r *http.Reques
 			}
 			return nil
 		},
-		ErrorHandler: func(_ http.ResponseWriter, req *http.Request, err error) {
+		ErrorHandler: func(w http.ResponseWriter, req *http.Request, err error) {
+			// With the response cache in front, an old copy may cover for a backend
+			// that can't be reached.
+			var tooBig *http.MaxBytesError
+			if ss, ok := w.(interface{ ServeStale() bool }); ok && req.Context().Err() == nil && !errors.As(err, &tooBig) && ss.ServeStale() {
+				rt.log.Warn("proxy: backend failed, served a stale cached response", "upstream", a.Proxy, "error", err)
+				return
+			}
 			rt.proxyFailure(out, req, a.Proxy, err)
 		},
+	}
+	if cc != nil {
+		cc.serve(final, r, func(w http.ResponseWriter) { rp.ServeHTTP(w, r) })
+		return
 	}
 	rp.ServeHTTP(final, r)
 }

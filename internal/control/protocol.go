@@ -43,6 +43,8 @@ const (
 	MethodConfigInspect  = "lotus.config.inspect"
 	MethodSiteList       = "lotus.site.list"
 	MethodCertList       = "lotus.cert.list"
+	MethodCacheStatus    = "lotus.cache.status"
+	MethodCachePurge     = "lotus.cache.purge"
 	MethodHello          = "lotus.hello"
 	roleOperator         = "operator"
 )
@@ -130,6 +132,42 @@ type Site struct {
 // CertWarnDays is how many days before expiry a certificate is reported as
 // expiring, unless the client asks for another window.
 const CertWarnDays = 14
+
+// CacheStatusParams are the parameters of lotus.cache.status.
+type CacheStatusParams struct {
+	Zone string `json:"zone,omitempty"` // empty: every zone
+}
+
+// CacheZone is one entry of lotus.cache.status.
+type CacheZone struct {
+	Zone         string `json:"zone"`
+	Entries      int    `json:"entries"`
+	Bytes        int64  `json:"bytes"`
+	MaxBytes     int64  `json:"max_bytes"`
+	MaxEntrySize int64  `json:"max_entry_size"`
+	Hits         uint64 `json:"hits"`
+	Misses       uint64 `json:"misses"`
+	Stale        uint64 `json:"stale"`
+	Bypass       uint64 `json:"bypass"`
+	Stored       uint64 `json:"stored"`
+	Evictions    uint64 `json:"evictions"`
+	Purged       uint64 `json:"purged"`
+}
+
+// CachePurgeParams are the parameters of lotus.cache.purge. Exactly one of All,
+// Path and Prefix must be given; Host limits a path or prefix purge to one site.
+type CachePurgeParams struct {
+	Zone   string `json:"zone,omitempty"` // may be left out when there is only one zone
+	Host   string `json:"host,omitempty"`
+	Path   string `json:"path,omitempty"`
+	Prefix string `json:"prefix,omitempty"`
+	All    bool   `json:"all,omitempty"`
+}
+
+// CachePurgeResult is the result of lotus.cache.purge.
+type CachePurgeResult struct {
+	Purged int `json:"purged"`
+}
 
 // Certificate statuses.
 const (

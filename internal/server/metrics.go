@@ -258,6 +258,7 @@ func (s *Server) WriteMetrics(w *metrics.Writer) {
 		}
 	}
 
+	s.writeCacheMetrics(w)
 	s.writeCertificateMetrics(w)
 
 	var m runtime.MemStats

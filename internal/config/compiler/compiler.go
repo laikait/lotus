@@ -235,6 +235,8 @@ func (c *compiler) server(cfg *model.Config, server *ast.Directive) {
 			cfg.PHPBackends = append(cfg.PHPBackends, c.phpBackend(d))
 		case "upstream":
 			cfg.Upstreams = append(cfg.Upstreams, c.upstream(d))
+		case "cache":
+			cfg.Caches = append(cfg.Caches, c.cacheZone(d))
 		case "metrics":
 			m := &model.Metrics{Path: "/metrics"}
 			for _, s := range body(d) {
@@ -488,6 +490,62 @@ func rateLimit(d *ast.Directive) *model.RateLimit {
 		rl.Burst = rl.Requests
 	}
 	return rl
+}
+
+func (c *compiler) cacheZone(d *ast.Directive) model.CacheZone {
+	z := model.CacheZone{Name: str(arg(d, 0)), MaxSize: model.DefaultCacheMaxSize, MaxEntrySize: model.DefaultCacheMaxEntrySize}
+	entrySet := false
+	for _, s := range body(d) {
+		if r, ok := s.(*ast.Directive); ok {
+			switch r.Name {
+			case "max_size":
+				z.MaxSize = size(arg(r, 0))
+			case "max_entry_size":
+				z.MaxEntrySize, entrySet = size(arg(r, 0)), true
+			}
+		}
+	}
+	// A zone smaller than the default entry size just caps it; an entry size
+	// the administrator wrote that can't fit is a mistake.
+	if z.MaxEntrySize > z.MaxSize {
+		if entrySet {
+			c.diags.ErrorHint(d.Pos, diag.CodeInvalidValue,
+				fmt.Sprintf("cache %q: max_entry_size (%d bytes) is larger than max_size (%d bytes)", z.Name, z.MaxEntrySize, z.MaxSize),
+				"no entry could ever be stored; raise max_size or lower max_entry_size")
+		}
+		z.MaxEntrySize = z.MaxSize
+	}
+	return z
+}
+
+func (c *compiler) routeCache(d *ast.Directive) *model.RouteCache {
+	rc := &model.RouteCache{
+		Zone: str(arg(d, 0)), LockTimeout: model.Duration(model.DefaultCacheLockTimeout), Cookies: model.CookiesBypassAny,
+	}
+	for _, s := range body(d) {
+		r, ok := s.(*ast.Directive)
+		if !ok {
+			continue
+		}
+		switch r.Name {
+		case "ttl":
+			rc.TTL = model.Duration(dur(arg(r, 0)))
+		case "negative_ttl":
+			rc.NegativeTTL = model.Duration(dur(arg(r, 0)))
+		case "stale_if_error":
+			rc.StaleIfError = model.Duration(dur(arg(r, 0)))
+		case "lock_timeout":
+			rc.LockTimeout = model.Duration(dur(arg(r, 0)))
+		case "bypass_cookies":
+			switch v := arg(r, 0).(type) {
+			case *ast.List:
+				rc.Cookies, rc.BypassCookies = model.CookiesBypassNamed, strs(v)
+			default:
+				rc.Cookies = str(v)
+			}
+		}
+	}
+	return rc
 }
 
 func (c *compiler) upstream(d *ast.Directive) model.Upstream {
@@ -789,6 +847,8 @@ func (c *compiler) route(d *ast.Directive, in inherited) (model.Route, bool) {
 			r.MaxRequestBody = size(arg(x, 0))
 		case "rate_limit":
 			r.RateLimit = rateLimit(x)
+		case "cache":
+			r.Cache = c.routeCache(x)
 		}
 	}
 	r.Actions = actions(body(d))

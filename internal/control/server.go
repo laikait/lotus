@@ -20,6 +20,13 @@ type Backend interface {
 	Sites() []Site
 	// Certificates lists the certificates in use and those still to be obtained.
 	Certificates() []Certificate
+	// CacheStatus describes the cache zones, or only one of them. An unknown
+	// zone is an *Error with CodeNotFound.
+	CacheStatus(zone string) ([]CacheZone, *Error)
+	// CachePurge removes entries from a cache zone and says how many. A
+	// request that doesn't say what to purge is CodeInvalidParams, an unknown
+	// zone CodeNotFound.
+	CachePurge(p CachePurgeParams) (int, *Error)
 	// Reload switches to the configuration in path (empty: the file the server
 	// started with) and returns when it is published or rejected. A rejected
 	// configuration is an *Error with CodeConfigInvalid (diagnostics in Data),
@@ -273,7 +280,7 @@ func fail(id json.RawMessage, code int, msg string) response {
 }
 
 func (s *Server) methods() []string {
-	return []string{MethodStatus, MethodHealth, MethodReload, MethodStop, MethodLogsReopen, MethodConfigInspect, MethodSiteList, MethodCertList}
+	return []string{MethodStatus, MethodHealth, MethodReload, MethodStop, MethodLogsReopen, MethodConfigInspect, MethodSiteList, MethodCertList, MethodCacheStatus, MethodCachePurge}
 }
 
 func (s *Server) hello(params json.RawMessage) (any, *Error) {
@@ -289,7 +296,7 @@ func (s *Server) hello(params json.RawMessage) (any, *Error) {
 }
 
 // operatorMethods change something; they are audited.
-var operatorMethods = map[string]bool{MethodReload: true, MethodStop: true, MethodLogsReopen: true}
+var operatorMethods = map[string]bool{MethodReload: true, MethodStop: true, MethodLogsReopen: true, MethodCachePurge: true}
 
 func (s *Server) call(method string, params json.RawMessage, peer peerInfo) (result any, rpcErr *Error) {
 	b := s.opts.Backend
@@ -326,6 +333,29 @@ func (s *Server) call(method string, params json.RawMessage, peer peerInfo) (res
 			return nil, err
 		}
 		return b.Certificates(), nil
+	case MethodCacheStatus:
+		var p CacheStatusParams
+		if err := decodeParams(params, &p); err != nil {
+			return nil, err
+		}
+		zones, err := b.CacheStatus(p.Zone)
+		if err != nil {
+			return nil, err
+		}
+		if zones == nil {
+			zones = []CacheZone{}
+		}
+		return zones, nil
+	case MethodCachePurge:
+		var p CachePurgeParams
+		if err := decodeParams(params, &p); err != nil {
+			return nil, err
+		}
+		n, err := b.CachePurge(p)
+		if err != nil {
+			return nil, err
+		}
+		return CachePurgeResult{Purged: n}, nil
 	case MethodReload:
 		var p ReloadParams
 		if err := decodeParams(params, &p); err != nil {

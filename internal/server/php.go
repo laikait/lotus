@@ -70,8 +70,9 @@ func splitScript(p string) (script, info string, ok bool) {
 type phpCall struct {
 	backend string
 	files   *staticfiles.Handler
-	client  string   // the client address, after trusted-proxy resolution
-	ht      htScript // what .htaccess says about the script's environment
+	client  string     // the client address, after trusted-proxy resolution
+	ht      htScript   // what .htaccess says about the script's environment
+	cache   *cacheCall // the route's response cache, nil when it has none
 }
 
 // htScript is what .htaccess files give to a PHP script: environment variables
@@ -85,13 +86,13 @@ type htScript struct {
 // serveFiles serves a file request with the PHP rules that apply to it. It
 // says where to route next when the request must be routed again.
 func (rt *siteRuntime) serveFiles(final, out http.ResponseWriter, r *http.Request, client string,
-	files *staticfiles.Handler, php string, deny bool, ht htScript) (next target, again bool) {
+	files *staticfiles.Handler, php string, deny bool, ht htScript, cc *cacheCall) (next target, again bool) {
 
 	switch {
 	case deny:
 		files.ServeWith(out, r, isPHPName)
 	case php != "":
-		rt.servePHP(final, out, r, phpCall{backend: php, files: files, client: client, ht: ht})
+		rt.servePHP(final, out, r, phpCall{backend: php, files: files, client: client, ht: ht, cache: cc})
 	case rt.phpSite:
 		// A directory whose index is a PHP file is routed again as that file,
 		// so the route that runs PHP gets it (as Nginx does with `index`).
@@ -123,6 +124,13 @@ func (rt *siteRuntime) servePHP(final, out http.ResponseWriter, r *http.Request,
 	if client == nil {
 		rt.log.Error("php: no such backend", "backend", c.backend)
 		rt.status(out, r, http.StatusInternalServerError, "")
+		return
+	}
+	if cc := c.cache; cc != nil {
+		// The response cache answers repeated requests, and wraps what the script
+		// produces. The script's own failures and static files go to out, past it.
+		c.cache = nil
+		cc.serve(final, r, func(w http.ResponseWriter) { rt.servePHP(w, out, r, c) })
 		return
 	}
 

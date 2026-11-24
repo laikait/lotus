@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/laikait/lotus/internal/config/model"
 )
@@ -225,5 +226,44 @@ func TestExplainDescribesProxyRoutes(t *testing.T) {
 	}
 	if rep := Explain(cfg, Request{Host: "a.test", Path: "/gone/x"}, nil); rep.Outcome.Kind != KindError {
 		t.Errorf("an unknown upstream: %+v", rep.Outcome)
+	}
+}
+
+func TestExplainDescribesTheCacheOfARoute(t *testing.T) {
+	s := site("a.test", nil, "web")
+	s.Root = "/srv/a"
+	s.Routes = []model.Route{
+		{Kind: model.RoutePrefix, Path: "/api/", Actions: model.Actions{Proxy: "app"},
+			Cache: &model.RouteCache{Zone: "pages", TTL: model.Duration(5 * time.Minute), Cookies: model.CookiesBypassAny}},
+		{Kind: model.RoutePrefix, Path: "/blog/", Actions: model.Actions{Proxy: "app"},
+			Cache: &model.RouteCache{Zone: "pages", Cookies: model.CookiesBypassNamed, BypassCookies: []string{"wordpress_logged_in_*", "PHPSESSID"}}},
+		{Kind: model.RoutePrefix, Path: "/open/", Actions: model.Actions{Proxy: "app"},
+			Cache: &model.RouteCache{Zone: "pages", Cookies: model.CookiesBypassNone}},
+		{Kind: model.RoutePrefix, Path: "/plain/", Actions: model.Actions{Proxy: "app"}},
+	}
+	cfg := cfgWith(s)
+	cfg.Upstreams = []model.Upstream{{Name: "app", Backends: []model.UpstreamBackend{{Address: "http://h:1"}}}}
+	steps := func(path string) string {
+		rep := Explain(cfg, Request{Host: "a.test", Path: path}, nil)
+		var b strings.Builder
+		for _, st := range rep.Steps {
+			b.WriteString(st.Phase + ": " + st.Detail + "\n")
+		}
+		return b.String()
+	}
+	for path, wants := range map[string][]string{
+		"/api/x":  {`cache: cache zone "pages"`, "an Authorization header or any cookie", "ttl 5m0s"},
+		"/blog/x": {"one of the cookies wordpress_logged_in_*, PHPSESSID"},
+		"/open/x": {"requests with an Authorization header never use the cache"},
+	} {
+		out := steps(path)
+		for _, w := range wants {
+			if !strings.Contains(out, w) {
+				t.Errorf("%s: lacks %q:\n%s", path, w, out)
+			}
+		}
+	}
+	if strings.Contains(steps("/plain/x"), "cache") {
+		t.Errorf("a route without a cache mentions one:\n%s", steps("/plain/x"))
 	}
 }

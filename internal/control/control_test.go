@@ -20,6 +20,7 @@ type fakeBackend struct {
 	reloaded []string
 	stopped  []stopCall
 	reopened int
+	purges   []CachePurgeParams
 	reloadFn func(path string) (ReloadResult, *Error)
 }
 
@@ -39,6 +40,27 @@ func (f *fakeBackend) Sites() []Site {
 func (f *fakeBackend) Certificates() []Certificate {
 	na := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
 	return []Certificate{{Name: "a.test", Domains: []string{"a.test"}, Issuer: "Test CA", NotAfter: &na, Managed: true, Source: "acme", Status: CertOK}}
+}
+func (f *fakeBackend) CacheStatus(zone string) ([]CacheZone, *Error) {
+	if zone == "missing" {
+		return nil, NewError(CodeNotFound, "no such cache zone", nil)
+	}
+	if zone == "none" {
+		return nil, nil
+	}
+	return []CacheZone{{Zone: "pages", Entries: 3, Bytes: 4096, MaxBytes: 1 << 20, Hits: 7, Misses: 2}}, nil
+}
+func (f *fakeBackend) CachePurge(p CachePurgeParams) (int, *Error) {
+	f.mu.Lock()
+	f.purges = append(f.purges, p)
+	f.mu.Unlock()
+	if p.Zone == "missing" {
+		return 0, NewError(CodeNotFound, "no such cache zone", nil)
+	}
+	if !p.All && p.Path == "" && p.Prefix == "" {
+		return 0, NewError(CodeInvalidParams, "say what to purge", nil)
+	}
+	return 5, nil
 }
 func (f *fakeBackend) Reload(path string) (ReloadResult, *Error) {
 	f.mu.Lock()
@@ -206,6 +228,41 @@ func TestMethods(t *testing.T) {
 	}
 }
 
+func TestCacheMethods(t *testing.T) {
+	c, _, fb := newPipe(t, Options{})
+	hello(c)
+	var zones []CacheZone
+	r := c.call(`{"jsonrpc":"2.0","id":2,"method":"lotus.cache.status"}`)
+	if err := json.Unmarshal(r.Result, &zones); r.Error != nil || err != nil || len(zones) != 1 || zones[0].Zone != "pages" || zones[0].Hits != 7 || zones[0].MaxBytes != 1<<20 {
+		t.Fatalf("status: %+v %v %s", r.Error, err, r.Result)
+	}
+	if r := c.call(`{"jsonrpc":"2.0","id":3,"method":"lotus.cache.status","params":{"zone":"none"}}`); r.Error != nil || strings.TrimSpace(string(r.Result)) != "[]" {
+		t.Errorf("no zones must be an empty list, not null: %+v %s", r.Error, r.Result)
+	}
+	if r := c.call(`{"jsonrpc":"2.0","id":4,"method":"lotus.cache.status","params":{"zone":"missing"}}`); r.Error == nil || r.Error.Code != CodeNotFound {
+		t.Errorf("status of a missing zone: %+v", r.Error)
+	}
+	if r := c.call(`{"jsonrpc":"2.0","id":5,"method":"lotus.cache.status","params":{"zoen":"x"}}`); r.Error == nil || r.Error.Code != CodeInvalidParams {
+		t.Errorf("unknown parameter accepted: %+v", r.Error)
+	}
+	r = c.call(`{"jsonrpc":"2.0","id":6,"method":"lotus.cache.purge","params":{"zone":"pages","host":"a.test","prefix":"/news/"}}`)
+	if r.Error != nil || !strings.Contains(string(r.Result), `"purged":5`) {
+		t.Fatalf("purge: %+v %s", r.Error, r.Result)
+	}
+	if len(fb.purges) != 1 || fb.purges[0] != (CachePurgeParams{Zone: "pages", Host: "a.test", Prefix: "/news/"}) {
+		t.Errorf("the backend got %+v", fb.purges)
+	}
+	if r := c.call(`{"jsonrpc":"2.0","id":7,"method":"lotus.cache.purge","params":{"zone":"pages"}}`); r.Error == nil || r.Error.Code != CodeInvalidParams {
+		t.Errorf("purge without a target: %+v", r.Error)
+	}
+	if r := c.call(`{"jsonrpc":"2.0","id":8,"method":"lotus.cache.purge","params":{"zone":"missing","all":true}}`); r.Error == nil || r.Error.Code != CodeNotFound {
+		t.Errorf("purge of a missing zone: %+v", r.Error)
+	}
+	if r := c.call(`{"jsonrpc":"2.0","id":9,"method":"lotus.cache.purge","params":{"all":"yes"}}`); r.Error == nil || r.Error.Code != CodeInvalidParams {
+		t.Errorf("a string for a boolean: %+v", r.Error)
+	}
+}
+
 func TestStop(t *testing.T) {
 	c, _, fb := newPipe(t, Options{})
 	hello(c)
@@ -339,8 +396,10 @@ func TestOperatorCallsAreAudited(t *testing.T) {
 	c.call(`{"jsonrpc":"2.0","id":2,"method":"lotus.status"}`)
 	c.call(`{"jsonrpc":"2.0","id":3,"method":"lotus.reload"}`)
 	c.call(`{"jsonrpc":"2.0","id":4,"method":"lotus.stop"}`)
+	c.call(`{"jsonrpc":"2.0","id":5,"method":"lotus.cache.status"}`)
+	c.call(`{"jsonrpc":"2.0","id":6,"method":"lotus.cache.purge","params":{"zone":"pages","all":true}}`)
 	out := logs.String()
-	if strings.Count(out, "audit=true") != 2 || !strings.Contains(out, "method=lotus.reload") || !strings.Contains(out, "method=lotus.stop") {
+	if strings.Count(out, "audit=true") != 3 || !strings.Contains(out, "method=lotus.cache.purge") || !strings.Contains(out, "method=lotus.reload") || !strings.Contains(out, "method=lotus.stop") {
 		t.Errorf("operator calls must be audited, read-only ones not:\n%s", out)
 	}
 	if strings.Contains(out, "method=lotus.status") {

@@ -42,6 +42,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cmdStatus(args[1:], stdout, stderr)
 	case "certs":
 		return cmdCerts(args[1:], stdout, stderr)
+	case "cache":
+		return cmdCache(args[1:], stdout, stderr)
 	case "logs":
 		return cmdLogs(args[1:], stdout, stderr)
 	case "compat":
@@ -98,12 +100,16 @@ Commands:
   status [--json]             Show the running server's state
   certs [--json] [--warn-days N]
                               List the certificates in use and when they expire
+  cache status [--zone NAME] [--json]
+                              Show the response cache zones: size, entries, hit rate
+  cache purge [--zone NAME] [--host HOST] (--path PATH | --prefix PREFIX | --all)
+                              Remove stored responses from a cache zone
   logs reopen                 Reopen the log files (after log rotation)
   compat htaccess check [--json] [--all] <file>
                               Report which directives of a .htaccess file LOTUS can apply
   help                        Show this help
 
-The reload, stop, status, certs and logs commands talk to the running server through its control
+The reload, stop, status, certs, cache and logs commands talk to the running server through its control
 socket (default %s; set another with --control or LOTUS_CONTROL).
 
 Exit codes: 0 success, 1 usage error, 2 invalid configuration, 3 no running server,

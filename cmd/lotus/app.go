@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/laikait/lotus/internal/cache"
 	"github.com/laikait/lotus/internal/config"
 	"github.com/laikait/lotus/internal/config/diag"
 	"github.com/laikait/lotus/internal/config/loader"
@@ -164,6 +165,43 @@ func (a *app) Sites() []control.Site {
 // Certificates implements control.Backend.
 func (a *app) Certificates() []control.Certificate {
 	return toControlCerts(a.srv.Certificates(), time.Now())
+}
+
+// CacheStatus implements control.Backend.
+func (a *app) CacheStatus(zone string) ([]control.CacheZone, *control.Error) {
+	infos, err := a.srv.Caches(zone)
+	if err != nil {
+		return nil, cacheError(err)
+	}
+	out := make([]control.CacheZone, 0, len(infos))
+	for _, i := range infos {
+		out = append(out, control.CacheZone{
+			Zone: i.Zone, Entries: i.Entries, Bytes: i.Bytes, MaxBytes: i.MaxBytes, MaxEntrySize: i.MaxEntrySize,
+			Hits: i.Hits, Misses: i.Misses, Stale: i.Stale, Bypass: i.Bypass,
+			Stored: i.Stored, Evictions: i.Evicted, Purged: i.Purged,
+		})
+	}
+	return out, nil
+}
+
+// CachePurge implements control.Backend.
+func (a *app) CachePurge(p control.CachePurgeParams) (int, *control.Error) {
+	n, err := a.srv.PurgeCache(p.Zone, cache.Match{All: p.All, Host: p.Host, Path: p.Path, Prefix: p.Prefix})
+	if err != nil {
+		return 0, cacheError(err)
+	}
+	return n, nil
+}
+
+// cacheError maps the server's cache errors to control errors.
+func cacheError(err error) *control.Error {
+	switch {
+	case errors.Is(err, server.ErrNoCacheZone):
+		return control.NewError(control.CodeNotFound, err.Error(), nil)
+	case errors.Is(err, server.ErrInvalidPurge):
+		return control.NewError(control.CodeInvalidParams, err.Error(), nil)
+	}
+	return control.NewError(control.CodeInternal, err.Error(), nil)
 }
 
 // toControlCerts describes the server's certificates for the control channel.

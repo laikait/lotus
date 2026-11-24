@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/laikait/lotus/internal/cache"
 	"github.com/laikait/lotus/internal/clientip"
 	"github.com/laikait/lotus/internal/config/model"
 	"github.com/laikait/lotus/internal/fastcgi"
@@ -64,6 +65,11 @@ type Server struct {
 	// neither restarts the processes nor runs two sets side by side.
 	poolMu sync.Mutex
 	pools  map[string]*sharedPool
+
+	// caches are the response cache zones by name. They outlive generations: a
+	// reload keeps what is stored.
+	cacheMu sync.Mutex
+	caches  map[string]*cache.Store
 
 	listeners []*boundListener
 
@@ -177,6 +183,7 @@ func (s *Server) acquire() *generation {
 func (s *Server) publish(g *generation) {
 	g.number = s.genSeq.Add(1)
 	s.gen.Store(g)
+	s.syncCaches(g.cfg)
 }
 
 // buildGeneration opens everything cfg needs. On failure nothing stays open.
@@ -217,6 +224,10 @@ func (s *Server) buildGeneration(cfg *model.Config) (*generation, error) {
 			g.closeNow()
 			return nil, fmt.Errorf("upstream %q: %w", mu.Name, err)
 		}
+	}
+	g.caches = make(map[string]*cache.Store, len(cfg.Caches))
+	for _, z := range cfg.Caches {
+		g.caches[z.Name] = s.cacheStore(z)
 	}
 	sites := make(map[string]*siteRuntime, len(cfg.Sites))
 	for i := range cfg.Sites {
@@ -265,6 +276,7 @@ func (s *Server) newSite(g *generation, site *model.Site) (*siteRuntime, error) 
 		stats:   s.siteStatsFor(site.Name),
 
 		upstreams: g.upstream,
+		caches:    g.caches,
 	}
 
 	access, err := s.logWriter(g, site.Logs.Access, s.opts.Stdout)
