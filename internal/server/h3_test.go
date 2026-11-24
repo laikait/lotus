@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -310,9 +311,12 @@ func TestHTTP3ReadTimeoutAppliesToSlowUploads(t *testing.T) {
 }
 
 func TestHTTP3ThroughTheProxy(t *testing.T) {
+	var mu sync.Mutex // the backend handler runs in another goroutine
 	var seen http.Header
 	be := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		seen = r.Header.Clone()
+		mu.Unlock()
 		w.Header().Set("Alt-Svc", `h3="evil.example:443"`)
 		w.Header().Set("Server", "backend")
 		io.WriteString(w, "from the backend")
@@ -333,6 +337,8 @@ func TestHTTP3ThroughTheProxy(t *testing.T) {
 	if resp.Header.Get("Alt-Svc") != "" || resp.Header.Get("Server") != "lotus" {
 		t.Errorf("the backend's Alt-Svc or Server reached the client: %v", resp.Header)
 	}
+	mu.Lock()
+	defer mu.Unlock()
 	if seen.Get("X-Forwarded-Proto") != "https" || !strings.HasPrefix(seen.Get("X-Forwarded-For"), "127.0.0.1") {
 		t.Errorf("forwarding headers over HTTP/3: %v", seen)
 	}
