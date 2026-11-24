@@ -28,11 +28,6 @@ func Unsupported(cfg *model.Config) []string {
 	if cfg.Control.ViewerGroup != "" {
 		add("control viewer_group (read-only roles need the peer's identity, which is not wired up yet; every client that can open the socket is an operator)")
 	}
-	for _, l := range cfg.Listeners {
-		if l.HTTP3 {
-			add("listener %q: http3 (HTTP/3 arrives with the modern protocols phase)", l.Name)
-		}
-	}
 	server := cfg.Limits
 	for _, s := range cfg.Sites {
 		if s.TLS == model.TLSAutomatic && cfg.TLS.ACME == nil {

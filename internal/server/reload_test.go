@@ -130,7 +130,7 @@ func TestReloadRefusesUnsupportedFeatures(t *testing.T) {
 	root := docroot(t, "x")
 	h := start(t, baseConfig(siteConf("a.test", root, "http")))
 	cfg := baseConfig(siteConf("a.test", root, "http"))
-	cfg.Listeners[0].HTTP3 = true // still unsupported
+	cfg.Control.ViewerGroup = "lotus-viewers" // unsupported
 	var ue *UnsupportedError
 	if err := h.srv.Reload(cfg); !errors.As(err, &ue) {
 		t.Errorf("err = %v", err)

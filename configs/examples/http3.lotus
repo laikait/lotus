@@ -1,0 +1,35 @@
+# HTTP/3 next to HTTP/1.1 and HTTP/2.
+#
+# The https listener serves TCP port 443 as always, and also UDP port 443 for
+# HTTP/3. Open the UDP port in the firewall. Browsers find out about HTTP/3 from
+# the Alt-Svc header LOTUS adds to HTTPS responses and fall back to TCP when UDP
+# is blocked.
+#
+#     lotus config validate configs/examples/http3.lotus
+#     lotus start -config configs/examples/http3.lotus
+#
+# Full description: docs/architecture/http3.md
+
+lotus_config_version 1
+
+server {
+    listen "http" {
+        address "0.0.0.0:80"
+    }
+    listen "https" {
+        address "0.0.0.0:443"
+        protocol https
+        http3 true
+    }
+
+    tls {
+        acme {
+            email "admin@example.com"
+            ca "https://acme-staging-v02.api.letsencrypt.org/directory"
+        }
+    }
+
+    site "example.com" {
+        root "/var/www/example"
+    }
+}

@@ -78,6 +78,11 @@ type boundListener struct {
 	srv   *http.Server
 	https bool
 	ln    net.Listener
+	h3    *h3Listener    // HTTP/3 on the same port number; nil when off
+	udp   net.PacketConn // the UDP socket for h3, bound together with the TCP listener
+	// altSvc is the Alt-Svc header value announcing HTTP/3 on responses over
+	// TCP; nil until HTTP/3 is running.
+	altSvc atomic.Pointer[string]
 }
 
 // New prepares a server: it opens document roots and log files, loads
@@ -123,8 +128,9 @@ func New(cfg *model.Config, opts Options) (*Server, error) {
 
 	for _, l := range cfg.Listeners {
 		name := l.Name
+		lh := &listenerHandler{srv: s, listener: name}
 		srv := &http.Server{
-			Handler:           &listenerHandler{srv: s, listener: name},
+			Handler:           lh,
 			ReadHeaderTimeout: time.Duration(cfg.Limits.HeaderTimeout),
 			ReadTimeout:       time.Duration(cfg.Limits.ReadTimeout),
 			WriteTimeout:      time.Duration(cfg.Limits.WriteTimeout),
@@ -139,7 +145,9 @@ func New(cfg *model.Config, opts Options) (*Server, error) {
 				return s.gen.Load().tables[name]
 			}, s.acmeManager)
 		}
-		s.listeners = append(s.listeners, &boundListener{conf: l, srv: srv, https: l.HTTPS})
+		bl := &boundListener{conf: l, srv: srv, https: l.HTTPS}
+		lh.bl = bl
+		s.listeners = append(s.listeners, bl)
 	}
 	return s, nil
 }
@@ -376,12 +384,22 @@ func (s *Server) Start() error {
 		return errors.New("server already started")
 	}
 	for _, bl := range s.listeners {
-		ln, err := net.Listen("tcp", bl.conf.Address)
+		var ln net.Listener
+		var err error
+		if bl.conf.HTTP3 {
+			ln, bl.udp, err = listenTCPAndUDP(bl.conf.Address)
+		} else {
+			ln, err = net.Listen("tcp", bl.conf.Address)
+		}
 		if err != nil {
 			for _, other := range s.listeners {
 				if other.ln != nil {
 					other.ln.Close()
 					other.ln = nil
+				}
+				if other.udp != nil {
+					other.udp.Close()
+					other.udp = nil
 				}
 			}
 			// A server that failed to start can't be started again, so release
@@ -390,6 +408,30 @@ func (s *Server) Start() error {
 			return fmt.Errorf("listener %q: %w", bl.conf.Name, err)
 		}
 		bl.ln = s.limiter.wrap(ln)
+	}
+	limits := s.gen.Load().cfg.Limits
+	for _, bl := range s.listeners {
+		if !bl.conf.HTTP3 {
+			continue
+		}
+		if err := s.startH3(bl, limits); err != nil {
+			for _, other := range s.listeners {
+				if other.ln != nil {
+					other.ln.Close()
+					other.ln = nil
+				}
+				if other.udp != nil {
+					other.udp.Close()
+					other.udp = nil
+				}
+				if other.h3 != nil {
+					other.h3.stop(context.Background())
+					other.h3 = nil
+				}
+			}
+			s.gen.Load().closeNow()
+			return fmt.Errorf("listener %q: %w", bl.conf.Name, err)
+		}
 	}
 	s.started = true
 	for _, bl := range s.listeners {
@@ -452,6 +494,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if bl.h3 != nil {
+				if err := bl.h3.stop(ctx); err != nil {
+					errs <- fmt.Errorf("listener %q (HTTP/3): %w", bl.conf.Name, err)
+				}
+			}
 			if err := bl.srv.Shutdown(ctx); err != nil {
 				bl.srv.Close() // the deadline passed: drop what is left
 				errs <- fmt.Errorf("listener %q: %w", bl.conf.Name, err)

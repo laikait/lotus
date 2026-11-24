@@ -44,31 +44,50 @@ func (l *limitListener) Accept() (net.Conn, error) {
 		if err != nil {
 			return nil, err
 		}
-		select {
-		case l.lim.slots <- struct{}{}:
-		default:
-			l.lim.rejected.Add(1)
+		release, ok := l.lim.acquire(conn.RemoteAddr())
+		if !ok {
 			conn.Close()
 			continue
 		}
-		release := func() { <-l.lim.slots }
-		if l.lim.perIP != nil {
-			if ta, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
-				addr, _ := netip.AddrFromSlice(ta.IP)
-				if l.lim.exempt == nil || !l.lim.exempt(addr.Unmap()) {
-					free, ok := l.lim.perIP.Acquire(ratelimit.Key(addr))
-					if !ok {
-						<-l.lim.slots
-						l.lim.rejectedIP.Add(1)
-						conn.Close()
-						continue
-					}
-					release = func() { free(); <-l.lim.slots }
-				}
-			}
-		}
 		return &limitConn{Conn: conn, release: release}, nil
 	}
+}
+
+// acquire takes a connection slot for a client at remote (TCP or QUIC). It
+// reports false, having counted the rejection, when the server-wide limit or
+// the per-address limit is reached; otherwise release must be called when the
+// connection ends.
+func (c *connLimiter) acquire(remote net.Addr) (release func(), ok bool) {
+	select {
+	case c.slots <- struct{}{}:
+	default:
+		c.rejected.Add(1)
+		return nil, false
+	}
+	release = func() { <-c.slots }
+	if c.perIP == nil {
+		return release, true
+	}
+	var ip net.IP
+	switch a := remote.(type) {
+	case *net.TCPAddr:
+		ip = a.IP
+	case *net.UDPAddr:
+		ip = a.IP
+	default:
+		return release, true
+	}
+	addr, _ := netip.AddrFromSlice(ip)
+	if c.exempt != nil && c.exempt(addr.Unmap()) {
+		return release, true
+	}
+	free, ok := c.perIP.Acquire(ratelimit.Key(addr))
+	if !ok {
+		<-c.slots
+		c.rejectedIP.Add(1)
+		return nil, false
+	}
+	return func() { free(); <-c.slots }, true
 }
 
 type limitConn struct {

@@ -49,6 +49,7 @@ type siteRuntime struct {
 type listenerHandler struct {
 	srv      *Server
 	listener string
+	bl       *boundListener
 }
 
 func (h *listenerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -92,6 +93,11 @@ func (h *listenerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 	}()
 	rec.Header().Set("Server", serverHeader)
+	if r.ProtoMajor == 3 {
+		h3Deadlines(w, gen.cfg.Limits)
+	} else if alt := h.bl.altSvc.Load(); alt != nil && r.TLS != nil {
+		rec.Header().Set("Alt-Svc", *alt) // HTTP/3 is available on the same port number
+	}
 	// A chunked request body is framed by Transfer-Encoding. If the request also
 	// had a Content-Length (which net/http removes before we see it), a proxy in
 	// front may have used that one instead and so disagrees with us about where

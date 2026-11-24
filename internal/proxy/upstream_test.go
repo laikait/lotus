@@ -93,39 +93,57 @@ func TestRoundRobinFollowsWeightsSmoothly(t *testing.T) {
 
 func TestLeastConnPrefersTheIdleBackend(t *testing.T) {
 	release := make(chan struct{})
-	var started atomic.Int32
 	slow := backendServer(t, "slow", func(w http.ResponseWriter, r *http.Request) {
-		started.Add(1)
 		<-release
 		io.WriteString(w, "slow")
 	})
 	fast := backendServer(t, "fast", nil)
 	u := newUp(t, Config{Balance: LeastConn, Backends: []BackendSpec{spec(slow, 1), spec(fast, 1)}})
-	// Idle backends tie, so some of these requests land on the slow one and
-	// stay there; the fast one answers at once.
 	var wg sync.WaitGroup
 	var once sync.Once
 	releaseAll := func() { once.Do(func() { close(release) }) }
 	defer func() { releaseAll(); wg.Wait() }()
+
+	// Idle backends tie, so some of these held requests land on the slow one and
+	// stay there; those that land on the fast one finish at once.
+	var dispatched atomic.Int32
 	for i := 0; i < 3; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			dispatched.Add(1)
 			get(t, u, "GET", "/hold", nil, nil)
 		}()
 	}
-	// least_conn alternates while loads are equal, so wait until slow has some.
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) && u.backends[0].state.Load() < 1 {
-		time.Sleep(10 * time.Millisecond)
+	waitFor := func(what string, cond func() bool) {
+		t.Helper()
+		for end := time.Now().Add(5 * time.Second); !cond(); time.Sleep(10 * time.Millisecond) {
+			if time.Now().After(end) {
+				t.Fatalf("timed out waiting for %s", what)
+			}
+		}
 	}
-	if u.backends[0].state.Load() < 1 {
-		t.Fatal("the slow backend never got a request")
-	}
+	waitFor("the held requests to be sent", func() bool { return dispatched.Load() == 3 })
+	waitFor("the slow backend to hold a request", func() bool { return u.backends[0].state.Load() >= 1 })
+	// With a request still in flight on the fast backend the two would tie, and
+	// a request could go to the slow one and wait for a release that only comes
+	// after the loop. So wait until the fast one is idle and the held requests
+	// have all been routed.
+	time.Sleep(100 * time.Millisecond)
+	waitFor("the fast backend to be idle", func() bool { return u.backends[1].state.Load() == 0 })
+
 	m := map[string]int{}
 	for i := 0; i < 10; i++ {
-		_, body, _ := get(t, u, "GET", "/", nil, nil)
-		m[body]++
+		done := make(chan string, 1)
+		go func() { _, body, _ := get(t, u, "GET", "/", nil, nil); done <- body }()
+		select {
+		case body := <-done:
+			m[body]++
+		case <-time.After(2 * time.Second):
+			releaseAll() // a request went to the busy backend: report it, don't hang
+			m["(waited for the slow one)"]++
+			<-done
+		}
 	}
 	releaseAll()
 	wg.Wait()

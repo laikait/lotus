@@ -119,11 +119,24 @@ func rendezvous(cands []*backend, key string) *backend {
 		h.Write([]byte{0})
 		h.Write([]byte(b.spec.Address))
 		// uniform in (0,1]; score = -weight / ln(u) grows with weight
-		u := (float64(h.Sum64()>>11) + 1) / (1 << 53)
+		u := (float64(mix64(h.Sum64())>>11) + 1) / (1 << 53)
 		score := -float64(b.spec.Weight) / math.Log(u)
 		if score > bestScore {
 			best, bestScore = b, score
 		}
 	}
 	return best
+}
+
+// mix64 is the finalizer of MurmurHash3 (fmix64). FNV-1a alone leaves the
+// results for inputs that differ only in their last bytes (a client address
+// and then a backend address) correlated, which skewed which backend won; the
+// finalizer makes every input bit affect every output bit.
+func mix64(x uint64) uint64 {
+	x ^= x >> 33
+	x *= 0xff51afd7ed558ccd
+	x ^= x >> 33
+	x *= 0xc4ceb9fe1a85ec53
+	x ^= x >> 33
+	return x
 }

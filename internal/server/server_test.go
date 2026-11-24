@@ -25,7 +25,6 @@ func TestUnsupportedFeaturesFailLoudly(t *testing.T) {
 		want   string
 	}{
 		{"acme", func(c *model.Config) { c.Sites[0].TLS = model.TLSAutomatic }, "automatic certificates"},
-		{"http3", func(c *model.Config) { c.Listeners[0].HTTP3 = true }, "http3"},
 		{"control", func(c *model.Config) { c.Control.ViewerGroup = "lotus-viewers" }, "control"},
 		{"per-site timeout", func(c *model.Config) { c.Sites[0].Limits.IdleTimeout = model.Duration(time.Second) }, "server-wide"},
 		{"per-site connection limit", func(c *model.Config) { c.Sites[0].Limits.MaxConnections = 5 }, "server-wide"},
@@ -51,10 +50,9 @@ func TestUnsupportedFeaturesFailLoudly(t *testing.T) {
 	})
 	t.Run("all problems are listed together", func(t *testing.T) {
 		cfg := baseConfig(siteConf("a.test", root, "http"))
-		cfg.Listeners[0].HTTP3 = true
 		cfg.Sites[0].TLS = model.TLSAutomatic
 		cfg.Control.ViewerGroup = "lotus-viewers"
-		if items := Unsupported(cfg); len(items) != 3 {
+		if items := Unsupported(cfg); len(items) != 2 {
 			t.Errorf("got %d items: %v", len(items), items)
 		}
 	})

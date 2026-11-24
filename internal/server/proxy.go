@@ -117,6 +117,7 @@ func (rt *siteRuntime) serveProxy(final, out http.ResponseWriter, r *http.Reques
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			resp.Header.Del("Server")
+			resp.Header.Del("Alt-Svc") // what is available is LOTUS's to say, not the backend's
 			for name := range rt.protected {
 				resp.Header.Del(name) // the administrator's security_headers are not overridable
 			}
