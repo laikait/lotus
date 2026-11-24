@@ -4,8 +4,11 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"sync"
 	"sync/atomic"
+
+	"github.com/laikait/lotus/internal/ratelimit"
 )
 
 // connLimiter bounds the number of open connections across all listeners.
@@ -13,10 +16,16 @@ import (
 type connLimiter struct {
 	slots    chan struct{}
 	rejected atomic.Uint64
+	// perIP counts connections per client address (nil: no limit). Addresses
+	// that exempt accepts (trusted proxies) are not counted: all their clients
+	// share the one address.
+	perIP      *ratelimit.PerIP
+	exempt     func(netip.Addr) bool
+	rejectedIP atomic.Uint64
 }
 
-func newConnLimiter(max int) *connLimiter {
-	return &connLimiter{slots: make(chan struct{}, max)}
+func newConnLimiter(max, perIP int) *connLimiter {
+	return &connLimiter{slots: make(chan struct{}, max), perIP: ratelimit.NewPerIP(perIP)}
 }
 
 // wrap returns a listener that enforces the limit.
@@ -37,11 +46,28 @@ func (l *limitListener) Accept() (net.Conn, error) {
 		}
 		select {
 		case l.lim.slots <- struct{}{}:
-			return &limitConn{Conn: conn, release: func() { <-l.lim.slots }}, nil
 		default:
 			l.lim.rejected.Add(1)
 			conn.Close()
+			continue
 		}
+		release := func() { <-l.lim.slots }
+		if l.lim.perIP != nil {
+			if ta, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
+				addr, _ := netip.AddrFromSlice(ta.IP)
+				if l.lim.exempt == nil || !l.lim.exempt(addr.Unmap()) {
+					free, ok := l.lim.perIP.Acquire(ratelimit.Key(addr))
+					if !ok {
+						<-l.lim.slots
+						l.lim.rejectedIP.Add(1)
+						conn.Close()
+						continue
+					}
+					release = func() { free(); <-l.lim.slots }
+				}
+			}
+		}
+		return &limitConn{Conn: conn, release: release}, nil
 	}
 }
 

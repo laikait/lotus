@@ -231,6 +231,9 @@ func buildDefault() *Registry {
 		scalar("max_connections", "count", IntAtLeast(1), "10000",
 			"Maximum number of simultaneous connections. New connections beyond it are closed.",
 			"Too high a value lets clients exhaust file descriptors and memory."),
+		scalar("max_connections_per_ip", "count", IntAtLeast(1), "unlimited",
+			"Maximum simultaneous connections from one client address (IPv6 clients are counted per /64). Connections beyond it are closed. Connections from trusted_proxies are not counted, since every client of such a proxy shares its address. Server-wide only.",
+			"Without it one client can use every connection slot. Too low a value affects many users behind one NAT address."),
 		maxBody,
 		scalar("max_header_bytes", "size", Size(1<<10), "64kib",
 			"Maximum total size of the request line and headers. A request over the limit gets 431. Go's HTTP server reads a little more before it stops (about 4 KiB), so the effective limit is slightly above this value.",
@@ -346,18 +349,32 @@ func buildDefault() *Registry {
 		"How long a .htaccess file (or its absence) is remembered before the file system is looked at again. 0s checks on every request.",
 		"Short intervals cost a file system lookup per directory per request.")
 	htRecheck.TenantForbidden = true
+	rateLimit := &Directive{
+		Name: "rate_limit", Card: Single, Block: BlockRequired, Opens: CtxRateLimit, TenantForbidden: true,
+		Since: since, Default: "none",
+		Description: "Limits how many requests a client may make. Requests over the limit get 429 with Retry-After. In a site it counts every request of the site; in a route it adds a limit for that route (both apply).",
+		Security:    "Counted per client address in memory, with a bounded table. Behind a proxy, list it in trusted_proxies or all clients share one allowance.",
+	}
+	htAuthFailures := scalar("htaccess_auth_failures", "count", Int(0, 1000), "10",
+		"After this many wrong Basic authentication attempts from one client address within htaccess_auth_lockout, further attempts get 429 until the lock-out ends, without checking passwords. 0 turns the lock-out off.",
+		"Without it a password can be guessed as fast as the server answers.")
+	htAuthFailures.TenantForbidden = true
+	htAuthLockout := scalar("htaccess_auth_lockout", "duration", Duration(time.Second), "5m",
+		"The window in which wrong attempts are counted, and how long a client is locked out afterwards.", "A long lock-out also locks out a legitimate user behind the same address.")
+	htAuthLockout.TenantForbidden = true
 	siteLimits := *limits
 	r.Define(CtxSite,
 		listeners, aliases, siteTLS, certificate, certificateKey, symlinks, dotfiles, root, index, route, logs, &siteLimits, secHeaders,
-		errorPage, htOn, htAllow, htUnsupported, htRecheck,
+		errorPage, htOn, htAllow, htUnsupported, htRecheck, htAuthFailures, htAuthLockout, rateLimit,
 	)
 
 	// ---- route ----
 
 	routeIndex := *index
+	routeRateLimit := *rateLimit
 	routeLimits := *maxBody
 	r.Define(CtxRoute,
-		route, tryFiles, php, phpDeny, ret, rewrite, errorPage, &routeIndex, &routeLimits,
+		route, tryFiles, php, phpDeny, ret, rewrite, errorPage, &routeIndex, &routeLimits, &routeRateLimit,
 		proxyDir,
 		&Directive{
 			Name: "proxy_set_header", Card: Repeated, Args: []Arg{{Name: "name", Type: String()}, {Name: "value", Type: String()}},
@@ -478,6 +495,21 @@ func buildDefault() *Registry {
 		}
 		return "", "", ""
 	}
+
+	// ---- rate_limit ----
+
+	rl := r.Define(CtxRateLimit,
+		scalar("requests", "count", IntAtLeast(1), "none",
+			"How many requests are allowed per period (see per).", "Set it above what a real visitor does, so only abusive clients reach it."),
+		scalar("per", "duration", Duration(time.Millisecond), "1s", "The period requests counts over.", "None."),
+		scalar("burst", "count", IntAtLeast(1), "requests",
+			"How many requests may arrive at once after a quiet time. The allowance refills continuously at requests per period.",
+			"A small burst smooths traffic but refuses pages that load many files at once."),
+		scalar("key", "key", Enum("ip", "global"), "ip",
+			"What is counted separately: ip gives each client address its own allowance (IPv6 per /64, after trusted_proxies); global shares one allowance among all clients.",
+			"With ip behind a proxy that is not in trusted_proxies, every client counts as the proxy and shares one allowance."),
+	)
+	rl.Required = []string{"requests"}
 
 	// ---- upstream ----
 

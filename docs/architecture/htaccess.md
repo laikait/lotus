@@ -211,8 +211,11 @@ Require valid-user          # or: Require user alice bob
   At most four password checks run at once.
 - A PHP script gets `REMOTE_USER` and `AUTH_TYPE`.
 - Not supported: Digest, `AuthGroupFile`, `Require group`, `Require not user`,
-  LDAP, `Satisfy`. There is no lock-out after repeated failures yet; use a
-  strong password and `Require ip` where you can.
+  LDAP, `Satisfy`.
+- Wrong passwords are limited per client address: after `htaccess_auth_failures`
+  (default 10) wrong attempts within `htaccess_auth_lockout` (default 5 minutes)
+  the address gets 429 until the lock-out ends, and its passwords aren't checked.
+  See `docs/architecture/limits.md`.
 
 ## Limits and safety
 

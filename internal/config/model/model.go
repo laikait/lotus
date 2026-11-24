@@ -77,13 +77,15 @@ type Listener struct {
 
 // Limits are connection, size and timeout limits.
 type Limits struct {
-	MaxConnections int      `json:"max_connections"`
-	MaxRequestBody int64    `json:"max_request_body"`
-	MaxHeaderBytes int64    `json:"max_header_bytes"`
-	HeaderTimeout  Duration `json:"header_timeout"`
-	ReadTimeout    Duration `json:"read_timeout"`
-	WriteTimeout   Duration `json:"write_timeout"`
-	IdleTimeout    Duration `json:"idle_timeout"`
+	MaxConnections int `json:"max_connections"`
+	// MaxConnectionsPerIP limits connections from one client address; 0 is unlimited.
+	MaxConnectionsPerIP int      `json:"max_connections_per_ip,omitempty"`
+	MaxRequestBody      int64    `json:"max_request_body"`
+	MaxHeaderBytes      int64    `json:"max_header_bytes"`
+	HeaderTimeout       Duration `json:"header_timeout"`
+	ReadTimeout         Duration `json:"read_timeout"`
+	WriteTimeout        Duration `json:"write_timeout"`
+	IdleTimeout         Duration `json:"idle_timeout"`
 }
 
 // DefaultLimits returns the built-in limits.
@@ -221,7 +223,23 @@ type Site struct {
 	ErrorPages map[int]string `json:"error_pages,omitempty"`
 	// HTAccess is set when the site reads .htaccess files.
 	HTAccess *HTAccess `json:"htaccess,omitempty"`
+	// RateLimit limits the requests of every client of the site.
+	RateLimit *RateLimit `json:"rate_limit,omitempty"`
 }
+
+// RateLimit is a token-bucket limit on requests.
+type RateLimit struct {
+	Requests int      `json:"requests"`
+	Per      Duration `json:"per"`
+	Burst    int      `json:"burst"`
+	Key      string   `json:"key"` // RateKeyIP or RateKeyGlobal
+}
+
+// What a rate limit counts separately.
+const (
+	RateKeyIP     = "ip"
+	RateKeyGlobal = "global"
+)
 
 // What a site does with .htaccess directives it can't honour.
 const (
@@ -232,11 +250,21 @@ const (
 // DefaultHTAccessRecheck is how long a .htaccess file is remembered.
 const DefaultHTAccessRecheck = 2 * time.Second
 
+// Defaults of the Basic authentication lock-out.
+const (
+	DefaultHTAccessAuthFailures = 10
+	DefaultHTAccessAuthLockout  = 5 * time.Minute
+)
+
 // HTAccess configures .htaccess support for a site.
 type HTAccess struct {
 	Allow         []string `json:"allow"`          // permitted directive categories
 	OnUnsupported string   `json:"on_unsupported"` // HTAccessError or HTAccessIgnore
 	Recheck       Duration `json:"recheck"`
+	// AuthFailures wrong Basic attempts within AuthLockout lock a client address
+	// out for AuthLockout; 0 turns the lock-out off.
+	AuthFailures int      `json:"auth_failures"`
+	AuthLockout  Duration `json:"auth_lockout"`
 }
 
 // Header is a response header added to every response.
@@ -286,6 +314,8 @@ type Route struct {
 	ErrorPages map[int]string `json:"error_pages,omitempty"`
 	Matches    []Match        `json:"matches,omitempty"`
 	Children   []Route        `json:"children,omitempty"`
+	// RateLimit is this route's own limit; the site's applies as well.
+	RateLimit *RateLimit `json:"rate_limit,omitempty"`
 }
 
 // LiteralBrace is written before a '{' in a request-time template (try_files

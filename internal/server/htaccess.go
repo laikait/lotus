@@ -17,6 +17,7 @@ import (
 	"github.com/laikait/lotus/internal/config/model"
 	"github.com/laikait/lotus/internal/fspath"
 	"github.com/laikait/lotus/internal/htaccess"
+	"github.com/laikait/lotus/internal/ratelimit"
 	"github.com/laikait/lotus/internal/staticfiles"
 )
 
@@ -39,6 +40,8 @@ type htRuntime struct {
 	dirs   map[string]*htDir // by document root and directory URL
 	logged map[string]bool   // problems already reported, so a busy site doesn't flood its log
 
+	lock *ratelimit.Lockout // wrong Basic attempts per client address
+
 	pwMu   sync.Mutex
 	pwFile map[string]*htPasswd // password files by path
 	hashes chan struct{}        // limits password checks running at once
@@ -60,6 +63,7 @@ func newHTRuntime(cfg *model.HTAccess, log *slog.Logger) *htRuntime {
 		cfg: cfg, log: log, recheck: time.Duration(cfg.Recheck),
 		allow: map[string]bool{}, dirs: map[string]*htDir{}, logged: map[string]bool{},
 		pwFile: map[string]*htPasswd{}, hashes: make(chan struct{}, 4),
+		lock: ratelimit.NewLockout(cfg.AuthFailures, time.Duration(cfg.AuthLockout), time.Duration(cfg.AuthLockout)),
 	}
 	for _, c := range cfg.Allow {
 		h.allow[c] = true
@@ -192,8 +196,9 @@ func (h *htRuntime) problems(layers []htaccess.Layer) (fail string) {
 
 // htResult is what .htaccess says about one routing step.
 type htResult struct {
-	fail string // not empty: answer 500
-	dec  *htaccess.Decision
+	fail       string // not empty: answer 500
+	dec        *htaccess.Decision
+	retryAfter time.Duration // with status 429: when to try again
 }
 
 // applyHTAccess consults the .htaccess files for the request at its current
@@ -232,9 +237,6 @@ func (rt *siteRuntime) applyHTAccess(r *http.Request, root string, cur target, c
 			return htaccess.FileInfo{IsDir: f.Info.IsDir(), Size: f.Info.Size()}, true
 		},
 	}
-	req.BasicUser = func(file, dirURL string) string {
-		return rt.ht.basicUser(root, r.Header.Get("Authorization"), file, dirURL)
-	}
 	req.Scheme = "http"
 	if r.TLS != nil {
 		req.Scheme = "https"
@@ -244,7 +246,21 @@ func (rt *siteRuntime) applyHTAccess(r *http.Request, root string, cur target, c
 			req.ServerPort = port
 		}
 	}
+	// A client that is locked out for wrong passwords gets 429 where it would
+	// have been asked for a password again; its password is not even checked.
+	key := ratelimit.Key(client)
+	locked, left := rt.ht.lock.Locked(key, time.Now())
+	req.BasicUser = func(file, dirURL string) string {
+		if locked {
+			return ""
+		}
+		return rt.ht.basicUser(root, r.Header.Get("Authorization"), file, dirURL, key)
+	}
 	dec := htaccess.Evaluate(layers, req, noRewrite)
+	if locked && dec.Status == http.StatusUnauthorized {
+		dec.Status, dec.AuthRealm = http.StatusTooManyRequests, ""
+		return htResult{dec: dec, retryAfter: left}
+	}
 	if dec.Why != "" && rt.ht.once("why|"+cur.path+"|"+dec.Why) {
 		rt.ht.log.Error("htaccess: "+dec.Why, "path", cur.path)
 	}
@@ -533,13 +549,14 @@ func (h *htRuntime) users(root, dirURL, file string) map[string]string {
 
 // basicUser checks the Basic credentials of a request against AuthUserFile and
 // returns the user's name, or "" when there are none or they are wrong.
-func (h *htRuntime) basicUser(root, authorization, file, dirURL string) string {
+func (h *htRuntime) basicUser(root, authorization, file, dirURL, client string) string {
 	user, pass, ok := htaccess.ParseBasic(authorization)
 	if !ok {
 		return ""
 	}
 	hash, found := h.users(root, dirURL, file)[user]
 	if !found {
+		h.lock.Fail(client, time.Now())
 		return ""
 	}
 	// bcrypt is meant to be slow; a flood of requests with bad passwords must
@@ -547,7 +564,9 @@ func (h *htRuntime) basicUser(root, authorization, file, dirURL string) string {
 	h.hashes <- struct{}{}
 	defer func() { <-h.hashes }()
 	if htaccess.VerifyPassword(hash, pass) {
+		h.lock.Reset(client)
 		return user
 	}
+	h.lock.Fail(client, time.Now())
 	return ""
 }

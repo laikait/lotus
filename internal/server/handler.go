@@ -36,6 +36,8 @@ type siteRuntime struct {
 	upstreams    map[string]*proxy.Upstream // reverse proxy upstreams of this configuration, by name
 
 	// .htaccess support; ht is nil when the site doesn't read .htaccess files.
+	rate          *rateLimit                  // limit on all requests of the site
+	routeRates    map[*model.Route]*rateLimit // limits of single routes
 	ht            *htRuntime
 	resolvers     map[string]*fspath.Resolver // by document root
 	extraHandlers sync.Map                    // static handlers with an index list a .htaccess chose

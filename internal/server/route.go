@@ -54,7 +54,8 @@ func (rt *siteRuntime) serve(w0 http.ResponseWriter, r *http.Request, clientIP n
 	reqID := newRequestID()
 
 	var es errorState
-	htEnd := false // a .htaccess rule had the END flag: no more .htaccess rewriting
+	htEnd := false           // a .htaccess rule had the END flag: no more .htaccess rewriting
+	var charged []*rateLimit // the rate limits this request has been counted against
 	cur := target{path: router.NormalizePath(r.URL.Path), query: r.URL.RawQuery}
 	for hops := 0; ; hops++ {
 		// w is the response of this step. A .htaccess file may wrap it (headers);
@@ -95,6 +96,16 @@ func (rt *siteRuntime) serve(w0 http.ResponseWriter, r *http.Request, clientIP n
 			pages = route.ErrorPages
 		}
 
+		// Rate limits come first: a refused request costs nothing else (no file
+		// system, no password check, no backend). The page for an error that is
+		// being served is not counted again.
+		if !es.inPage {
+			if limited, wait := rt.rateCheck(route, clientIP, &charged); limited {
+				rt.tooManyRequests(w, req, wait)
+				return
+			}
+		}
+
 		// .htaccess files apply where the request is about to be served from the
 		// file system (not to a fixed `return`, and not while an error page is
 		// being served, which would only repeat what already happened).
@@ -131,6 +142,9 @@ func (rt *siteRuntime) serve(w0 http.ResponseWriter, r *http.Request, clientIP n
 				}
 				w = newHTWriter(w, hr.dec, rt.protected, cur.path)
 				htStatus, htPHPEnv = hr.dec.Status, htScript{env: hr.dec.Env, ini: hr.dec.PHP}
+				if hr.retryAfter > 0 {
+					w.Header().Set("Retry-After", retrySeconds(hr.retryAfter))
+				}
 				if hr.dec.AuthRealm != "" {
 					w.Header().Set("WWW-Authenticate", basicChallenge(hr.dec.AuthRealm))
 				}

@@ -1,0 +1,53 @@
+# Connection limits, request rate limits, and the lock-out after wrong passwords.
+#
+#     lotus start -config configs/examples/limits.lotus
+#
+# Try:  for i in 1 2 3 4 5 6 7 8; do curl -s -o /dev/null -w "%{http_code} " http://127.0.0.1:8088/; done
+#           -> 200 200 200 200 200 429 429 429   (5 allowed at once, then 1 per second)
+#       for i in 1 2 3 4; do curl -s -o /dev/null -w "%{http_code} " -u alice:wrong http://127.0.0.1:8088/members/; done
+#           -> 401 401 401 429                    (3 wrong passwords lock the address out)
+#
+# Full description: docs/architecture/limits.md
+
+lotus_config_version 1
+
+server {
+    listen "http" {
+        address "127.0.0.1:8088"
+    }
+
+    # List your own load balancers here, so the client address comes from them
+    # (and they aren't counted as one client with a thousand connections).
+    # trusted_proxies [ "10.0.0.0/8" ]
+
+    limits {
+        max_connections 10000
+        max_connections_per_ip 50
+    }
+
+    site "localhost" {
+        root "./htaccess-site"
+        tls off
+
+        # Every request of the site: 1 per second per client address, in bursts of 5.
+        rate_limit {
+            requests 1
+            per 1s
+            burst 5
+        }
+
+        # Wrong Basic passwords: three within a minute lock the address out for a minute.
+        htaccess true
+        htaccess_auth_failures 3
+        htaccess_auth_lockout 1m
+
+        route "/login" {
+            # A tighter limit just for this route (the site's still applies).
+            rate_limit {
+                requests 5
+                per 1m
+            }
+            return 200 "login page"
+        }
+    }
+}

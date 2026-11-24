@@ -29,6 +29,7 @@ const (
 	CtxUpstream        Context = "upstream"
 	CtxBackend         Context = "backend"
 	CtxHealthCheck     Context = "health_check"
+	CtxRateLimit       Context = "rate_limit"
 	CtxSecurityHeaders Context = "security_headers"
 	CtxControl         Context = "control"
 )

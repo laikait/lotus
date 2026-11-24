@@ -71,7 +71,7 @@ func TestRecorderStatus(t *testing.T) {
 }
 
 func TestLimitConnReleasesItsSlotOnce(t *testing.T) {
-	lim := newConnLimiter(1)
+	lim := newConnLimiter(1, 0)
 	srv, cli := net.Pipe()
 	defer cli.Close()
 	lim.slots <- struct{}{}

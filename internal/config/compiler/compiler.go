@@ -279,6 +279,8 @@ func applyLimits(base model.Limits, d *ast.Directive) model.Limits {
 		switch r.Name {
 		case "max_connections":
 			base.MaxConnections = int(integer(arg(r, 0)))
+		case "max_connections_per_ip":
+			base.MaxConnectionsPerIP = int(integer(arg(r, 0)))
 		case "max_request_body":
 			base.MaxRequestBody = size(arg(r, 0))
 		case "max_header_bytes":
@@ -364,6 +366,29 @@ func (c *compiler) phpBackend(d *ast.Directive) model.PHPBackend {
 		b.Processes, b.MaxRequests = processes, maxRequests
 	}
 	return b
+}
+
+// rateLimit compiles a rate_limit block.
+func rateLimit(d *ast.Directive) *model.RateLimit {
+	rl := &model.RateLimit{Per: model.Duration(time.Second), Key: model.RateKeyIP}
+	for _, s := range body(d) {
+		if x, ok := s.(*ast.Directive); ok {
+			switch x.Name {
+			case "requests":
+				rl.Requests = int(integer(arg(x, 0)))
+			case "per":
+				rl.Per = model.Duration(dur(arg(x, 0)))
+			case "burst":
+				rl.Burst = int(integer(arg(x, 0)))
+			case "key":
+				rl.Key = str(arg(x, 0))
+			}
+		}
+	}
+	if rl.Burst == 0 {
+		rl.Burst = rl.Requests
+	}
+	return rl
 }
 
 func (c *compiler) upstream(d *ast.Directive) model.Upstream {
@@ -503,10 +528,13 @@ func (c *compiler) site(cfg *model.Config, d *ast.Directive) model.Site {
 			continue
 		}
 		switch r.Name {
-		case "htaccess", "htaccess_allow", "htaccess_unsupported", "htaccess_recheck":
+		case "rate_limit":
+			s.RateLimit = rateLimit(r)
+		case "htaccess", "htaccess_allow", "htaccess_unsupported", "htaccess_recheck", "htaccess_auth_failures", "htaccess_auth_lockout":
 			if ht == nil {
 				ht = &model.HTAccess{Allow: append([]string(nil), htaccess.Categories...),
-					OnUnsupported: model.HTAccessError, Recheck: model.Duration(model.DefaultHTAccessRecheck)}
+					OnUnsupported: model.HTAccessError, Recheck: model.Duration(model.DefaultHTAccessRecheck),
+					AuthFailures: model.DefaultHTAccessAuthFailures, AuthLockout: model.Duration(model.DefaultHTAccessAuthLockout)}
 			}
 			switch r.Name {
 			case "htaccess":
@@ -517,6 +545,10 @@ func (c *compiler) site(cfg *model.Config, d *ast.Directive) model.Site {
 				ht.OnUnsupported = str(arg(r, 0))
 			case "htaccess_recheck":
 				ht.Recheck = model.Duration(dur(arg(r, 0)))
+			case "htaccess_auth_failures":
+				ht.AuthFailures = int(integer(arg(r, 0)))
+			case "htaccess_auth_lockout":
+				ht.AuthLockout = model.Duration(dur(arg(r, 0)))
 			}
 		case "listeners":
 			s.Listeners, sawListeners = strs(arg(r, 0)), true
@@ -656,6 +688,8 @@ func (c *compiler) route(d *ast.Directive, in inherited) (model.Route, bool) {
 			r.Index = strs(arg(x, 0))
 		case "max_request_body":
 			r.MaxRequestBody = size(arg(x, 0))
+		case "rate_limit":
+			r.RateLimit = rateLimit(x)
 		}
 	}
 	r.Actions = actions(body(d))

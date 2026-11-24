@@ -43,6 +43,9 @@ func unmapBits(p netip.Prefix) int {
 	return p.Bits()
 }
 
+// Trusted reports whether a is one of the trusted proxies.
+func (r *Resolver) Trusted(a netip.Addr) bool { return r.isTrusted(a) }
+
 func (r *Resolver) isTrusted(a netip.Addr) bool {
 	a = a.Unmap().WithZone("")
 	for _, p := range r.trusted {

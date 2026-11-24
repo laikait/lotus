@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -101,11 +102,15 @@ func New(cfg *model.Config, opts Options) (*Server, error) {
 	s := &Server{
 		log:           opts.Logger,
 		opts:          opts,
-		limiter:       newConnLimiter(cfg.Limits.MaxConnections),
+		limiter:       newConnLimiter(cfg.Limits.MaxConnections, cfg.Limits.MaxConnectionsPerIP),
 		defaultAccess: logging.NewAccess(opts.Stdout),
 		errc:          make(chan error, len(cfg.Listeners)),
 	}
 	s.tracker = newConnTracker(s.log)
+	s.limiter.exempt = func(a netip.Addr) bool {
+		g := s.gen.Load()
+		return g != nil && g.clients.Trusted(a)
+	}
 	g, err := s.buildGeneration(cfg)
 	if err != nil {
 		return nil, err
@@ -304,6 +309,10 @@ func (s *Server) newSite(g *generation, site *model.Site) (*siteRuntime, error) 
 	if err := walk(site.Named); err != nil {
 		return nil, err
 	}
+	rt.rate = newRateLimit(site.RateLimit)
+	rt.routeRates = map[*model.Route]*rateLimit{}
+	routeLimits(site.Routes, rt.routeRates)
+	routeLimits(site.Named, rt.routeRates)
 	rt.defaultFiles = rt.handlers[filesKey(site.Root, site.Index)]
 	rt.resolvers = resolvers
 	// The names of the site's security_headers: .htaccess files and proxied
@@ -423,6 +432,10 @@ func (s *Server) DroppedRequests() uint64 { return s.tracker.dropped.Load() }
 // RejectedConnections reports how many connections were closed because the
 // connection limit was reached.
 func (s *Server) RejectedConnections() uint64 { return s.limiter.rejected.Load() }
+
+// RejectedPerIPConnections reports how many connections were closed because
+// their client address had too many open.
+func (s *Server) RejectedPerIPConnections() uint64 { return s.limiter.rejectedIP.Load() }
 
 // Shutdown stops accepting connections, lets running requests finish until ctx
 // ends, then closes everything. It is safe to call more than once.
