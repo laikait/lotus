@@ -18,6 +18,7 @@ import (
 	"github.com/laikait/lotus/internal/config"
 	"github.com/laikait/lotus/internal/config/loader"
 	"github.com/laikait/lotus/internal/config/model"
+	"github.com/laikait/lotus/internal/sitefile"
 )
 
 // adminUsersPath is the users file of an admin block: its users_file, or admin-users.txt next to the main
@@ -62,7 +63,7 @@ func (a *app) openAdmin(cfg *model.Config) (io.Closer, error) {
 		a.log.Warn("the admin has no accounts: nobody can sign in", "users_file", users.Path, "fix", "run: lotus admin passwd NAME")
 	}
 	srv := admin.New(admin.Options{
-		Backend: a, Users: users, SessionTTL: ad.SessionTTL, Allow: ad.Allow, Secure: secure, Log: a.log,
+		Backend: a, Sites: &sitefile.Store{Config: a.path}, Users: users, SessionTTL: ad.SessionTTL, Allow: ad.Allow, Secure: secure, Log: a.log,
 	})
 	go func() {
 		if err := srv.Serve(ln); err != nil {

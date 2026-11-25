@@ -10,6 +10,10 @@
 <header class="bar">
   <span class="brand">LOTUS</span>
   <span class="sub">admin</span>
+  <nav id="nav" class="nav" hidden aria-label="Main">
+    <a href="#dashboard" data-view="dashboard">Dashboard</a>
+    <a href="#sites" data-view="sites">Sites</a>
+  </nav>
   <span class="spacer"></span>
   <span id="who" class="who" hidden></span>
   <button id="logout" class="btn btn-quiet" type="button" hidden title="Sign out" aria-label="Sign out">Sign out</button>
@@ -29,11 +33,12 @@
     <p class="hint">Accounts are made on the server with <code>lotus admin passwd NAME</code>.</p>
   </section>
 
-  <section id="dash" hidden>
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <section id="dash" data-page="dashboard" hidden>
     <div class="toolbar">
       <h1>Dashboard</h1>
       <span class="spacer"></span>
-      <span id="toast" class="toast" role="status" hidden></span>
       <button id="refresh" class="btn btn-quiet" type="button" title="Refresh" aria-label="Refresh">Refresh</button>
       <button id="reload" class="btn" type="button" title="Load the configuration again" aria-label="Reload the configuration">Reload configuration</button>
     </div>
@@ -51,6 +56,43 @@
 
     <h2>Certificates</h2>
     <table class="table"><thead><tr><th>Domains</th><th>Issuer</th><th>Expires</th><th>Status</th></tr></thead><tbody id="certs"></tbody></table>
+  </section>
+
+  <section id="sitespage" data-page="sites" hidden>
+    <div class="toolbar">
+      <h1>Sites</h1>
+      <span class="spacer"></span>
+      <button id="site-add" class="btn" type="button" title="Add a site" aria-label="Add a site">Add site</button>
+    </div>
+    <p id="site-hint" class="notice" hidden></p>
+    <table class="table">
+      <thead><tr><th>Name</th><th>Aliases</th><th>Web directory</th><th>Index</th><th>TLS</th><th>Actions</th></tr></thead>
+      <tbody id="site-rows"></tbody>
+    </table>
+    <p class="hint">Sites made here or with <code>lotus site add</code> can be changed here. A site written by hand, or in <code>main.conf</code>, is shown on the Dashboard and stays as you wrote it.</p>
+
+    <form id="site-form" class="card form" hidden>
+      <h2 id="site-form-title">Add a site</h2>
+      <label for="f-name">Name</label>
+      <input id="f-name" type="text" required maxlength="253" placeholder="example.com" autocapitalize="off" spellcheck="false">
+      <label for="f-aliases">Aliases <span class="muted">(separate with commas; *.example.com is allowed)</span></label>
+      <input id="f-aliases" type="text" maxlength="2000" placeholder="www.example.com" autocapitalize="off" spellcheck="false">
+      <label for="f-root">Web directory</label>
+      <input id="f-root" type="text" required maxlength="500" spellcheck="false">
+      <label for="f-index">Index files <span class="muted">(separate with commas)</span></label>
+      <input id="f-index" type="text" maxlength="500" value="index.html" spellcheck="false">
+      <label for="f-tls">TLS</label>
+      <select id="f-tls">
+        <option value="off">Off (plain HTTP)</option>
+        <option value="automatic">Automatic (certificate from ACME; needs an HTTPS listener)</option>
+      </select>
+      <label class="check" id="f-root-wrap"><input id="f-create" type="checkbox" checked> Create the web directory with a sample page</label>
+      <div id="site-errors" class="error" role="alert" hidden></div>
+      <div class="actions">
+        <button id="site-save" class="btn" type="submit">Save and reload</button>
+        <button id="site-cancel" class="btn btn-quiet" type="button">Cancel</button>
+      </div>
+    </form>
   </section>
 </main>
 <script src="app.js"></script>

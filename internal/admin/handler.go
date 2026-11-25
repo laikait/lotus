@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/laikait/lotus/internal/control"
+	"github.com/laikait/lotus/internal/sitefile"
 )
 
 //go:embed ui
@@ -33,6 +34,7 @@ const (
 // Options configure a Server.
 type Options struct {
 	Backend    control.Backend
+	Sites      *sitefile.Store // the sites.d folder; nil: no site pages
 	Users      Users
 	SessionTTL time.Duration
 	Allow      []netip.Prefix // empty: any address
@@ -119,6 +121,12 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, http.StatusOK, s.opts.Backend.Certificates())
 	}))
 	mux.HandleFunc("POST /v1/reload", s.auth(RoleAdmin, s.reload))
+	if s.opts.Sites != nil {
+		mux.HandleFunc("GET /v1/site-files", s.auth(RoleViewer, s.listSiteFiles))
+		mux.HandleFunc("POST /v1/site-files", s.auth(RoleAdmin, s.addSite))
+		mux.HandleFunc("PUT /v1/site-files/{name}", s.auth(RoleAdmin, s.updateSite))
+		mux.HandleFunc("DELETE /v1/site-files/{name}", s.auth(RoleAdmin, s.deleteSite))
+	}
 	return s.guard(mux)
 }
 

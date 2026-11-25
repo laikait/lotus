@@ -1,25 +1,14 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
-	"regexp"
-	"runtime"
-	"sort"
 	"strings"
 
-	"github.com/laikait/lotus/internal/config"
-	"github.com/laikait/lotus/internal/config/loader"
+	"github.com/laikait/lotus/internal/sitefile"
 )
-
-// siteIncludeLine is what the main configuration needs, inside its server block,
-// for the files made by "lotus site add" to be read.
-const siteIncludeLine = `include "sites.d/*.conf"`
-
-var siteNameRe = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$`)
 
 func cmdSite(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
@@ -39,24 +28,25 @@ func cmdSite(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
-// defaultSiteRoot is the web directory a new site gets when --root is not given.
-func defaultSiteRoot(name string) string {
-	if runtime.GOOS == "windows" {
-		return "C:/www/" + name
+// reportSiteError prints why a site change failed and returns the exit code.
+func reportSiteError(stderr io.Writer, err error) int {
+	var invalid *sitefile.InvalidError
+	if errors.As(err, &invalid) {
+		for _, d := range invalid.Diagnostics {
+			printDiagnostic(stderr, d)
+		}
+		fmt.Fprintln(stderr, "lotus: the configuration is not valid with this change; nothing was changed")
+		return exitInvalidConfig
 	}
-	return "/var/www/public_html/" + name
+	fmt.Fprintf(stderr, "lotus: %v\n", err)
+	return exitUsage
 }
-
-func sitesDir(cfg string) string { return filepath.Join(filepath.Dir(cfg), "sites.d") }
-
-// siteFile is where the site "name" is kept; the name is checked before it is used.
-func siteFile(cfg, name string) string { return filepath.Join(sitesDir(cfg), name+".conf") }
 
 func cmdSiteAdd(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("lotus site add", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	cfg := fs.String("config", defaultConfigPath(), "main configuration file")
-	root := fs.String("root", "", "web directory (default "+defaultSiteRoot("NAME")+")")
+	root := fs.String("root", "", "web directory (default "+sitefile.DefaultRoot("NAME")+")")
 	aliases := fs.String("aliases", "", "other host names, separated by commas (for example www.example.com)")
 	index := fs.String("index", "index.html", "index file(s), separated by commas (for example index.php,index.html)")
 	fs.Usage = func() {
@@ -70,56 +60,15 @@ func cmdSiteAdd(args []string, stdout, stderr io.Writer) int {
 		fs.Usage()
 		return exitUsage
 	}
-	name := strings.ToLower(fs.Arg(0))
-	if !siteNameRe.MatchString(name) {
-		fmt.Fprintf(stderr, "lotus: %q is not a host name (letters, digits, dots and dashes)\n", fs.Arg(0))
-		return exitUsage
+	store := &sitefile.Store{Config: *cfg}
+	if hint := store.IncludeHint(); hint != "" {
+		fmt.Fprintln(stderr, "note: "+hint)
 	}
-	dir := *root
-	if dir == "" {
-		dir = defaultSiteRoot(name)
+	sp, err := store.Add(sitefile.Spec{Name: fs.Arg(0), Aliases: splitList(*aliases), Root: *root, Index: splitList(*index)}, true)
+	if err != nil {
+		return reportSiteError(stderr, err)
 	}
-	dir = filepath.ToSlash(dir)
-
-	if hint := siteIncludeHint(*cfg); hint != "" {
-		fmt.Fprintln(stderr, hint)
-	}
-	file := siteFile(*cfg, name)
-	if _, err := os.Stat(file); err == nil {
-		fmt.Fprintf(stderr, "lotus: site %q already exists (%s)\n", name, file)
-		return exitUsage
-	}
-	if err := os.MkdirAll(sitesDir(*cfg), 0o755); err != nil {
-		fmt.Fprintf(stderr, "lotus: %v\n", err)
-		return exitUsage
-	}
-	if err := os.WriteFile(file, []byte(renderSite(name, dir, splitList(*aliases), splitList(*index))), 0o644); err != nil {
-		fmt.Fprintf(stderr, "lotus: %v\n", err)
-		return exitUsage
-	}
-
-	// The site is kept only if the whole configuration is still valid with it.
-	res, diags := config.Check(*cfg, loader.Options{})
-	if res == nil {
-		_ = os.Remove(file)
-		for _, d := range diags {
-			printDiagnostic(stderr, d)
-		}
-		fmt.Fprintf(stderr, "lotus: the configuration is not valid with this site; it was not added\n")
-		return exitInvalidConfig
-	}
-
-	made := ""
-	if err := os.MkdirAll(dir, 0o755); err == nil {
-		page := filepath.Join(filepath.FromSlash(dir), "index.html")
-		if _, err := os.Stat(page); err != nil && containsString(splitList(*index), "index.html") {
-			body := "<!doctype html>\n<meta charset=\"utf-8\">\n<title>" + name + "</title>\n<h1>" + name + "</h1>\n<p>This site is served by LOTUS.</p>\n"
-			if os.WriteFile(page, []byte(body), 0o644) == nil {
-				made = " with a sample page"
-			}
-		}
-	}
-	fmt.Fprintf(stdout, "site %s added%s\n  settings: %s\n  web directory: %s\nApply it with: lotus reload (Administrator shell) or restart the LOTUS service.\n", name, made, file, dir)
+	fmt.Fprintf(stdout, "site %s added\n  settings: %s\n  web directory: %s\nApply it with: lotus reload (Administrator shell) or restart the LOTUS service.\n", sp.Name, store.File(sp.Name), sp.Root)
 	return exitOK
 }
 
@@ -130,14 +79,21 @@ func cmdSiteList(args []string, stdout, stderr io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
-	files, _ := filepath.Glob(filepath.Join(sitesDir(*cfg), "*.conf"))
-	sort.Strings(files)
-	if len(files) == 0 {
-		fmt.Fprintf(stdout, "no sites in %s (add one with: lotus site add <name>)\n", sitesDir(*cfg))
+	store := &sitefile.Store{Config: *cfg}
+	list, err := store.List()
+	if err != nil {
+		return reportSiteError(stderr, err)
+	}
+	if len(list) == 0 {
+		fmt.Fprintf(stdout, "no sites in %s (add one with: lotus site add <name>)\n", store.Dir())
 		return exitOK
 	}
-	for _, f := range files {
-		fmt.Fprintln(stdout, strings.TrimSuffix(filepath.Base(f), ".conf"))
+	for _, e := range list {
+		note := ""
+		if !e.Editable {
+			note = "\t(changed by hand)"
+		}
+		fmt.Fprintln(stdout, e.Name+note)
 	}
 	return exitOK
 }
@@ -154,39 +110,15 @@ func cmdSiteRemove(args []string, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 	name := strings.ToLower(fs.Arg(0))
-	if !siteNameRe.MatchString(name) {
-		fmt.Fprintf(stderr, "lotus: %q is not a host name\n", fs.Arg(0))
-		return exitUsage
-	}
-	file := siteFile(*cfg, name)
-	if err := os.Remove(file); err != nil {
-		fmt.Fprintf(stderr, "lotus: no site %q here (%s)\n", name, file)
-		return exitUsage
+	if err := (&sitefile.Store{Config: *cfg}).Remove(name); err != nil {
+		if errors.Is(err, sitefile.ErrNotFound) {
+			fmt.Fprintf(stderr, "lotus: no site %q here\n", name)
+			return exitUsage
+		}
+		return reportSiteError(stderr, err)
 	}
 	fmt.Fprintf(stdout, "site %s removed (its web directory was not touched)\nApply it with: lotus reload (Administrator shell) or restart the LOTUS service.\n", name)
 	return exitOK
-}
-
-// renderSite is the text of one site file.
-func renderSite(name, root string, aliases, index []string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "# Made by \"lotus site add\". Edit it freely; \"lotus site remove %s\" deletes this file.\n", name)
-	fmt.Fprintf(&b, "site %q {\n", name)
-	if len(aliases) > 0 {
-		fmt.Fprintf(&b, "    aliases %s\n", quoteList(aliases))
-	}
-	fmt.Fprintf(&b, "    root %q\n", root)
-	fmt.Fprintf(&b, "    index %s\n", quoteList(index))
-	b.WriteString("    tls off\n}\n")
-	return b.String()
-}
-
-func quoteList(items []string) string {
-	q := make([]string, len(items))
-	for i, s := range items {
-		q[i] = fmt.Sprintf("%q", s)
-	}
-	return "[ " + strings.Join(q, ", ") + " ]"
 }
 
 func splitList(s string) []string {
@@ -199,25 +131,6 @@ func splitList(s string) []string {
 	return out
 }
 
-func containsString(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
-}
-
-// siteIncludeHint says what to add to a main configuration that does not read
-// sites.d yet (an installation from before "lotus site" existed).
-func siteIncludeHint(cfg string) string {
-	data, err := os.ReadFile(cfg)
-	if err != nil || strings.Contains(string(data), "sites.d") {
-		return ""
-	}
-	return "note: " + cfg + " does not read the sites.d folder yet. Add this line inside its server { } block:\n    " + siteIncludeLine
-}
-
 // reorderFlags moves flags before the positional name, so "site add example.com --root D" works as well as
 // "site add --root D example.com" (Go's flag package stops at the first non-flag).
 func reorderFlags(args []string) []string {
@@ -226,7 +139,7 @@ func reorderFlags(args []string) []string {
 		a := args[i]
 		if strings.HasPrefix(a, "-") && len(a) > 1 {
 			flags = append(flags, a)
-			if !strings.Contains(a, "=") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+			if !strings.Contains(a, "=") && !isBoolFlag(a) && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 				i++
 				flags = append(flags, args[i])
 			}
@@ -235,4 +148,9 @@ func reorderFlags(args []string) []string {
 		}
 	}
 	return append(flags, rest...)
+}
+
+// isBoolFlag names the flags of the commands that use reorderFlags that take no value.
+func isBoolFlag(a string) bool {
+	return strings.TrimLeft(a, "-") == "password-stdin"
 }

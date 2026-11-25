@@ -15,7 +15,10 @@ import (
 	"github.com/laikait/lotus/internal/control"
 )
 
-type fakeBackend struct{ reloads int }
+type fakeBackend struct {
+	reloads   int
+	reloadErr *control.Error // when set, Reload refuses
+}
 
 func (f *fakeBackend) Status() control.Status {
 	return control.Status{Version: "test", Uptime: "1m", Sites: 2}
@@ -31,6 +34,9 @@ func (f *fakeBackend) CachePurge(control.CachePurgeParams) (int, *control.Error)
 }
 func (f *fakeBackend) Reload(string) (control.ReloadResult, *control.Error) {
 	f.reloads++
+	if f.reloadErr != nil {
+		return control.ReloadResult{}, f.reloadErr
+	}
 	return control.ReloadResult{Generation: 7}, nil
 }
 func (f *fakeBackend) Stop(bool, time.Duration)                               {}

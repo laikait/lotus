@@ -145,7 +145,8 @@ end;
 // The page that asks for the first admin account. It is left out when the admin already has accounts.
 procedure InitializeWizard();
 begin
-  if not FileExists(ExpandConstant('{app}\admin-users.txt')) then begin
+  // {app} is not known yet here, so look in the default install folder.
+  if not FileExists(ExpandConstant('{autopf}\Lotus\admin-users.txt')) then begin
     AdminPage := CreateInputQueryPage(wpSelectTasks, 'Web admin account',
       'Choose how you sign in to the LOTUS admin',
       'The admin is at http://127.0.0.1:7080/ and only works on this computer. Leave the password empty to make an account later with "lotus admin passwd NAME".');
