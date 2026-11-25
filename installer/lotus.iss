@@ -42,6 +42,8 @@ SetupIconFile=lotus.ico
 #endif
 ; The service holds lotus.exe open; stop it before files are replaced.
 CloseApplications=no
+; Tell Windows the PATH changed, so terminals opened after the install find "lotus".
+ChangesEnvironment=yes
 
 [Tasks]
 Name: "addtopath"; Description: "Add LOTUS to the system PATH (so that ""lotus"" works in any terminal)"
@@ -60,7 +62,8 @@ Source: "index.html"; DestDir: "C:\www"; Flags: onlyifdoesntexist uninsneverunin
 
 [Icons]
 Name: "{group}\Edit LOTUS configuration"; Filename: "{win}\notepad.exe"; Parameters: """{commonappdata}\LOTUS\main.lotus"""
-Name: "{group}\Open LOTUS site folder (C:\www)"; Filename: "C:\www"
+; No backslash in a shortcut's name after {group}\: Setup reads each one as a folder (that made "Open LOTUS site folder (C:" and error 123).
+Name: "{group}\Open LOTUS site folder"; Filename: "C:\www"
 Name: "{group}\Open LOTUS log"; Filename: "{win}\notepad.exe"; Parameters: """{commonappdata}\LOTUS\logs\lotus.log"""
 Name: "{group}\Start LOTUS"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -Command ""Start-Service LOTUS"""; Flags: runminimized
 Name: "{group}\Stop LOTUS"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -Command ""Stop-Service LOTUS"""; Flags: runminimized

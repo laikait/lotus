@@ -26,4 +26,7 @@ server {
             "X-Frame-Options" = "DENY"
         }
     }
+
+    # More sites: "lotus site add example.com" makes a file in the sites.d folder next to this one.
+    include "sites.d/*.lotus"
 }
