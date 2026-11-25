@@ -1,6 +1,6 @@
 # Route Matching Precedence
 
-**Status:** implemented in `internal/router` and `internal/server/route.go` (path matching §3, `match` blocks §4, `try_files`, `rewrite`, `error_page` and the 10-redirect limit §5). Not implemented yet: a site-level `rewrite` (it is a route directive for now), the Nginx differential tests (§8). `client_ip` uses the address resolved by `internal/clientip` (spec §4.10.4); PROXY protocol is not implemented yet.
+**Status:** implemented in `internal/router` and `internal/server/route.go` (path matching §3, `match` blocks §4, `try_files`, `rewrite`, `error_page` and the 10-redirect limit §5). The Nginx translator is `lotus compat nginx convert` (`docs/architecture/nginx-compat.md`). Not implemented yet: a site-level `rewrite` (it is a route directive for now), the Nginx differential tests (§8). `client_ip` uses the address resolved by `internal/clientip` (spec §4.10.4); PROXY protocol is not implemented yet.
 **Spec reference:** v1.1 §4.3.3 (decision confirmed: Nginx `location` model)
 **Syntax reference:** `docs/configuration/grammar.md` §6.4
 

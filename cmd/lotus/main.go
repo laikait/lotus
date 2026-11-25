@@ -107,6 +107,8 @@ Commands:
   logs reopen                 Reopen the log files (after log rotation)
   compat htaccess check [--json] [--all] <file>
                               Report which directives of a .htaccess file LOTUS can apply
+  compat nginx convert [--json] [--all] [-o file [--force]] <nginx.conf>
+                              Translate an Nginx configuration to LOTUS and list what needs review
   help                        Show this help
 
 The reload, stop, status, certs, cache and logs commands talk to the running server through its control

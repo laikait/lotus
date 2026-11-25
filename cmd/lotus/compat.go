@@ -16,8 +16,12 @@ func cmdCompat(args []string, stdout, stderr io.Writer) int {
 	if len(args) >= 2 && args[0] == "htaccess" && args[1] == "check" {
 		return cmdCompatHtaccessCheck(args[2:], stdout, stderr)
 	}
+	if len(args) >= 1 && args[0] == "nginx" {
+		return cmdCompatNginx(args[1:], stdout, stderr)
+	}
 	fmt.Fprintln(stderr, "usage: lotus compat htaccess check [--json] [--all] [--allow categories] <file>")
-	fmt.Fprintln(stderr, "(checking and importing Nginx and Apache configurations is not implemented yet)")
+	fmt.Fprintln(stderr, "       "+compatNginxUsage[len("usage: "):])
+	fmt.Fprintln(stderr, "(importing Apache httpd configurations is not implemented yet)")
 	return exitUsage
 }
 
