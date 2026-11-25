@@ -23,3 +23,9 @@ Names of the listeners this site answers on.
 ### Security
 
 A site attached to a plain-HTTP listener can be read and altered on the network.
+
+### Example
+
+```text
+listeners [ "http" ]
+```

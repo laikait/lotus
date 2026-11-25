@@ -23,3 +23,9 @@ Maximum simultaneous connections from one client address (IPv6 clients are count
 ### Security
 
 Without it one client can use every connection slot. Too low a value affects many users behind one NAT address.
+
+### Example
+
+```text
+max_connections_per_ip 50
+```

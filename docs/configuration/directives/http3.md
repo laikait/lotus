@@ -23,3 +23,10 @@ Also serve HTTP/3 over UDP on the same port number and advertise it with Alt-Svc
 ### Security
 
 Needs the UDP port open in the firewall. QUIC has its own limits and tuning needs (see operations docs).
+
+### Example
+
+```text
+protocol https
+http3 true
+```

@@ -23,3 +23,18 @@ Document root: the directory that URLs are mapped into.
 ### Security
 
 Everything below this directory can be served. Pointing it at a directory with secrets exposes them; LOTUS still refuses to follow paths outside it according to the symlink policy.
+
+### Example
+
+In `route`:
+
+```text
+root "/var/www/other"
+```
+
+In `site`:
+
+```text
+root "/var/www/example"
+```
+

@@ -23,3 +23,9 @@ If the request path matches the pattern, replaces the request: with last (the de
 ### Security
 
 A redirect target built from {re.N} can become an open redirect if the pattern lets a visitor choose the host, as in '^/go/(.*)$' to "{re.1}". Start the target with "/" or a fixed host. CR/LF characters in captured values are rejected.
+
+### Example
+
+```text
+rewrite '^/blog/(\d+)$' "/posts/{re.1}.html"
+```

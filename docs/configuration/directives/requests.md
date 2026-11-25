@@ -23,3 +23,10 @@ How many requests are allowed per period (see per).
 ### Security
 
 Set it above what a real visitor does, so only abusive clients reach it.
+
+### Example
+
+```text
+requests 10
+per 1s
+```

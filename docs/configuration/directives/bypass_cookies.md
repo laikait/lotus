@@ -23,3 +23,9 @@ Which request cookies keep a request out of the cache: any (a request with a coo
 ### Security
 
 A request with credentials in a cookie must never be answered from, or stored in, a cache that other visitors use. Requests with an Authorization header are never cached whatever this says.
+
+### Example
+
+```text
+bypass_cookies [ "session", "wordpress_logged_in_*" ]
+```

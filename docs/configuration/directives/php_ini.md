@@ -23,3 +23,10 @@ php.ini file for the processes started with command (php-cgi -c). Without it PHP
 ### Security
 
 The file decides which PHP settings apply, including open_basedir and disabled functions.
+
+### Example
+
+```text
+command "/usr/bin/php-cgi"
+php_ini "/etc/php/php.ini"
+```

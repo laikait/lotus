@@ -23,3 +23,20 @@ Sends matching requests to the named upstream (a reverse proxy). Takes the place
 ### Security
 
 The request, with its headers and body, goes to a server of that upstream. Only administrators may choose upstreams.
+
+### Example
+
+In `match`:
+
+```text
+method [ "POST" ]
+proxy "app"
+```
+
+In `route`:
+
+```text
+proxy "app"
+proxy_set_header "X-Env" "production"
+```
+

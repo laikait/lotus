@@ -23,3 +23,9 @@ Port the CA connects to for TLS-ALPN-01 validation, if it is not 443. An https l
 ### Security
 
 None.
+
+### Example
+
+```text
+tls_alpn_port 8443
+```

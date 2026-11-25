@@ -23,3 +23,11 @@ Per-site log files.
 ### Security
 
 LOTUS writes these files as its own user. A site's log path must not point at files it should not be able to modify.
+
+### Example
+
+```text
+logs {
+    access "/var/log/lotus/example.access.log"
+}
+```

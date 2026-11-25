@@ -23,3 +23,11 @@ A separate listener that serves metrics in the Prometheus text format (requests,
 ### Security
 
 Metrics tell an attacker what sites exist and how busy they are. Keep the listener on a loopback or private address, and require a bearer_token or an allow list if it is reachable from a network.
+
+### Example
+
+```text
+metrics {
+    address "127.0.0.1:9100"
+}
+```

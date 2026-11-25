@@ -23,3 +23,9 @@ Time allowed to receive the request headers after a connection is established.
 ### Security
 
 Long values make slowloris attacks easier.
+
+### Example
+
+```text
+header_timeout 10s
+```

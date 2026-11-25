@@ -23,3 +23,19 @@ Tries each candidate as a file or directory in the site root. If none exists, th
 ### Security
 
 Candidates are resolved inside the document root only. The last entry re-enters routing, so it can reach any route of the site.
+
+### Example
+
+In `match`:
+
+```text
+method [ "GET" ]
+try_files [ "{uri}", "=404" ]
+```
+
+In `route`:
+
+```text
+try_files [ "{uri}", "{uri}/", "/index.php?{query}" ]
+```
+

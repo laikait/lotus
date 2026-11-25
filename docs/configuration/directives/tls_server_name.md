@@ -23,3 +23,9 @@ Name to expect in the backend's certificate and to send as SNI.
 ### Security
 
 None.
+
+### Example
+
+```text
+tls_server_name "api.internal"
+```

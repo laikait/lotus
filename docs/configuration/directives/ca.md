@@ -23,3 +23,9 @@ ACME directory URL of the certificate authority.
 ### Security
 
 Use a staging CA while testing to avoid production rate limits.
+
+### Example
+
+```text
+ca "https://acme-staging-v02.api.letsencrypt.org/directory"
+```

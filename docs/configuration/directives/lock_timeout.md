@@ -23,3 +23,9 @@ When several requests miss on the same URL at once, one goes to the backend and 
 ### Security
 
 Without the wait, a popular page that expires can send a burst of identical requests to the backend.
+
+### Example
+
+```text
+lock_timeout 3s
+```

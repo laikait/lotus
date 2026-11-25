@@ -23,3 +23,19 @@ Runs matching requests through the named php_backend over FastCGI.
 ### Security
 
 Only existing files below the document root are ever passed to PHP. Which backend (and so which pool and OS user) runs a site is an administrator decision.
+
+### Example
+
+In `match`:
+
+```text
+method [ "GET" ]
+php "php"
+```
+
+In `route`:
+
+```text
+php "php"
+```
+

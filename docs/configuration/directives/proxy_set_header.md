@@ -23,3 +23,10 @@ Sets a header on the request sent to the upstream. An empty value removes the he
 ### Security
 
 Headers such as X-Forwarded-User are trusted by many applications. Only set them to fixed values.
+
+### Example
+
+```text
+proxy "app"
+proxy_set_header "X-Env" "production"
+```

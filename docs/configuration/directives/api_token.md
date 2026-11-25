@@ -24,3 +24,10 @@ Cloudflare API token with Zone.DNS:Edit (and Zone:Read unless limited to one zon
 ### Security
 
 A credential: it is redacted in all output. Prefer env("NAME") over writing it into the file.
+
+### Example
+
+```text
+provider cloudflare
+api_token env("CLOUDFLARE_API_TOKEN")
+```

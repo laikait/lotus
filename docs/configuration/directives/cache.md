@@ -26,6 +26,15 @@ Keeps the responses of this route's proxy or PHP in the named cache zone and ans
 
 A cached response is sent to every visitor who asks for the same URL. Use it only where that is what you want, and keep cookies set to bypass (the default) for pages that differ per user.
 
+### Example
+
+```text
+proxy "app"
+cache "pages" {
+    ttl 5m
+}
+```
+
 ## In `server`
 
 ```text
@@ -49,3 +58,11 @@ A response cache: a memory budget that routes use by naming it with cache. Zones
 ### Security
 
 A cache holds copies of responses in memory. What is stored for one visitor can be sent to another, so only routes whose responses are the same for everybody should use one.
+
+### Example
+
+```text
+cache "images" {
+    max_size 256mib
+}
+```

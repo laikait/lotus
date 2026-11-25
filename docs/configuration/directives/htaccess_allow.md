@@ -23,3 +23,10 @@ Which kinds of directives .htaccess files may use: rewrite, redirect, error_docu
 ### Security
 
 Leave out access to stop .htaccess from relaxing or adding access rules; leave out headers to stop it adding response headers.
+
+### Example
+
+```text
+htaccess true
+htaccess_allow [ "rewrite", "redirect" ]
+```

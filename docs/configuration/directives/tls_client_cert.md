@@ -23,3 +23,10 @@ Certificate that LOTUS presents to https backends that require client certificat
 ### Security
 
 The key file must be readable only by the LOTUS user.
+
+### Example
+
+```text
+tls_client_cert "/etc/lotus/client.pem"
+tls_client_key "/etc/lotus/client.key"
+```

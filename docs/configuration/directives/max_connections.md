@@ -23,3 +23,9 @@ Maximum number of simultaneous connections. New connections beyond it are closed
 ### Security
 
 Too high a value lets clients exhaust file descriptors and memory.
+
+### Example
+
+```text
+max_connections 20000
+```

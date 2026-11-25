@@ -23,3 +23,9 @@ The media types that are compressed: exact ("application/json") or a whole famil
 ### Security
 
 Don't add types that are already compressed (images, video, archives, WOFF fonts): it costs CPU for nothing, and compressing responses that mix secrets with reflected input enables BREACH-style attacks.
+
+### Example
+
+```text
+types [ "text/*", "application/json" ]
+```

@@ -23,3 +23,9 @@ Directory for the ACME account key, certificates and their private keys. Created
 ### Security
 
 Everything in it is secret. Anyone who can read it can impersonate your sites. Back it up: lost certificates are re-issued, but CAs limit how often.
+
+### Example
+
+```text
+storage "/var/lib/lotus/certs"
+```

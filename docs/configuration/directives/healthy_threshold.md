@@ -23,3 +23,9 @@ Successful probes in a row that bring a backend back.
 ### Security
 
 None.
+
+### Example
+
+```text
+healthy_threshold 3
+```

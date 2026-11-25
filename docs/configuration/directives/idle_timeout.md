@@ -25,6 +25,12 @@ Time an idle keep-alive connection is kept open.
 
 Long values let idle clients hold connections.
 
+### Example
+
+```text
+idle_timeout 1m
+```
+
 ## In `upstream`
 
 ```text
@@ -47,3 +53,9 @@ How long an unused connection to a backend is kept for reuse.
 ### Security
 
 None.
+
+### Example
+
+```text
+idle_timeout 30s
+```

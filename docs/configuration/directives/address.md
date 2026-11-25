@@ -25,6 +25,12 @@ Address to listen on, as host:port, [ipv6]:port or :port.
 
 0.0.0.0 and [::] accept connections from every interface.
 
+### Example
+
+```text
+address "0.0.0.0:8081"
+```
+
 ## In `metrics`
 
 ```text
@@ -47,3 +53,9 @@ Address to listen on, as host:port. Use 127.0.0.1 unless a collector on another 
 ### Security
 
 A non-loopback address needs bearer_token or allow.
+
+### Example
+
+```text
+address "127.0.0.1:9100"
+```

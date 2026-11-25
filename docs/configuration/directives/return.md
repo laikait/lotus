@@ -23,3 +23,19 @@ Answer immediately with a status code. For redirect statuses (301, 302, 303, 307
 ### Security
 
 A redirect target built from {placeholders} can become an open redirect if it uses a client-controlled value such as {query.next}. CR/LF characters in placeholder values are rejected.
+
+### Example
+
+In `match`:
+
+```text
+method [ "DELETE" ]
+return 405 "read only"
+```
+
+In `route`:
+
+```text
+return 301 "https://{host}{uri}"
+```
+

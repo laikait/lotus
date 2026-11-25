@@ -23,3 +23,9 @@ The window in which max_fails failures are counted, and how long a backend stays
 ### Security
 
 None.
+
+### Example
+
+```text
+fail_timeout 30s
+```

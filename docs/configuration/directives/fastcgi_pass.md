@@ -23,3 +23,9 @@ FastCGI server address: unix:/path/to/socket or host:port. For a server that run
 ### Security
 
 Prefer Unix sockets with restricted permissions. A TCP address that is reachable by others lets them run PHP as this pool.
+
+### Example
+
+```text
+fastcgi_pass "unix:/run/php/php-fpm.sock"
+```

@@ -23,3 +23,9 @@ Which validations LOTUS offers the CA. http-01 needs the CA to reach a plain-HTT
 ### Security
 
 None.
+
+### Example
+
+```text
+challenges [ "tls-alpn-01" ]
+```

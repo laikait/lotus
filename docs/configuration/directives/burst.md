@@ -23,3 +23,11 @@ How many requests may arrive at once after a quiet time. The allowance refills c
 ### Security
 
 A small burst smooths traffic but refuses pages that load many files at once.
+
+### Example
+
+```text
+requests 5
+per 1s
+burst 10
+```

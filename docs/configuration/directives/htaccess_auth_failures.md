@@ -23,3 +23,10 @@ After this many wrong Basic authentication attempts from one client address with
 ### Security
 
 Without it a password can be guessed as fast as the server answers.
+
+### Example
+
+```text
+htaccess true
+htaccess_auth_failures 5
+```

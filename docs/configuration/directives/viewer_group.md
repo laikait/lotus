@@ -23,3 +23,9 @@ OS group whose members get read-only access to the control channel.
 ### Security
 
 Members can read status and configuration (secrets are redacted) but can't change anything.
+
+### Example
+
+```text
+viewer_group "lotus-viewers"
+```

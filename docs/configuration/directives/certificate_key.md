@@ -23,3 +23,11 @@ PEM private key file that belongs to certificate.
 ### Security
 
 The key must be readable only by the user that starts LOTUS (before it drops privileges). Anyone who can read it can impersonate the site.
+
+### Example
+
+```text
+tls manual
+certificate "/etc/ssl/example.pem"
+certificate_key "/etc/ssl/example.key"
+```

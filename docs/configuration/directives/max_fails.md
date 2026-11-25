@@ -23,3 +23,9 @@ After this many failures within fail_timeout a backend is taken out of rotation 
 ### Security
 
 None.
+
+### Example
+
+```text
+max_fails 5
+```

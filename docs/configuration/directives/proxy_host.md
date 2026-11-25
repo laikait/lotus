@@ -23,3 +23,10 @@ Which Host header the upstream gets: client keeps the one the client sent (and t
 ### Security
 
 None.
+
+### Example
+
+```text
+proxy "app"
+proxy_host upstream
+```

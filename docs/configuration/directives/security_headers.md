@@ -23,3 +23,12 @@ Response headers added to every response, written as "Name" = "value" entries.
 ### Security
 
 Headers such as Content-Security-Policy and Strict-Transport-Security harden browsers against attacks. Values can't contain control characters, so they can't inject extra headers.
+
+### Example
+
+```text
+security_headers {
+    "X-Content-Type-Options" = "nosniff"
+    "X-Frame-Options" = "DENY"
+}
+```

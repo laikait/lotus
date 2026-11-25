@@ -23,3 +23,9 @@ http serves plain HTTP; https serves TLS (HTTP/1.1 and HTTP/2).
 ### Security
 
 Plain HTTP is not encrypted. Redirect it to HTTPS or use it only on trusted networks.
+
+### Example
+
+```text
+protocol https
+```

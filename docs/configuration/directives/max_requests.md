@@ -23,3 +23,10 @@ A php-cgi process exits and is replaced after this many requests, which contains
 ### Security
 
 Applies to command.
+
+### Example
+
+```text
+command "/usr/bin/php-cgi"
+max_requests 1000
+```

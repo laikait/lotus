@@ -23,3 +23,9 @@ Maximum total size of the request line and headers. A request over the limit get
 ### Security
 
 Large values make header-based memory exhaustion easier.
+
+### Example
+
+```text
+max_header_bytes 32kib
+```

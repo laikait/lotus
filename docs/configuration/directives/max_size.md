@@ -23,3 +23,9 @@ Most memory the zone's stored responses (bodies, headers and bookkeeping) may us
 ### Security
 
 Memory the cache uses is not available to the rest of the system. Keep it well below the machine's memory (see runtime memory_limit).
+
+### Example
+
+```text
+max_size 256mib
+```

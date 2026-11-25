@@ -23,3 +23,10 @@ Tests a request header.
 ### Security
 
 Values come from the client and can be forged; don't use them alone for access control.
+
+### Example
+
+```text
+header "User-Agent" ~* 'bot|crawl'
+return 403
+```

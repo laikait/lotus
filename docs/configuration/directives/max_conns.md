@@ -25,6 +25,12 @@ Most requests in progress on this backend. Requests go to other backends while i
 
 None.
 
+### Example
+
+```text
+max_conns 50
+```
+
 ## In `upstream`
 
 ```text
@@ -47,3 +53,9 @@ Most requests in progress across the whole upstream. Beyond it requests get 503 
 ### Security
 
 Protects the backends from a flood; set it to what they can serve.
+
+### Example
+
+```text
+max_conns 500
+```

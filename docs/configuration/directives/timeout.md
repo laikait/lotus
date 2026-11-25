@@ -25,6 +25,12 @@ Time a probe may take.
 
 None.
 
+### Example
+
+```text
+timeout 2s
+```
+
 ## In `php_backend`
 
 ```text
@@ -47,3 +53,10 @@ Time to wait for the FastCGI server to respond. With command it is also how long
 ### Security
 
 Long timeouts let slow scripts tie up connections.
+
+### Example
+
+```text
+fastcgi_pass "127.0.0.1:9000"
+timeout 30s
+```

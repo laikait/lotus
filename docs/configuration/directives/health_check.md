@@ -23,3 +23,12 @@ Probes every backend regularly and takes failing ones out of rotation until they
 ### Security
 
 A health path is requested without credentials. Don't point it at something that changes data.
+
+### Example
+
+```text
+health_check {
+    path "/healthz"
+    interval 5s
+}
+```

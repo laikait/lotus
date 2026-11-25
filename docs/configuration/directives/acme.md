@@ -23,3 +23,11 @@ Automatic certificate issuance and renewal through ACME (for example Let's Encry
 ### Security
 
 The account key controls certificate issuance for your domains. It is stored under the LOTUS data directory and must stay private.
+
+### Example
+
+```text
+acme {
+    email "admin@example.com"
+}
+```

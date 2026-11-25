@@ -23,3 +23,13 @@ Top-level container for listeners, TLS settings, PHP backends and sites.
 ### Security
 
 Defines everything LOTUS serves. Only administrators should be able to edit the file that contains it.
+
+### Example
+
+```text
+server {
+    listen "http" {
+        address "0.0.0.0:80"
+    }
+}
+```

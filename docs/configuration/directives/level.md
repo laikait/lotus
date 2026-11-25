@@ -23,3 +23,9 @@ default balances size and CPU for responses made on the fly; fast uses the least
 ### Security
 
 best costs several times the CPU of default for a few percent less data. Under load it is a way to slow the server down.
+
+### Example
+
+```text
+level fast
+```

@@ -23,3 +23,9 @@ Port the CA connects to for HTTP-01 validation, if it is not 80 (for example beh
 ### Security
 
 None.
+
+### Example
+
+```text
+http_port 8080
+```

@@ -23,3 +23,9 @@ Reads .htaccess files in the document root and the directories below it, for the
 ### Security
 
 A .htaccess file is written by whoever can write to the site. It can rewrite, redirect and deny URLs of its own directory tree but is never executed as code, and it can't loosen the site's symlink, dotfile or security header settings.
+
+### Example
+
+```text
+htaccess true
+```

@@ -23,3 +23,11 @@ DNS servers (host:port) asked whether the record is visible and which zone a nam
 ### Security
 
 None.
+
+### Example
+
+```text
+provider cloudflare
+api_token env("CLOUDFLARE_API_TOKEN")
+resolvers [ "1.1.1.1:53", "8.8.8.8:53" ]
+```

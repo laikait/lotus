@@ -23,3 +23,9 @@ For files served from disk, send file.css.br, file.css.zst or file.css.gz (made 
 ### Security
 
 The copies are read under the same rules as every file (symlinks, dotfiles). Keep them in step with the originals: a stale copy is never served, but a wrong one is.
+
+### Example
+
+```text
+precompressed true
+```

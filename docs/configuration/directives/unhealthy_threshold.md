@@ -23,3 +23,9 @@ Failed probes in a row that take a backend out.
 ### Security
 
 None.
+
+### Example
+
+```text
+unhealthy_threshold 2
+```

@@ -23,3 +23,9 @@ The codings LOTUS may use, most preferred first. A client's own weights win; thi
 ### Security
 
 None.
+
+### Example
+
+```text
+algorithms [ "br", "gzip" ]
+```

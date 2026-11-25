@@ -23,3 +23,9 @@ Share of requests relative to the other backends (round_robin, ip_hash, uri_hash
 ### Security
 
 None.
+
+### Example
+
+```text
+weight 5
+```

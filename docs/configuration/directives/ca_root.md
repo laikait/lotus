@@ -23,3 +23,9 @@ PEM file with the root certificate of a private or test CA (such as Pebble), tru
 ### Security
 
 Only for CAs you run yourself. It does not change which certificates browsers trust.
+
+### Example
+
+```text
+ca_root "/etc/ssl/pebble-root.pem"
+```

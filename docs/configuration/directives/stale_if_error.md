@@ -23,3 +23,9 @@ How long past its lifetime an entry may still be served when the backend fails (
 ### Security
 
 Visitors may see old content while the backend is down. That is usually better than an error page.
+
+### Example
+
+```text
+stale_if_error 1h
+```

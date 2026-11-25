@@ -24,3 +24,22 @@ Handles requests whose path matches. See the routing precedence document for how
 ### Security
 
 A regular-expression route is tried before shorter prefix routes. A broad pattern can capture requests meant for a protected prefix; mark protected prefixes with ^~.
+
+### Example
+
+In `route`:
+
+```text
+route ~ '\.json$' {
+    return 200 "{}"
+}
+```
+
+In `site`:
+
+```text
+route "/blog/" {
+    try_files [ "{uri}", "{uri}/", "=404" ]
+}
+```
+

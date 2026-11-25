@@ -18,7 +18,7 @@ const exitInvalidConfig = 2
 
 func cmdConfig(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: lotus config <validate|inspect|explain|format> [options] <file> [url]")
+		fmt.Fprintln(stderr, "usage: lotus config <validate|inspect|explain|format|migrate> [options] <file> [url]")
 		return exitUsage
 	}
 	switch args[0] {
@@ -30,6 +30,8 @@ func cmdConfig(args []string, stdout, stderr io.Writer) int {
 		return cmdConfigExplain(args[1:], stdout, stderr)
 	case "format", "fmt":
 		return cmdConfigFormat(args[1:], stdout, stderr)
+	case "migrate":
+		return cmdConfigMigrate(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "lotus config: unknown subcommand %q\n\nsubcommands: validate, inspect, explain\n", args[0])
 		return exitUsage

@@ -23,3 +23,11 @@ What is counted separately: ip gives each client address its own allowance (IPv6
 ### Security
 
 With ip behind a proxy that is not in trusted_proxies, every client counts as the proxy and shares one allowance.
+
+### Example
+
+```text
+requests 1000
+per 1s
+key global
+```

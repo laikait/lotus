@@ -24,3 +24,10 @@ If set, a request must carry `Authorization: Bearer TOKEN`. Compared in constant
 ### Security
 
 A credential: it is redacted in all output. Prefer env("NAME") over writing it into the file.
+
+### Example
+
+```text
+address "127.0.0.1:9100"
+bearer_token env("METRICS_TOKEN")
+```

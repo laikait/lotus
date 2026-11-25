@@ -24,3 +24,12 @@ A server that requests are sent to: http://host:port, https://host:port or unix:
 ### Security
 
 Requests are sent to this address as they are. Use https:// across networks you don't control, and keep tls_verify on.
+
+### Example
+
+```text
+backend "http://10.0.0.5:8080" {
+    weight 3
+    max_conns 100
+}
+```

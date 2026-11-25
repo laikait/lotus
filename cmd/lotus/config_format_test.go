@@ -95,3 +95,33 @@ func TestConfigFormatSeveralFilesAreLabelled(t *testing.T) {
 		t.Errorf("%q", out)
 	}
 }
+
+func TestConfigMigrate(t *testing.T) {
+	p := writeLotus(t, tidy)
+	code, out, _ := runCLI("config", "migrate", p)
+	if code != exitOK || !strings.Contains(out, "current one; nothing to migrate") {
+		t.Errorf("%d %q", code, out)
+	}
+	if code, _, _ := runCLI("config", "migrate", "--check", p); code != exitOK {
+		t.Errorf("--check on a current file: %d", code)
+	}
+	newer := writeLotus(t, "lotus_config_version 9\n")
+	if code, _, errOut := runCLI("config", "migrate", newer); code != exitInvalidConfig || !strings.Contains(errOut, "newer LOTUS") {
+		t.Errorf("%d %s", code, errOut)
+	}
+	if code, _, errOut := runCLI("config", "migrate", writeLotus(t, "server {\n}\n")); code != exitInvalidConfig || !strings.Contains(errOut, "lotus_config_version") {
+		t.Errorf("%d %s", code, errOut)
+	}
+	if code, _, _ := runCLI("config", "migrate", writeLotus(t, "a {\n")); code != exitInvalidConfig {
+		t.Errorf("syntax: %d", code)
+	}
+	if code, _, _ := runCLI("config", "migrate", filepath.Join(t.TempDir(), "none")); code != exitNotFound {
+		t.Errorf("missing: %d", code)
+	}
+	if code, _, _ := runCLI("config", "migrate"); code != exitUsage {
+		t.Errorf("no file: %d", code)
+	}
+	if code, _, _ := runCLI("config", "migrate", "--check", "--write", p); code != exitUsage {
+		t.Errorf("both: %d", code)
+	}
+}

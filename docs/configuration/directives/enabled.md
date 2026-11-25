@@ -23,3 +23,9 @@ With false, compression is off (in a site: for this site even if the server's bl
 ### Security
 
 None.
+
+### Example
+
+```text
+enabled false
+```

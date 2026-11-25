@@ -23,3 +23,10 @@ Tests a query-string parameter.
 ### Security
 
 Values come from the client and can be forged; don't use them alone for access control.
+
+### Example
+
+```text
+query "debug" = '1'
+return 404
+```

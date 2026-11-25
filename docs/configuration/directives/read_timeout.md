@@ -23,3 +23,9 @@ Time allowed to receive the whole request.
 ### Security
 
 Long values make slow-upload attacks easier.
+
+### Example
+
+```text
+read_timeout 30s
+```

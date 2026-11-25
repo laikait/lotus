@@ -23,3 +23,10 @@ cloudflare sets the record through the Cloudflare API. exec runs a program you p
 ### Security
 
 exec runs with the privileges of the LOTUS user. Only the administrator configuration can name it.
+
+### Example
+
+```text
+provider cloudflare
+api_token env("CLOUDFLARE_API_TOKEN")
+```

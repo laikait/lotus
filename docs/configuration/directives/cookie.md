@@ -23,3 +23,10 @@ Tests a cookie.
 ### Security
 
 Values come from the client and can be forged; don't use them alone for access control.
+
+### Example
+
+```text
+cookie "session" ~ '^[a-f0-9]+$'
+return 200 "signed in"
+```

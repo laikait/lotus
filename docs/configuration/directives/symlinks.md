@@ -23,3 +23,9 @@ How symbolic links below the document root are treated: deny refuses them, owner
 ### Security
 
 On shared hosts keep owner_match or deny so one tenant can not link to another tenant's files.
+
+### Example
+
+```text
+symlinks deny
+```

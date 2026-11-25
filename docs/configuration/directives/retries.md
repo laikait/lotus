@@ -23,3 +23,9 @@ How many other backends a request may be tried on after a failure. Only requests
 ### Security
 
 A POST that reached a backend is never repeated, so this can't make a payment twice.
+
+### Example
+
+```text
+retries 2
+```

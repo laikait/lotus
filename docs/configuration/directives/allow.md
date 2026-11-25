@@ -23,3 +23,10 @@ If set, only clients in these networks may read the metrics; others get 403. Che
 ### Security
 
 Without bearer_token or allow, anyone who can reach the address can read the metrics.
+
+### Example
+
+```text
+address "127.0.0.1:9100"
+allow [ "10.0.0.0/8" ]
+```

@@ -23,3 +23,9 @@ Smallest body that is compressed. Smaller ones are sent as they are. A response 
 ### Security
 
 A very small value compresses responses that don't shrink and holds back streams.
+
+### Example
+
+```text
+min_size 2kib
+```

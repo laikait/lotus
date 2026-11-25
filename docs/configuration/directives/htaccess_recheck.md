@@ -23,3 +23,10 @@ How long a .htaccess file (or its absence) is remembered before the file system 
 ### Security
 
 Short intervals cost a file system lookup per directory per request.
+
+### Example
+
+```text
+htaccess true
+htaccess_recheck 5s
+```

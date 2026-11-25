@@ -23,3 +23,9 @@ How long a response stays fresh when the backend gives no lifetime of its own (n
 ### Security
 
 A response is served unchanged for this long. Content that changes sooner shows stale data.
+
+### Example
+
+```text
+ttl 5m
+```

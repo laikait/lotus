@@ -23,3 +23,12 @@ How LOTUS publishes the DNS record for a dns-01 validation. Enables dns-01 and w
 ### Security
 
 The credentials can change the DNS of your domains. Give them the least access that works (one zone, DNS records only).
+
+### Example
+
+```text
+dns {
+    provider cloudflare
+    api_token env("CLOUDFLARE_API_TOKEN")
+}
+```

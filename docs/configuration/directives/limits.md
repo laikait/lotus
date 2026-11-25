@@ -23,3 +23,23 @@ Connection, size and timeout limits. In a site, they override the server-wide va
 ### Security
 
 These limits protect against resource exhaustion (slowloris, huge uploads). Raising them weakens that protection, so only administrators may change them.
+
+### Example
+
+In `server`:
+
+```text
+limits {
+    max_connections 20000
+    max_request_body 25mib
+}
+```
+
+In `site`:
+
+```text
+limits {
+    max_request_body 50mib
+}
+```
+

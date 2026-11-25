@@ -23,3 +23,11 @@ Settings for the local control channel used by the lotus command.
 ### Security
 
 Anyone who can connect to the control channel can reload or stop the server.
+
+### Example
+
+```text
+control {
+    socket "/run/lotus/control.sock"
+}
+```

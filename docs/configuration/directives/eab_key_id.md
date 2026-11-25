@@ -23,3 +23,9 @@ External account binding key ID, for CAs that require it.
 ### Security
 
 Treat as a credential.
+
+### Example
+
+```text
+eab_key_id "kid-1"
+```

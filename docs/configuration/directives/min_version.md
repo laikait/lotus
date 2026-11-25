@@ -23,3 +23,9 @@ Lowest TLS version accepted. TLS 1.0 and 1.1 are not supported.
 ### Security
 
 Raising it to 1.3 blocks older clients but removes legacy cipher suites.
+
+### Example
+
+```text
+min_version "1.3"
+```

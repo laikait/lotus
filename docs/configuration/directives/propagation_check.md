@@ -23,3 +23,11 @@ Check, before asking the CA to validate, that the record can be seen in DNS. Tur
 ### Security
 
 Off means the CA may be asked too early; the attempt then fails and is retried later.
+
+### Example
+
+```text
+provider cloudflare
+api_token env("CLOUDFLARE_API_TOKEN")
+propagation_check false
+```

@@ -24,3 +24,12 @@ A group of backend servers that routes send requests to with the proxy directive
 ### Security
 
 Which servers a site can reach is an administrator decision: a route that proxies to an internal address can expose internal services.
+
+### Example
+
+```text
+upstream "api" {
+    backend "http://127.0.0.1:9001"
+    backend "http://127.0.0.1:9002"
+}
+```

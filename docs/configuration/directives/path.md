@@ -25,6 +25,12 @@ URL path requested with GET. A status from 200 to 399 is healthy.
 
 None.
 
+### Example
+
+```text
+path "/healthz"
+```
+
 ## In `metrics`
 
 ```text
@@ -47,3 +53,10 @@ URL path that serves the metrics. Any other path is 404.
 ### Security
 
 None.
+
+### Example
+
+```text
+address "127.0.0.1:9100"
+path "/internal/metrics"
+```

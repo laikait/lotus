@@ -23,3 +23,11 @@ How long to wait for the record to become visible before the CA is asked to chec
 ### Security
 
 None.
+
+### Example
+
+```text
+provider cloudflare
+api_token env("CLOUDFLARE_API_TOKEN")
+propagation_timeout 5m
+```

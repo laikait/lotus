@@ -24,3 +24,11 @@ A virtual host. The name is its primary hostname; aliases add more.
 ### Security
 
 Sites are separated by hostname only. LOTUS reads every site's static files as its own user, so isolate tenants with file permissions and the symlink policy.
+
+### Example
+
+```text
+site "example.com" {
+    root "/var/www/example"
+}
+```

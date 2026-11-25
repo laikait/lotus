@@ -23,3 +23,9 @@ How requests are spread over the backends. round_robin follows the weights; leas
 ### Security
 
 ip_hash and uri_hash don't balance load evenly if a few clients or paths are very busy.
+
+### Example
+
+```text
+balance least_conn
+```

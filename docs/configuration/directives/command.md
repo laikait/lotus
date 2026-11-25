@@ -25,6 +25,13 @@ Program for the exec provider. Started without a shell.
 
 It runs as the LOTUS user; make it writable by administrators only.
 
+### Example
+
+```text
+provider exec
+command "/usr/local/bin/acme-dns-hook"
+```
+
 ## In `php_backend`
 
 ```text
@@ -47,3 +54,10 @@ A php-cgi program that LOTUS starts and supervises instead of connecting to an e
 ### Security
 
 The processes run as the LOTUS user and get a minimal environment (no LOTUS secrets). On Windows they listen on 127.0.0.1, so any account on the machine can reach them.
+
+### Example
+
+```text
+command "/usr/bin/php-cgi"
+processes 4
+```

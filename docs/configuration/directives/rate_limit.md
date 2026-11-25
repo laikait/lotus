@@ -23,3 +23,25 @@ Limits how many requests a client may make. Requests over the limit get 429 with
 ### Security
 
 Counted per client address in memory, with a bounded table. Behind a proxy, list it in trusted_proxies or all clients share one allowance.
+
+### Example
+
+In `route`:
+
+```text
+rate_limit {
+    requests 5
+    per 1m
+}
+```
+
+In `site`:
+
+```text
+rate_limit {
+    requests 10
+    per 1s
+    burst 20
+}
+```
+

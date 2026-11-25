@@ -23,3 +23,10 @@ True if the Host header is one of these.
 ### Security
 
 None.
+
+### Example
+
+```text
+host [ "admin.example.com" ]
+return 403
+```

@@ -23,3 +23,9 @@ Time between probes of a backend.
 ### Security
 
 Short intervals add load to the backends.
+
+### Example
+
+```text
+interval 5s
+```

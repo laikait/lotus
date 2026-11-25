@@ -23,3 +23,9 @@ Check the certificate of https backends against the trusted authorities and the 
 ### Security
 
 false lets anyone between LOTUS and the backend read and change the traffic. Use tls_ca for a private authority instead.
+
+### Example
+
+```text
+tls_verify true
+```

@@ -23,3 +23,9 @@ File that receives the access log. null turns it off.
 ### Security
 
 The file is opened as the LOTUS user; access logs contain client IPs and URLs (personal data).
+
+### Example
+
+```text
+access "/var/log/lotus/example.access.log"
+```

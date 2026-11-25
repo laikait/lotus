@@ -23,3 +23,9 @@ How long a 404 or 410 response is kept when the backend gives no lifetime. With 
 ### Security
 
 A page that appears after a miss stays invisible for this long.
+
+### Example
+
+```text
+negative_ttl 30s
+```

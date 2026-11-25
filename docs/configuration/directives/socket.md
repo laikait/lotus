@@ -23,3 +23,9 @@ Path of the control socket (named pipe name on Windows).
 ### Security
 
 The socket's directory must not be writable by others; access is limited by file permissions.
+
+### Example
+
+```text
+socket "/run/lotus/control.sock"
+```

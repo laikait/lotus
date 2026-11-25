@@ -19,6 +19,7 @@ type variant struct {
 	usage    string
 	contexts []string
 	d        *schema.Directive
+	examples map[string]string // context -> example
 }
 
 // Generate returns the pages of the reference, by file name: one per directive
@@ -29,10 +30,12 @@ func Generate(reg *schema.Registry) map[string]string {
 		for _, v := range byName[d.Name] {
 			if same(v.d, d) {
 				v.contexts = append(v.contexts, string(ctx))
+				v.examples[string(ctx)] = schema.ExampleFor(ctx, d.Name)
 				return
 			}
 		}
-		byName[d.Name] = append(byName[d.Name], &variant{usage: d.Usage(), contexts: []string{string(ctx)}, d: d})
+		byName[d.Name] = append(byName[d.Name], &variant{usage: d.Usage(), contexts: []string{string(ctx)}, d: d,
+			examples: map[string]string{string(ctx): schema.ExampleFor(ctx, d.Name)}})
 	})
 
 	pages := map[string]string{}
@@ -134,7 +137,40 @@ func page(name string, vs []*variant) string {
 		fmt.Fprintf(&b, "| **Since** | LOTUS %s, config language 1 |\n", orNone(d.Since))
 		b.WriteString("\n### Description\n\n" + strings.TrimSpace(d.Description) + "\n\n")
 		b.WriteString("### Security\n\n" + strings.TrimSpace(d.Security) + "\n")
+		b.WriteString(examples(v))
 		if i < len(vs)-1 {
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
+// examples renders the examples of a variant: one block per distinct example,
+// labelled with its contexts when there is more than one.
+func examples(v *variant) string {
+	byText := map[string][]string{}
+	var order []string
+	for _, c := range v.contexts {
+		t := strings.TrimSpace(v.examples[c])
+		if t == "" {
+			continue
+		}
+		if _, ok := byText[t]; !ok {
+			order = append(order, t)
+		}
+		byText[t] = append(byText[t], c)
+	}
+	if len(order) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n### Example\n\n")
+	for _, t := range order {
+		if len(order) > 1 {
+			fmt.Fprintf(&b, "In %s:\n\n", codes(byText[t]))
+		}
+		b.WriteString("```text\n" + t + "\n```\n")
+		if len(order) > 1 {
 			b.WriteString("\n")
 		}
 	}

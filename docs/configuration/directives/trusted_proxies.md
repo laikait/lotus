@@ -23,3 +23,9 @@ Networks whose X-Forwarded-For / Forwarded headers and PROXY protocol headers ar
 ### Security
 
 Listing a network that clients can reach lets them fake their IP address and bypass IP allow-lists and rate limits. List only your own load balancers.
+
+### Example
+
+```text
+trusted_proxies [ "10.0.0.0/8", "192.168.0.0/16" ]
+```

@@ -2,7 +2,7 @@
 
 **Spec reference:** v1.1 §19. Every directive is documented, and the documentation is generated from the directive registry.
 
-Each directive is registered in code with the metadata below. `make docs` turns the registry into one Markdown page per directive name under `docs/configuration/directives/` (a directive defined in several places has one page with a section for each), plus `index.md`. The tests fail if a registered directive is missing **Description**, **Security**, **Since** or **Default**, or if the pages on disk differ from what the registry produces. **Example**, **Inherits**, **Stability**, **Platforms** and the Nginx/Apache equivalents are not registry fields yet, so the generated pages don't show them.
+Each directive is registered in code with the metadata below. `make docs` turns the registry into one Markdown page per directive name under `docs/configuration/directives/` (a directive defined in several places has one page with a section for each), plus `index.md`. The tests fail if a registered directive is missing **Description**, **Security**, **Since** or **Default**, or if the pages on disk differ from what the registry produces. Every directive has an **Example** (`internal/config/schema/examples.go`); the tests put each one inside a minimal configuration and check that it validates. **Inherits**, **Stability**, **Platforms** and the Nginx/Apache equivalents are not registry fields yet, so the generated pages don't show them.
 
 ---
 

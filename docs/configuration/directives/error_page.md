@@ -23,3 +23,19 @@ Shows another page for responses with this status that LOTUS produces itself (a 
 ### Security
 
 The error page is read from the same document root, under the same rules as any file. An error page that itself fails is not replaced again, so there are no loops.
+
+### Example
+
+In `route`:
+
+```text
+error_page 404 "/errors/404.html"
+```
+
+In `site`:
+
+```text
+error_page 404 "/404.html"
+error_page 502 "@down"
+```
+

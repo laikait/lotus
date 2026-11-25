@@ -23,3 +23,9 @@ Time allowed to send a response.
 ### Security
 
 Long values let slow readers hold connections open.
+
+### Example
+
+```text
+write_timeout 30s
+```

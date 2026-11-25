@@ -23,3 +23,9 @@ PEM file of the authority that signed the backends' certificates. It replaces th
 ### Security
 
 None.
+
+### Example
+
+```text
+tls_ca "/etc/ssl/internal-ca.pem"
+```

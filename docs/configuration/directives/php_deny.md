@@ -23,3 +23,19 @@ When true, PHP files under this route are never executed, even if a PHP backend 
 ### Security
 
 Use it on upload directories so a file uploaded by a visitor can't be run as code.
+
+### Example
+
+In `match`:
+
+```text
+method [ "PUT" ]
+php_deny true
+```
+
+In `route`:
+
+```text
+php_deny true
+```
+

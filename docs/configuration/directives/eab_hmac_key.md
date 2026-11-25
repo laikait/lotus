@@ -24,3 +24,9 @@ External account binding HMAC key, for CAs that require it.
 ### Security
 
 A credential: it is redacted in all output. Prefer env("NAME") over writing it into the file.
+
+### Example
+
+```text
+eab_hmac_key env("ACME_EAB_HMAC_KEY")
+```

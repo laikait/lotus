@@ -25,6 +25,14 @@ Server-wide TLS settings.
 
 Weak TLS settings expose traffic to downgrade and decryption attacks.
 
+### Example
+
+```text
+tls {
+    min_version "1.2"
+}
+```
+
 ## In `site`
 
 ```text
@@ -47,3 +55,9 @@ automatic obtains certificates through ACME; manual uses certificates you provid
 ### Security
 
 With off, this site is served without encryption even on an https listener where possible.
+
+### Example
+
+```text
+tls off
+```

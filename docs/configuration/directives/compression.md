@@ -23,3 +23,22 @@ Compresses responses (Brotli, Zstandard, gzip) for clients that accept it. Off u
 ### Security
 
 Compressing a page that mixes a secret (a CSRF token) with text an attacker can make the page repeat can leak the secret to an attacker who watches the sizes (BREACH). Compress only types you need, and keep secrets out of pages that reflect input. Compression also costs CPU; LOTUS stops compressing when too many responses are being compressed at once.
+
+### Example
+
+In `server`:
+
+```text
+compression {
+    algorithms [ "br", "gzip" ]
+}
+```
+
+In `site`:
+
+```text
+compression {
+    enabled false
+}
+```
+

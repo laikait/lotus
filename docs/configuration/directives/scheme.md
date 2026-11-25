@@ -23,3 +23,10 @@ True if the request used this scheme.
 ### Security
 
 None.
+
+### Example
+
+```text
+scheme "http"
+return 301 "https://{host}{uri}"
+```

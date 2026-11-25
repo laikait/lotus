@@ -23,3 +23,10 @@ The window in which wrong attempts are counted, and how long a client is locked 
 ### Security
 
 A long lock-out also locks out a legitimate user behind the same address.
+
+### Example
+
+```text
+htaccess true
+htaccess_auth_lockout 10m
+```

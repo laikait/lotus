@@ -23,3 +23,9 @@ Largest response body that is stored. Larger responses are passed on and not kep
 ### Security
 
 Large entries squeeze out many small ones; keep it small unless the routes serve big files that are worth keeping.
+
+### Example
+
+```text
+max_entry_size 4mib
+```

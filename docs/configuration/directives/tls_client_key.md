@@ -23,3 +23,10 @@ Private key for tls_client_cert.
 ### Security
 
 Keep the file private.
+
+### Example
+
+```text
+tls_client_cert "/etc/lotus/client.pem"
+tls_client_key "/etc/lotus/client.key"
+```

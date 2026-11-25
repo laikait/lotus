@@ -23,3 +23,11 @@ PEM certificate chain file for tls manual. The certificate is chosen by SNI when
 ### Security
 
 The file is read once at start and on reload.
+
+### Example
+
+```text
+tls manual
+certificate "/etc/ssl/example.pem"
+certificate_key "/etc/ssl/example.key"
+```

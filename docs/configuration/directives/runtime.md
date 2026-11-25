@@ -23,3 +23,12 @@ Go runtime settings for the LOTUS process.
 ### Security
 
 None.
+
+### Example
+
+```text
+runtime {
+    max_procs auto
+    memory_limit 2gib
+}
+```

@@ -23,3 +23,9 @@ File that receives this site's error log. null turns it off.
 ### Security
 
 Error logs can contain request details.
+
+### Example
+
+```text
+error "/var/log/lotus/example.error.log"
+```

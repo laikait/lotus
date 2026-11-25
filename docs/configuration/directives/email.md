@@ -23,3 +23,9 @@ Contact email registered with the certificate authority.
 ### Security
 
 Used by the CA for expiry and problem notices.
+
+### Example
+
+```text
+email "admin@example.com"
+```

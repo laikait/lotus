@@ -24,3 +24,11 @@ A FastCGI backend (for example a PHP-FPM pool). Routes use it with the php direc
 ### Security
 
 Use one pool, with its own OS user, per site. Sites that share a pool can read each other's files and sessions.
+
+### Example
+
+```text
+php_backend "app" {
+    fastcgi_pass "unix:/run/php/php-fpm.sock"
+}
+```

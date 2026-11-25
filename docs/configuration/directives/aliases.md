@@ -23,3 +23,9 @@ Additional hostnames served by this site. Wildcards like *.example.com are allow
 ### Security
 
 Whoever controls the aliases controls which hostnames reach this site, so tenants must not edit them.
+
+### Example
+
+```text
+aliases [ "www.example.com", "*.cdn.example.com" ]
+```

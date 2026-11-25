@@ -23,3 +23,9 @@ Time allowed to connect to a backend (and finish its TLS handshake).
 ### Security
 
 A long timeout keeps requests waiting on a backend that is down.
+
+### Example
+
+```text
+connect_timeout 2s
+```

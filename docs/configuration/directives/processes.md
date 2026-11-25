@@ -23,3 +23,10 @@ How many php-cgi processes to run with command. Each handles one request at a ti
 ### Security
 
 More processes allow more simultaneous requests and use more memory.
+
+### Example
+
+```text
+command "/usr/bin/php-cgi"
+processes 8
+```

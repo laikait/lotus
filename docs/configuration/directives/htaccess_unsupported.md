@@ -23,3 +23,10 @@ What happens when a .htaccess file holds a directive LOTUS doesn't support or th
 ### Security
 
 ignore can change what a site does without any visible failure. Use `lotus compat htaccess check` before relying on it.
+
+### Example
+
+```text
+htaccess true
+htaccess_unsupported ignore
+```

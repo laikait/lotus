@@ -24,3 +24,12 @@ A network listener. Sites attach to listeners by name.
 ### Security
 
 Binding to 0.0.0.0 or [::] exposes the listener on every network interface. Ports below 1024 need special privileges (see the privilege model).
+
+### Example
+
+```text
+listen "https" {
+    address "0.0.0.0:443"
+    protocol https
+}
+```

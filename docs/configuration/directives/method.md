@@ -23,3 +23,10 @@ True if the request method is one of these.
 ### Security
 
 None.
+
+### Example
+
+```text
+method [ "POST" ]
+return 405
+```

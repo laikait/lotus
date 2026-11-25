@@ -23,3 +23,9 @@ Soft memory limit for the Go runtime (GOMEMLIMIT). The garbage collector works h
 ### Security
 
 Set it below the container or machine limit so the process is not killed by the OS.
+
+### Example
+
+```text
+memory_limit 2gib
+```

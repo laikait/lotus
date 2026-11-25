@@ -23,3 +23,9 @@ Time to wait for a backend's response headers after the request was sent. A requ
 ### Security
 
 Long timeouts let slow backends tie up connections.
+
+### Example
+
+```text
+response_timeout 30s
+```

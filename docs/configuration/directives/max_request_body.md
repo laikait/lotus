@@ -23,3 +23,18 @@ Largest request body accepted. Bigger bodies get 413 before they are read.
 ### Security
 
 Limits memory and disk use from uploads. Raise it only for the routes that need it.
+
+### Example
+
+In `limits`:
+
+```text
+max_request_body 25mib
+```
+
+In `route`:
+
+```text
+max_request_body 512mib
+```
+

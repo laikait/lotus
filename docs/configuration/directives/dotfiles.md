@@ -23,3 +23,9 @@ Whether files and directories whose names start with a dot (such as .git or .env
 ### Security
 
 Dotfiles often hold secrets and repository data. Allow them only if you are sure.
+
+### Example
+
+```text
+dotfiles deny
+```

@@ -23,3 +23,10 @@ The period requests counts over.
 ### Security
 
 None.
+
+### Example
+
+```text
+requests 100
+per 1m
+```

@@ -23,3 +23,10 @@ True if the client IP is in one of the networks (with !~: if it is in none of th
 ### Security
 
 Behind a proxy the client IP is only correct when trusted_proxies lists that proxy.
+
+### Example
+
+```text
+client_ip !~ [ "10.0.0.0/8" ]
+return 403
+```

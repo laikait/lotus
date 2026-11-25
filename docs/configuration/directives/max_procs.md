@@ -23,3 +23,9 @@ Maximum number of CPUs Go uses (GOMAXPROCS). auto follows the CPU count and cont
 ### Security
 
 None.
+
+### Example
+
+```text
+max_procs 4
+```

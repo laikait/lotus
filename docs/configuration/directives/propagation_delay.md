@@ -23,3 +23,11 @@ Time to wait after the record is published before checking that it is visible.
 ### Security
 
 None.
+
+### Example
+
+```text
+provider cloudflare
+api_token env("CLOUDFLARE_API_TOKEN")
+propagation_delay 20s
+```

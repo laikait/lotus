@@ -23,3 +23,12 @@ Applies different actions when extra conditions hold. The first match block whos
 ### Security
 
 Conditions on client_ip use the resolved client IP, which depends on trusted_proxies being correct.
+
+### Example
+
+```text
+match {
+    method [ "POST", "PUT" ]
+    return 405 "read only"
+}
+```
