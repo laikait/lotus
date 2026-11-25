@@ -37,12 +37,15 @@ It asks for administrator rights, then:
 | What | Where |
 |---|---|
 | The program, `LICENSE`, `README.md`, the examples | `C:\Program Files\Lotus` |
-| The configuration (made only if it does not exist) | `C:\ProgramData\LOTUS\main.lotus` |
+| The configuration (made only if it does not exist) | `C:\Program Files\Lotus\main.conf` |
 | The web directory with a sample page (made only if it does not exist) | `C:\www` |
-| The log | `C:\ProgramData\LOTUS\logs\lotus.log` |
+| The log | `C:\Program Files\Lotus\logs\lotus.log` |
 | Optional: `C:\Program Files\Lotus` added to the system `PATH` | ticked by default |
+| The web admin account (a page of the wizard; leave the password empty to skip) | `C:\Program Files\Lotus\admin-users.txt`, readable by SYSTEM and Administrators only |
 
-Then it checks the configuration, registers the `LOTUS` Windows service (starts at boot, restarts on failure), starts it, and offers to open http://127.0.0.1:8080/. The Start Menu gets entries to edit the configuration, open the log and the site folder, and start, stop or restart the service.
+Then it checks the configuration, registers the `LOTUS` Windows service (starts at boot, restarts on failure), starts it, and offers to open the web admin at http://127.0.0.1:7080/ (sign in with the account from the wizard; see [the admin](architecture/admin.md)). The sample site is at http://127.0.0.1:8080/. The Start Menu gets entries to open the admin, edit the configuration, open the log and the site folder, and start, stop or restart the service.
+
+On an upgrade, `main.conf` is not replaced, so an older one has no `admin { address "127.0.0.1:7080" }` block: add it by hand, then `lotus admin passwd NAME`, and restart the service (a change to the admin block is not applied by a reload).
 
 **Upgrades:** run a newer installer over an older one. It stops and removes the old service first and registers it again. The configuration and the web directory are never replaced.
 
@@ -50,8 +53,9 @@ Then it checks the configuration, registers the `LOTUS` Windows service (starts 
 
 ## Day to day, after installing
 
-- **Change the configuration:** Start Menu → LOTUS → *Edit LOTUS configuration* (`C:\ProgramData\LOTUS\main.lotus`).
-- **Check it:** `lotus config validate C:\ProgramData\LOTUS\main.lotus`
+- **Change the configuration:** Start Menu → LOTUS → *Edit LOTUS configuration* (`C:\Program Files\Lotus\main.conf`).
+- **Check it:** `lotus config validate C:\Program Files\Lotus\main.conf`
+- **Add a site:** `lotus site add example.com --root C:/www/example --aliases www.example.com` (makes `C:\Program Files\Lotus\sites.d\example.com.conf`); `lotus site list`, `lotus site remove example.com`. Then reload.
 - **Apply it without a restart:** `lotus reload` (from an Administrator shell, because the service runs as SYSTEM)
 - **Start, stop, restart:** the Start Menu entries, or `Start-Service LOTUS`, `Stop-Service LOTUS`, `Restart-Service LOTUS` in an Administrator PowerShell, or `services.msc`.
 
@@ -60,7 +64,7 @@ Then it checks the configuration, registers the `LOTUS` Windows service (starts 
 | To change | Edit |
 |---|---|
 | Install folder, shortcuts, service steps, `PATH` | `installer\lotus.iss` |
-| The default configuration that new installs get | `installer\main.lotus` |
+| The default configuration that new installs get | `installer\main.conf` |
 | The sample page | `installer\index.html` |
 | The logo | replace `installer\lotus.ico`; to put it into `lotus.exe` too, regenerate `cmd\lotus\rsrc_windows_amd64.syso` (see below) |
 | The version number | `-Version` on the command line |
@@ -81,7 +85,7 @@ This writes `installer\lotus.ico`, `installer\lotus.png` and the `.syso` file th
 | "Inno Setup (6 or 7) was not found" | Install it, or put the folder with `ISCC.exe` on `PATH`. |
 | A compile error in `lotus.iss` | The message names the line. The script was written for Inno Setup 6 and has run on 7; a directive that changed is the likely cause. |
 | "Unknown publisher" when the installer starts | The installer and `lotus.exe` are not signed yet. See `docs/code-signing.md`. Nothing is wrong with the file. |
-| The service does not start | Read `C:\ProgramData\LOTUS\logs\lotus.log`. Usual causes: the port in `main.lotus` is taken (for example by Apache from XAMPP on 80 or 443), or the `root` folder does not exist. |
+| The service does not start | Read `C:\Program Files\Lotus\logs\lotus.log`. Usual causes: the port in `main.conf` is taken (for example by Apache from XAMPP on 80 or 443), or the `root` folder does not exist. |
 | The site answers 403 | The folder in `root` has no `index.html`; directory listings are not supported. |
 | `lotus reload` says no running server answered | Run it from an Administrator shell. The control socket belongs to the service account. |
 

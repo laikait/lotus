@@ -24,7 +24,7 @@ site "example.com" {
 ```
 
 None of these can be set from a file a tenant includes into their own site. See
-`configs/examples/htaccess.lotus`.
+`configs/examples/htaccess.conf`.
 
 ## What is supported
 

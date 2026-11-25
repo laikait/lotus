@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LOTUS admin</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="bar">
+  <span class="brand">LOTUS</span>
+  <span class="sub">admin</span>
+  <span class="spacer"></span>
+  <span id="who" class="who" hidden></span>
+  <button id="logout" class="btn btn-quiet" type="button" hidden title="Sign out" aria-label="Sign out">Sign out</button>
+</header>
+
+<main>
+  <section id="login" class="card narrow" hidden>
+    <h1>Sign in</h1>
+    <form id="login-form" autocomplete="on">
+      <label for="name">Name</label>
+      <input id="name" name="name" type="text" autocomplete="username" required maxlength="64">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="256">
+      <p id="login-error" class="error" role="alert" hidden></p>
+      <button class="btn" type="submit">Sign in</button>
+    </form>
+    <p class="hint">Accounts are made on the server with <code>lotus admin passwd NAME</code>.</p>
+  </section>
+
+  <section id="dash" hidden>
+    <div class="toolbar">
+      <h1>Dashboard</h1>
+      <span class="spacer"></span>
+      <span id="toast" class="toast" role="status" hidden></span>
+      <button id="refresh" class="btn btn-quiet" type="button" title="Refresh" aria-label="Refresh">Refresh</button>
+      <button id="reload" class="btn" type="button" title="Load the configuration again" aria-label="Reload the configuration">Reload configuration</button>
+    </div>
+
+    <div id="cards" class="cards"></div>
+
+    <h2>Health</h2>
+    <ul id="health" class="plain"></ul>
+
+    <h2>Listeners</h2>
+    <table class="table"><thead><tr><th>Name</th><th>Address</th><th>HTTPS</th></tr></thead><tbody id="listeners"></tbody></table>
+
+    <h2>Sites</h2>
+    <table class="table"><thead><tr><th>Name</th><th>Aliases</th><th>Listeners</th><th>TLS</th></tr></thead><tbody id="sites"></tbody></table>
+
+    <h2>Certificates</h2>
+    <table class="table"><thead><tr><th>Domains</th><th>Issuer</th><th>Expires</th><th>Status</th></tr></thead><tbody id="certs"></tbody></table>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

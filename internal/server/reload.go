@@ -93,6 +93,9 @@ func restartRequired(old, cfg *model.Config) []string {
 	if !reflect.DeepEqual(old.Metrics, cfg.Metrics) {
 		out = append(out, "the metrics listener changed")
 	}
+	if !reflect.DeepEqual(old.Admin, cfg.Admin) {
+		out = append(out, "the admin listener changed")
+	}
 	if old.Control != cfg.Control {
 		out = append(out, "the control settings changed")
 	}

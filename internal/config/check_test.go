@@ -27,7 +27,7 @@ func optsFor(files map[string]string) loader.Options {
 }
 
 func run(files map[string]string) []diag.Diagnostic {
-	_, diags := Check("main.lotus", optsFor(files))
+	_, diags := Check("main.conf", optsFor(files))
 	return diags
 }
 
@@ -231,7 +231,7 @@ site "a" { route "/" { php "p83" } }`)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			diags := run(map[string]string{"main.lotus": tt.src})
+			diags := run(map[string]string{"main.conf": tt.src})
 			got := codesOf(diags)
 			if strings.Join(got, ",") != strings.Join(tt.codes, ",") {
 				t.Fatalf("error codes = %v, want %v\n%s", got, tt.codes, format(diags))
@@ -263,7 +263,7 @@ func format(diags []diag.Diagnostic) string {
 func TestSecretsNeverAppearInDiagnostics(t *testing.T) {
 	// env("SECRET") is "hunter2". Using it where an integer is required must
 	// produce an error that does not reveal the value.
-	diags := run(map[string]string{"main.lotus": cfg(`limits { max_connections env("SECRET") }`)})
+	diags := run(map[string]string{"main.conf": cfg(`limits { max_connections env("SECRET") }`)})
 	if len(errorsOf(diags)) != 1 {
 		t.Fatalf("diags:\n%s", format(diags))
 	}
@@ -272,7 +272,7 @@ func TestSecretsNeverAppearInDiagnostics(t *testing.T) {
 	}
 
 	// Same through a variable and interpolation.
-	diags = run(map[string]string{"main.lotus": "lotus_config_version 1\nlet $s = env(\"SECRET\")\nserver {\n listen \"h\" { address \"0.0.0.0:80\" }\n limits { max_request_body \"${s}-x\" }\n}\n"})
+	diags = run(map[string]string{"main.conf": "lotus_config_version 1\nlet $s = env(\"SECRET\")\nserver {\n listen \"h\" { address \"0.0.0.0:80\" }\n limits { max_request_body \"${s}-x\" }\n}\n"})
 	if all := format(diags); strings.Contains(all, "hunter2") || len(errorsOf(diags)) == 0 {
 		t.Errorf("expected an error without the secret:\n%s", all)
 	}
@@ -281,12 +281,12 @@ func TestSecretsNeverAppearInDiagnostics(t *testing.T) {
 func TestTenantBoundary(t *testing.T) {
 	site := cfg(`site "a" {
     root "/srv/a"
-    include "tenant.lotus"
+    include "tenant.conf"
 }`)
 	t.Run("safe directives are allowed", func(t *testing.T) {
 		diags := run(map[string]string{
-			"main.lotus":   site,
-			"tenant.lotus": "index [ \"index.php\" ]\nroute \"/\" { return 200 }\nsecurity_headers { \"X-A\" = \"1\" }\n",
+			"main.conf":   site,
+			"tenant.conf": "index [ \"index.php\" ]\nroute \"/\" { return 200 }\nsecurity_headers { \"X-A\" = \"1\" }\n",
 		})
 		if got := codesOf(diags); len(got) != 0 {
 			t.Fatalf("unexpected errors:\n%s", format(diags))
@@ -308,15 +308,15 @@ func TestTenantBoundary(t *testing.T) {
 		t.Run("forbidden "+name, func(t *testing.T) {
 			src := cfg(`php_backend "other" { fastcgi_pass "unix:/run/other.sock" }
 ` + `site "a" {
-    include "tenant.lotus"
+    include "tenant.conf"
 }`)
-			diags := run(map[string]string{"main.lotus": src, "tenant.lotus": body})
+			diags := run(map[string]string{"main.conf": src, "tenant.conf": body})
 			var found bool
 			for _, d := range errorsOf(diags) {
 				if d.Code == diag.CodeTenantBoundary {
 					found = true
-					if d.Pos.File != "tenant.lotus" {
-						t.Errorf("reported in %q, want tenant.lotus", d.Pos.File)
+					if d.Pos.File != "tenant.conf" {
+						t.Errorf("reported in %q, want tenant.conf", d.Pos.File)
 					}
 				}
 			}
@@ -327,8 +327,8 @@ func TestTenantBoundary(t *testing.T) {
 	}
 	t.Run("a site defined in an included file may set its own directives", func(t *testing.T) {
 		diags := run(map[string]string{
-			"main.lotus":    cfg(`include "sites/a.lotus"`),
-			"sites/a.lotus": "site \"a\" {\n root \"/srv/a\"\n limits { max_request_body 1mib }\n}\n",
+			"main.conf":    cfg(`include "sites/a.conf"`),
+			"sites/a.conf": "site \"a\" {\n root \"/srv/a\"\n limits { max_request_body 1mib }\n}\n",
 		})
 		if got := codesOf(diags); len(got) != 0 {
 			t.Fatalf("unexpected errors:\n%s", format(diags))
@@ -337,8 +337,8 @@ func TestTenantBoundary(t *testing.T) {
 }
 
 func TestFullPipelineReturnsResult(t *testing.T) {
-	res, diags := Check("main.lotus", loader.Options{
-		FS:     loader.MemFS{Files: map[string]string{"main.lotus": cfg(`site "a" { root "/x" }`)}},
+	res, diags := Check("main.conf", loader.Options{
+		FS:     loader.MemFS{Files: map[string]string{"main.conf": cfg(`site "a" { root "/x" }`)}},
 		Getenv: testEnv,
 	})
 	if res == nil || HasErrors(diags) {
@@ -347,8 +347,8 @@ func TestFullPipelineReturnsResult(t *testing.T) {
 	if res.Version != 1 || len(res.Files) != 1 {
 		t.Errorf("result = %+v", res)
 	}
-	res, diags = Check("main.lotus", loader.Options{
-		FS: loader.MemFS{Files: map[string]string{"main.lotus": cfg(`site "a" { rot "/x" }`)}},
+	res, diags = Check("main.conf", loader.Options{
+		FS: loader.MemFS{Files: map[string]string{"main.conf": cfg(`site "a" { rot "/x" }`)}},
 	})
 	if res != nil || !HasErrors(diags) {
 		t.Error("invalid configuration must not produce a result")
@@ -387,7 +387,7 @@ site env("SECRET") { }`),
 	}
 	for name, src := range tests {
 		t.Run(name, func(t *testing.T) {
-			diags := run(map[string]string{"main.lotus": src})
+			diags := run(map[string]string{"main.conf": src})
 			if len(errorsOf(diags)) == 0 {
 				t.Fatalf("expected at least one error (the test must exercise a failing path)\n%s", format(diags))
 			}
@@ -427,7 +427,7 @@ site "a" { listeners [ "s" ]
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := codesOf(run(map[string]string{"main.lotus": tt.src}))
+			got := codesOf(run(map[string]string{"main.conf": tt.src}))
 			if strings.Join(got, ",") != strings.Join(tt.codes, ",") {
 				t.Errorf("codes = %v, want %v", got, tt.codes)
 			}
@@ -451,8 +451,8 @@ site "tenant.test" { }`))
 func TestTenantCannotChangeFilePolicies(t *testing.T) {
 	for _, body := range []string{`symlinks follow`, `dotfiles allow`, `certificate "/x"`, `certificate_key "/x"`} {
 		diags := run(map[string]string{
-			"main.lotus":   cfg(`site "a" { include "tenant.lotus" }`),
-			"tenant.lotus": body,
+			"main.conf":   cfg(`site "a" { include "tenant.conf" }`),
+			"tenant.conf": body,
 		})
 		var found bool
 		for _, d := range errorsOf(diags) {

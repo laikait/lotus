@@ -11,7 +11,7 @@ import (
 
 func lexAll(src string) ([]Token, []diag.Diagnostic) {
 	diags := diag.NewList(diag.DefaultMaxErrors)
-	l := New("t.lotus", src, diags)
+	l := New("t.conf", src, diags)
 	var toks []Token
 	for {
 		t := l.Next()

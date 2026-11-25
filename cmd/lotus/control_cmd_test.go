@@ -197,7 +197,7 @@ func TestControlReload(t *testing.T) {
 	}
 
 	// --config loads another file, and the status then shows it.
-	other := filepath.Join(t.TempDir(), "other.lotus")
+	other := filepath.Join(t.TempDir(), "other.conf")
 	c.write(other, c.configText(c.port, `route = "/ping" { return 200 "from-other" }`+"\nroute \"/\" { }"))
 	if code, out, errOut := c.cli("reload", "--config", other); code != exitOK {
 		t.Fatalf("--config: code=%d %q %q", code, out, errOut)
@@ -205,7 +205,7 @@ func TestControlReload(t *testing.T) {
 	if _, body := c.get("/ping"); strings.TrimSpace(body) != "from-other" {
 		t.Errorf("--config was not loaded: %q", body)
 	}
-	if _, out, _ = c.cli("status", "--json"); !strings.Contains(out, "other.lotus") {
+	if _, out, _ = c.cli("status", "--json"); !strings.Contains(out, "other.conf") {
 		t.Errorf("the status must show the file now in use:\n%s", out)
 	}
 }

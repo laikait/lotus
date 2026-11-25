@@ -119,14 +119,14 @@ func TestCompressionErrors(t *testing.T) {
 		"unknown directive":    {`compression { brotli_quality 11 }`, "", "brotli_quality"},
 		"twice":                {"compression\ncompression", "", "compression"},
 	} {
-		_, diags := Check("main.lotus", optsFor(map[string]string{"main.lotus": compressionConf("    "+tc.block, "")}))
+		_, diags := Check("main.conf", optsFor(map[string]string{"main.conf": compressionConf("    "+tc.block, "")}))
 		out := format(diags)
 		if len(errorsOf(diags)) == 0 || (tc.code != "" && !strings.Contains(out, tc.code)) || !strings.Contains(out, tc.text) {
 			t.Errorf("%s: want %s %q in:\n%s", name, tc.code, tc.text, out)
 		}
 	}
 	// The same checks apply in a site.
-	_, diags := Check("main.lotus", optsFor(map[string]string{"main.lotus": compressionConf("", `compression { types [ "Bad" ] }`)}))
+	_, diags := Check("main.conf", optsFor(map[string]string{"main.conf": compressionConf("", `compression { types [ "Bad" ] }`)}))
 	if len(errorsOf(diags)) == 0 {
 		t.Error("a bad type in a site was accepted")
 	}
@@ -136,10 +136,10 @@ func TestCompressionErrors(t *testing.T) {
 
 func TestCompressionIsAdminOnly(t *testing.T) {
 	files := map[string]string{
-		"main.lotus":   compressionConf("", `include "tenant.lotus"`),
-		"tenant.lotus": "compression { level best }",
+		"main.conf":   compressionConf("", `include "tenant.conf"`),
+		"tenant.conf": "compression { level best }",
 	}
-	_, diags := Check("main.lotus", optsFor(files))
+	_, diags := Check("main.conf", optsFor(files))
 	if len(errorsOf(diags)) == 0 {
 		t.Errorf("a tenant file turned compression on:\n%s", format(diags))
 	}

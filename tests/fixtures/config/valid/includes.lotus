@@ -1,6 +1,0 @@
-lotus_config_version 1
-include "sites.d/*.lotus"
-include 'C:\LOTUS\conf\extra.lotus'
-site "x" {
-    include "${dir}/more.lotus"
-}

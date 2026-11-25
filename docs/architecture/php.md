@@ -29,7 +29,7 @@ A backend is either `fastcgi_pass` (a PHP server that runs on its own) or
 
 `php_backend` is server-level and the `php` action is tenant-forbidden: which
 PHP, and so which pool and OS user, runs a site is the administrator's decision.
-See `configs/examples/php.lotus`.
+See `configs/examples/php.conf`.
 
 ## Which file runs
 

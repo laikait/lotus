@@ -14,7 +14,7 @@ func TestCheckSecureUnix(t *testing.T) {
 	if err := os.Chmod(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	file := filepath.Join(dir, "a.lotus")
+	file := filepath.Join(dir, "a.conf")
 	if err := os.WriteFile(file, []byte("x 1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

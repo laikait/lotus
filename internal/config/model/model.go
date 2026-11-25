@@ -63,6 +63,17 @@ type Config struct {
 	Sites       []Site       `json:"sites"`
 	Control     Control      `json:"control"`
 	Metrics     *Metrics     `json:"metrics,omitempty"`
+	Admin       *Admin       `json:"admin,omitempty"`
+}
+
+// Admin configures the web admin listener (docs/architecture/admin.md).
+type Admin struct {
+	Address        string         `json:"address"`
+	UsersFile      string         `json:"users_file"`
+	SessionTTL     time.Duration  `json:"session_ttl"`
+	Certificate    string         `json:"certificate,omitempty"`
+	CertificateKey string         `json:"certificate_key,omitempty"`
+	Allow          []netip.Prefix `json:"allow,omitempty"`
 }
 
 // Compression says which responses are compressed, and how.

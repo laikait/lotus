@@ -11,7 +11,7 @@ import (
 
 func mustParse(t *testing.T, src string) *ast.File {
 	t.Helper()
-	f, diags := Parse("t.lotus", []byte(src))
+	f, diags := Parse("t.conf", []byte(src))
 	if len(diags) != 0 {
 		t.Fatalf("unexpected diagnostics:\n%s", formatDiags(diags))
 	}
@@ -98,7 +98,7 @@ func TestValueTypes(t *testing.T) {
 
 func TestLetIncludePair(t *testing.T) {
 	f := mustParse(t, `let $a = "x"
-include "y/*.lotus"
+include "y/*.conf"
 m {
     "k" = 1
 }
@@ -108,7 +108,7 @@ m {
 		t.Errorf("let name = %q", let.Name)
 	}
 	inc := f.Statements[1].(*ast.Include)
-	if p, _ := inc.Path.Plain(); p != "y/*.lotus" {
+	if p, _ := inc.Path.Plain(); p != "y/*.conf" {
 		t.Errorf("include path = %q", p)
 	}
 	pair := directive(t, f.Statements[2]).Block.Statements[0].(*ast.Pair)
@@ -200,7 +200,7 @@ func TestSingleLineBlocksAndSemicolons(t *testing.T) {
 }
 
 func TestErrorRecoveryReportsLaterErrors(t *testing.T) {
-	_, diags := Parse("t.lotus", []byte("a \"\\q\"\nb 1x\nc ]\nd 1\ne @\n"))
+	_, diags := Parse("t.conf", []byte("a \"\\q\"\nb 1x\nc ]\nd 1\ne @\n"))
 	var codes []string
 	for _, d := range diags {
 		codes = append(codes, d.Code)
@@ -214,14 +214,14 @@ func TestErrorRecoveryReportsLaterErrors(t *testing.T) {
 func TestBadBlockHeaderSkipsWholeBlock(t *testing.T) {
 	// The error is in the header; the block body must be skipped as one unit
 	// so its contents and closing brace don't cause follow-up errors.
-	_, diags := Parse("t.lotus", []byte("site ] {\n    root \"/x\"\n    inner {\n        a 1\n    }\n}\nok 1\n"))
+	_, diags := Parse("t.conf", []byte("site ] {\n    root \"/x\"\n    inner {\n        a 1\n    }\n}\nok 1\n"))
 	if len(diags) != 1 || diags[0].Code != diag.CodeUnexpectedToken {
 		t.Errorf("diags = \n%s", formatDiags(diags))
 	}
 }
 
 func TestStatementAfterErrorStillParsed(t *testing.T) {
-	f, diags := Parse("t.lotus", []byte("bad ]\ngood 1\n"))
+	f, diags := Parse("t.conf", []byte("bad ]\ngood 1\n"))
 	if len(diags) != 1 {
 		t.Fatalf("diags = \n%s", formatDiags(diags))
 	}
@@ -231,7 +231,7 @@ func TestStatementAfterErrorStillParsed(t *testing.T) {
 }
 
 func TestErrorLimit(t *testing.T) {
-	_, diags := Parse("t.lotus", []byte(strings.Repeat("a ]\n", 500)))
+	_, diags := Parse("t.conf", []byte(strings.Repeat("a ]\n", 500)))
 	errs := 0
 	for _, d := range diags {
 		if d.Severity == diag.Error {
@@ -247,12 +247,12 @@ func TestErrorLimit(t *testing.T) {
 }
 
 func TestFileTooLarge(t *testing.T) {
-	_, diags := Parse("big.lotus", make([]byte, MaxFileSize+1))
+	_, diags := Parse("big.conf", make([]byte, MaxFileSize+1))
 	if len(diags) != 1 || diags[0].Code != diag.CodeFileTooLarge {
 		t.Errorf("diags = %v", diags)
 	}
 	// Exactly at the limit is allowed (this is all NULs, so only lexical errors).
-	if _, diags := Parse("ok.lotus", []byte(strings.Repeat("#", MaxFileSize))); len(diags) != 0 {
+	if _, diags := Parse("ok.conf", []byte(strings.Repeat("#", MaxFileSize))); len(diags) != 0 {
 		t.Errorf("a file of exactly MaxFileSize bytes was rejected: %v", diags)
 	}
 }
@@ -264,7 +264,7 @@ func TestDeepNestingDoesNotOverflowStack(t *testing.T) {
 		"calls":  "a " + strings.Repeat("f(", 100000),
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, diags := Parse("deep.lotus", []byte(src))
+			_, diags := Parse("deep.conf", []byte(src))
 			if len(diags) == 0 || diags[0].Code != diag.CodeNestingTooDeep {
 				t.Errorf("first diagnostic = %v, want %s", diags, diag.CodeNestingTooDeep)
 			}
@@ -282,12 +282,12 @@ func TestEmptyAndWhitespaceOnlyFiles(t *testing.T) {
 }
 
 func TestPositionsAreFileRelative(t *testing.T) {
-	f, _ := Parse("conf/main.lotus", []byte("a 1\n  b 2\n"))
+	f, _ := Parse("conf/main.conf", []byte("a 1\n  b 2\n"))
 	b := directive(t, f.Statements[1])
-	if b.Pos.File != "conf/main.lotus" || b.Pos.Line != 2 || b.Pos.Col != 3 {
+	if b.Pos.File != "conf/main.conf" || b.Pos.Line != 2 || b.Pos.Col != 3 {
 		t.Errorf("b.Pos = %+v", b.Pos)
 	}
-	if got := b.Pos.String(); got != "conf/main.lotus:2:3" {
+	if got := b.Pos.String(); got != "conf/main.conf:2:3" {
 		t.Errorf("Pos.String() = %q", got)
 	}
 }
@@ -313,7 +313,7 @@ site "example.com" {
 	b.SetBytes(int64(len(src)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, diags := Parse("big.lotus", src); len(diags) != 0 {
+		if _, diags := Parse("big.conf", src); len(diags) != 0 {
 			b.Fatal(diags[0])
 		}
 	}
@@ -324,7 +324,7 @@ func BenchmarkParseManyComments(b *testing.B) {
 	src := []byte(strings.Repeat("# c\n", 1<<20) + "a 1\n")
 	b.SetBytes(int64(len(src)))
 	for i := 0; i < b.N; i++ {
-		if _, diags := Parse("c.lotus", src); len(diags) != 0 {
+		if _, diags := Parse("c.conf", src); len(diags) != 0 {
 			b.Fatal(diags[0])
 		}
 	}

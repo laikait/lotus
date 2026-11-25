@@ -256,6 +256,27 @@ func (c *compiler) server(cfg *model.Config, server *ast.Directive) {
 				}
 			}
 			cfg.Metrics = m
+		case "admin":
+			ad := &model.Admin{SessionTTL: 8 * time.Hour}
+			for _, s := range body(d) {
+				if r, ok := s.(*ast.Directive); ok {
+					switch r.Name {
+					case "address":
+						ad.Address = str(arg(r, 0))
+					case "users_file":
+						ad.UsersFile = str(arg(r, 0))
+					case "session_ttl":
+						ad.SessionTTL = dur(arg(r, 0))
+					case "certificate":
+						ad.Certificate = str(arg(r, 0))
+					case "certificate_key":
+						ad.CertificateKey = str(arg(r, 0))
+					case "allow":
+						ad.Allow = prefixes(arg(r, 0))
+					}
+				}
+			}
+			cfg.Admin = ad
 		case "control":
 			for _, s := range body(d) {
 				if r, ok := s.(*ast.Directive); ok {
@@ -1097,10 +1118,10 @@ func (c *compiler) crossChecks(cfg *model.Config) {
 // doesn't say.
 func defaultACMEStorage() string {
 	if runtime.GOOS == "windows" {
-		if pd := os.Getenv("ProgramData"); pd != "" {
-			return filepath.Join(pd, "lotus", "certs")
+		if pf := os.Getenv("ProgramFiles"); pf != "" {
+			return filepath.Join(pf, "Lotus", "certs")
 		}
-		return `C:\ProgramData\lotus\certs`
+		return `C:\Program Files\Lotus\certs`
 	}
 	return "/var/lib/lotus/certs"
 }

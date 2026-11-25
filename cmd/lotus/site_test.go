@@ -15,13 +15,13 @@ server {
         address "127.0.0.1:8080"
     }
 
-    include "sites.d/*.lotus"
+    include "sites.d/*.conf"
 }
 `
 
 func TestSiteAddListRemove(t *testing.T) {
 	dir := t.TempDir()
-	cfg := filepath.Join(dir, "main.lotus")
+	cfg := filepath.Join(dir, "main.conf")
 	if err := os.WriteFile(cfg, []byte(siteTestMain), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestSiteAddListRemove(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(web, "index.html")); err != nil {
 		t.Errorf("no sample page: %v", err)
 	}
-	text, _ := os.ReadFile(filepath.Join(dir, "sites.d", "example.com.lotus"))
+	text, _ := os.ReadFile(filepath.Join(dir, "sites.d", "example.com.conf"))
 	if !strings.Contains(string(text), `aliases [ "www.example.com" ]`) {
 		t.Errorf("site file: %s", text)
 	}
@@ -60,7 +60,7 @@ func TestSiteAddListRemove(t *testing.T) {
 	if code := run([]string{"site", "remove", "example.com", "--config", cfg}, &out, &errb); code != exitOK {
 		t.Errorf("remove: %d %s", code, errb.String())
 	}
-	if _, err := os.Stat(filepath.Join(dir, "sites.d", "example.com.lotus")); err == nil {
+	if _, err := os.Stat(filepath.Join(dir, "sites.d", "example.com.conf")); err == nil {
 		t.Error("the site file is still there")
 	}
 }

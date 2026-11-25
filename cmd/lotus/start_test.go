@@ -59,7 +59,7 @@ server {
 %s
 }
 `, port, filepath.ToSlash(root), extra)
-	cfgPath = filepath.Join(dir, "main.lotus")
+	cfgPath = filepath.Join(dir, "main.conf")
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestStartReportsAPortInUse(t *testing.T) {
 
 func TestStartWithMissingConfiguration(t *testing.T) {
 	var stdout, stderr safeBuf
-	code := runStart(context.Background(), []string{"-config", filepath.Join(t.TempDir(), "nope.lotus")}, &stdout, &stderr, nil)
+	code := runStart(context.Background(), []string{"-config", filepath.Join(t.TempDir(), "nope.conf")}, &stdout, &stderr, nil)
 	if code != exitInvalidConfig || !strings.Contains(stderr.String(), "cannot read configuration file") {
 		t.Errorf("code=%d stderr:\n%s", code, stderr.String())
 	}
@@ -181,7 +181,7 @@ func TestStartUsageErrors(t *testing.T) {
 
 func TestDefaultConfigPath(t *testing.T) {
 	p := defaultConfigPath()
-	if p == "" || !strings.HasSuffix(filepath.ToSlash(p), "main.lotus") {
+	if p == "" || !strings.HasSuffix(filepath.ToSlash(p), "main.conf") {
 		t.Errorf("defaultConfigPath() = %q", p)
 	}
 }

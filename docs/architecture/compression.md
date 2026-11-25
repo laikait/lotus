@@ -37,7 +37,7 @@ server {
 }
 ```
 
-See `configs/examples/compression.lotus`. Only an administrator can use `compression`.
+See `configs/examples/compression.conf`. Only an administrator can use `compression`.
 
 | Directive | Default | Meaning |
 |---|---|---|

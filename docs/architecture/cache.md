@@ -38,7 +38,7 @@ server {
 }
 ```
 
-See `configs/examples/cache.lotus` for a commented configuration. `cache` is an error in a route that has no `proxy` and no `php`: only what a backend
+See `configs/examples/cache.conf` for a commented configuration. `cache` is an error in a route that has no `proxy` and no `php`: only what a backend
 produced is kept.
 
 | Directive | Default | Meaning |

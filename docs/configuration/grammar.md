@@ -19,7 +19,7 @@ This document defines the syntax (lexical rules + EBNF) and the meaning of the L
 
 - Files are UTF-8. A leading BOM is ignored. Invalid UTF-8 is an error.
 - Line endings may be LF or CRLF. Positions are reported as `file:line:column`: lines start at 1, columns start at 1 and count Unicode code points.
-- File extension: `.lotus`.
+- File extension: `.conf`.
 - Maximum file size: 16 MiB. Maximum nesting depth: 64 blocks.
 
 ## 3. Lexical grammar
@@ -252,8 +252,8 @@ Implemented in `internal/config/format`. `lotus config format <file>` prints the
 
 ## 9. Conformance
 
-- `tests/fixtures/config/valid/*.lotus` must parse, each with a golden AST file.
-- `tests/fixtures/config/invalid/*.lotus` must fail with the expected error code and position (written in a header comment, e.g. `# expect: LOTUS-CFG-0012 3:9`).
+- `tests/fixtures/config/valid/*.conf` must parse, each with a golden AST file.
+- `tests/fixtures/config/invalid/*.conf` must fail with the expected error code and position (written in a header comment, e.g. `# expect: LOTUS-CFG-0012 3:9`).
 - The parser is fuzzed (`go test -fuzz`) from Phase 1 onward. It must never panic or hang, and memory use must stay below 64× the input size.
 
 ## 10. Complete example
@@ -318,7 +318,7 @@ server {
             php_deny true
         }
 
-        include "sites.d/example/*.lotus"
+        include "sites.d/example/*.conf"
     }
 }
 ```

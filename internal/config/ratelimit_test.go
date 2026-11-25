@@ -69,7 +69,7 @@ func TestRateLimitErrors(t *testing.T) {
 		"too many":     {`site "a" { htaccess true` + "\n" + ` htaccess_auth_failures 5000 }`, diag.CodeInvalidValue, ""},
 		"zero lockout": {`site "a" { htaccess true` + "\n" + ` htaccess_auth_lockout 0s }`, diag.CodeInvalidValue, ""},
 	} {
-		_, diags := Check("main.lotus", optsFor(map[string]string{"main.lotus": portable(cfg(tc.src))}))
+		_, diags := Check("main.conf", optsFor(map[string]string{"main.conf": portable(cfg(tc.src))}))
 		errs := errorsOf(diags)
 		if len(errs) == 0 {
 			t.Errorf("%s: accepted", name)
@@ -88,10 +88,10 @@ func TestTenantCannotLoosenOrSetLimits(t *testing.T) {
 		`htaccess_auth_failures 0`,
 	} {
 		files := map[string]string{
-			"main.lotus":   portable(cfg("site \"a\" {\n root \"/r\"\n include \"tenant.lotus\"\n}")),
-			"tenant.lotus": inc,
+			"main.conf":   portable(cfg("site \"a\" {\n root \"/r\"\n include \"tenant.conf\"\n}")),
+			"tenant.conf": inc,
 		}
-		_, diags := Check("main.lotus", optsFor(files))
+		_, diags := Check("main.conf", optsFor(files))
 		if !strings.Contains(format(diags), diag.CodeTenantBoundary) {
 			t.Errorf("a tenant file may set %q:\n%s", inc, format(diags))
 		}

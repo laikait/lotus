@@ -87,11 +87,11 @@ func serviceUninstall(stdout, stderr io.Writer) int {
 }
 
 func serviceLogPath() string {
-	base := os.Getenv("ProgramData")
+	base := os.Getenv("ProgramFiles")
 	if base == "" {
-		base = `C:\ProgramData`
+		base = `C:\Program Files`
 	}
-	return filepath.Join(base, "LOTUS", "logs", "lotus.log")
+	return filepath.Join(base, "Lotus", "logs", "lotus.log")
 }
 
 // runAsService runs the server under the Windows service manager when that is

@@ -23,6 +23,7 @@ const (
 	CtxACME            Context = "acme"
 	CtxDNS             Context = "dns"
 	CtxMetrics         Context = "metrics"
+	CtxAdmin           Context = "admin"
 	CtxSite            Context = "site"
 	CtxRoute           Context = "route"
 	CtxMatch           Context = "match"

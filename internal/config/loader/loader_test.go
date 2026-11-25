@@ -20,7 +20,7 @@ func load(files map[string]string, mutate ...func(*Options)) (*Result, []diag.Di
 	for _, m := range mutate {
 		m(&opts)
 	}
-	return Load("main.lotus", opts)
+	return Load("main.conf", opts)
 }
 
 func codes(diags []diag.Diagnostic) string {
@@ -67,7 +67,7 @@ func mustLoad(t *testing.T, files map[string]string, mutate ...func(*Options)) *
 }
 
 func TestVersion(t *testing.T) {
-	res := mustLoad(t, map[string]string{"main.lotus": "lotus_config_version 1\na 1\n"})
+	res := mustLoad(t, map[string]string{"main.conf": "lotus_config_version 1\na 1\n"})
 	if res.Version != 1 {
 		t.Errorf("version = %d", res.Version)
 	}
@@ -88,7 +88,7 @@ func TestVersion(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, diags := load(map[string]string{"main.lotus": tt.src})
+			res, diags := load(map[string]string{"main.conf": tt.src})
 			if res != nil || codes(diags) != tt.code {
 				t.Errorf("codes = %q, want %q\n%s", codes(diags), tt.code, text(diags))
 			}
@@ -98,8 +98,8 @@ func TestVersion(t *testing.T) {
 
 func TestVersionInIncludedFile(t *testing.T) {
 	_, diags := load(map[string]string{
-		"main.lotus": "lotus_config_version 1\ninclude \"b.lotus\"\n",
-		"b.lotus":    "lotus_config_version 1\n",
+		"main.conf": "lotus_config_version 1\ninclude \"b.conf\"\n",
+		"b.conf":    "lotus_config_version 1\n",
 	})
 	if codes(diags) != diag.CodeVersionMisplaced {
 		t.Errorf("diags:\n%s", text(diags))
@@ -107,7 +107,7 @@ func TestVersionInIncludedFile(t *testing.T) {
 }
 
 func TestMissingRootFile(t *testing.T) {
-	res, diags := Load("nope.lotus", Options{FS: MemFS{}})
+	res, diags := Load("nope.conf", Options{FS: MemFS{}})
 	if res != nil || codes(diags) != diag.CodeIncludeNotFound {
 		t.Errorf("diags:\n%s", text(diags))
 	}
@@ -115,36 +115,36 @@ func TestMissingRootFile(t *testing.T) {
 
 func TestIncludeSplicesInPlace(t *testing.T) {
 	res := mustLoad(t, map[string]string{
-		"main.lotus":  "lotus_config_version 1\nfirst 1\nblock {\n  include \"inner.lotus\"\n  after 1\n}\ninclude \"b.lotus\"\nlast 1\n",
-		"inner.lotus": "inner 1\n",
-		"b.lotus":     "b 1\n",
+		"main.conf":  "lotus_config_version 1\nfirst 1\nblock {\n  include \"inner.conf\"\n  after 1\n}\ninclude \"b.conf\"\nlast 1\n",
+		"inner.conf": "inner 1\n",
+		"b.conf":     "b 1\n",
 	})
 	want := "first block { inner after } b last"
 	if got := strings.Join(names(res.File.Statements), " "); got != want {
 		t.Errorf("order = %q, want %q", got, want)
 	}
-	if len(res.Files) != 3 || res.Files[0] != "main.lotus" {
+	if len(res.Files) != 3 || res.Files[0] != "main.conf" {
 		t.Errorf("files = %v", res.Files)
 	}
 }
 
 func TestIncludePositionsKeepTheirFile(t *testing.T) {
 	res := mustLoad(t, map[string]string{
-		"main.lotus":  "lotus_config_version 1\ninclude \"sub/b.lotus\"\n",
-		"sub/b.lotus": "\n\n  x 1\n",
+		"main.conf":  "lotus_config_version 1\ninclude \"sub/b.conf\"\n",
+		"sub/b.conf": "\n\n  x 1\n",
 	})
 	d := res.File.Statements[0].(*ast.Directive)
-	if filepath.ToSlash(d.Pos.File) != "sub/b.lotus" || d.Pos.Line != 3 || d.Pos.Col != 3 {
-		t.Errorf("pos = %v, want sub/b.lotus:3:3", d.Pos)
+	if filepath.ToSlash(d.Pos.File) != "sub/b.conf" || d.Pos.Line != 3 || d.Pos.Col != 3 {
+		t.Errorf("pos = %v, want sub/b.conf:3:3", d.Pos)
 	}
 }
 
 func TestIncludeRelativeToIncludingFile(t *testing.T) {
 	res := mustLoad(t, map[string]string{
-		"main.lotus":  "lotus_config_version 1\ninclude \"a/one.lotus\"\n",
-		"a/one.lotus": "one 1\ninclude \"two.lotus\"\n", // relative to a/, not to the root
-		"a/two.lotus": "two 1\n",
-		"two.lotus":   "wrong 1\n",
+		"main.conf":  "lotus_config_version 1\ninclude \"a/one.conf\"\n",
+		"a/one.conf": "one 1\ninclude \"two.conf\"\n", // relative to a/, not to the root
+		"a/two.conf": "two 1\n",
+		"two.conf":   "wrong 1\n",
 	})
 	if got := strings.Join(names(res.File.Statements), " "); got != "one two" {
 		t.Errorf("got %q", got)
@@ -153,10 +153,10 @@ func TestIncludeRelativeToIncludingFile(t *testing.T) {
 
 func TestIncludeGlob(t *testing.T) {
 	res := mustLoad(t, map[string]string{
-		"main.lotus":       "lotus_config_version 1\ninclude \"sites.d/*.lotus\"\n",
-		"sites.d/b.lotus":  "b 1\n",
-		"sites.d/a.lotus":  "a 1\n",
-		"sites.d/c.lotus":  "c 1\n",
+		"main.conf":        "lotus_config_version 1\ninclude \"sites.d/*.conf\"\n",
+		"sites.d/b.conf":   "b 1\n",
+		"sites.d/a.conf":   "a 1\n",
+		"sites.d/c.conf":   "c 1\n",
 		"sites.d/skip.txt": "ignored 1\n",
 	})
 	if got := strings.Join(names(res.File.Statements), " "); got != "a b c" {
@@ -164,7 +164,7 @@ func TestIncludeGlob(t *testing.T) {
 	}
 
 	// A glob matching nothing is fine.
-	res = mustLoad(t, map[string]string{"main.lotus": "lotus_config_version 1\ninclude \"none.d/*.lotus\"\nx 1\n"})
+	res = mustLoad(t, map[string]string{"main.conf": "lotus_config_version 1\ninclude \"none.d/*.conf\"\nx 1\n"})
 	if got := strings.Join(names(res.File.Statements), " "); got != "x" {
 		t.Errorf("got %q", got)
 	}
@@ -176,19 +176,19 @@ func TestIncludeErrors(t *testing.T) {
 		files map[string]string
 		code  string
 	}{
-		{"missing file", map[string]string{"main.lotus": "lotus_config_version 1\ninclude \"nope.lotus\"\n"}, diag.CodeIncludeNotFound},
+		{"missing file", map[string]string{"main.conf": "lotus_config_version 1\ninclude \"nope.conf\"\n"}, diag.CodeIncludeNotFound},
 		{"wildcard in directory", map[string]string{
-			"main.lotus": "lotus_config_version 1\ninclude \"*/x.lotus\"\n", "a/x.lotus": "x 1\n"}, diag.CodeBadIncludePath},
-		{"empty path", map[string]string{"main.lotus": "lotus_config_version 1\ninclude \"\"\n"}, diag.CodeBadIncludePath},
-		{"self include", map[string]string{"main.lotus": "lotus_config_version 1\ninclude \"main.lotus\"\n"}, diag.CodeIncludeCycle},
+			"main.conf": "lotus_config_version 1\ninclude \"*/x.conf\"\n", "a/x.conf": "x 1\n"}, diag.CodeBadIncludePath},
+		{"empty path", map[string]string{"main.conf": "lotus_config_version 1\ninclude \"\"\n"}, diag.CodeBadIncludePath},
+		{"self include", map[string]string{"main.conf": "lotus_config_version 1\ninclude \"main.conf\"\n"}, diag.CodeIncludeCycle},
 		{"indirect cycle", map[string]string{
-			"main.lotus": "lotus_config_version 1\ninclude \"a.lotus\"\n",
-			"a.lotus":    "include \"b.lotus\"\n",
-			"b.lotus":    "include \"a.lotus\"\n"}, diag.CodeIncludeCycle},
+			"main.conf": "lotus_config_version 1\ninclude \"a.conf\"\n",
+			"a.conf":    "include \"b.conf\"\n",
+			"b.conf":    "include \"a.conf\"\n"}, diag.CodeIncludeCycle},
 		{"cycle through a different spelling", map[string]string{
-			"main.lotus": "lotus_config_version 1\ninclude \"a/../main.lotus\"\n"}, diag.CodeIncludeCycle},
+			"main.conf": "lotus_config_version 1\ninclude \"a/../main.conf\"\n"}, diag.CodeIncludeCycle},
 		{"syntax error in included file", map[string]string{
-			"main.lotus": "lotus_config_version 1\ninclude \"a.lotus\"\n", "a.lotus": "x \"unterminated\n"}, diag.CodeUnterminatedString},
+			"main.conf": "lotus_config_version 1\ninclude \"a.conf\"\n", "a.conf": "x \"unterminated\n"}, diag.CodeUnterminatedString},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -202,8 +202,8 @@ func TestIncludeErrors(t *testing.T) {
 
 func TestSameFileIncludedTwiceIsNotACycle(t *testing.T) {
 	res := mustLoad(t, map[string]string{
-		"main.lotus": "lotus_config_version 1\ninclude \"a.lotus\"\ninclude \"a.lotus\"\n",
-		"a.lotus":    "x 1\n",
+		"main.conf": "lotus_config_version 1\ninclude \"a.conf\"\ninclude \"a.conf\"\n",
+		"a.conf":    "x 1\n",
 	})
 	if got := strings.Join(names(res.File.Statements), " "); got != "x x" {
 		t.Errorf("got %q", got)
@@ -213,10 +213,10 @@ func TestSameFileIncludedTwiceIsNotACycle(t *testing.T) {
 func TestIncludeLimits(t *testing.T) {
 	// Depth: main -> f1 -> f2 -> f3, limit 2.
 	files := map[string]string{
-		"main.lotus": "lotus_config_version 1\ninclude \"f1.lotus\"\n",
-		"f1.lotus":   "include \"f2.lotus\"\n",
-		"f2.lotus":   "include \"f3.lotus\"\n",
-		"f3.lotus":   "x 1\n",
+		"main.conf": "lotus_config_version 1\ninclude \"f1.conf\"\n",
+		"f1.conf":   "include \"f2.conf\"\n",
+		"f2.conf":   "include \"f3.conf\"\n",
+		"f3.conf":   "x 1\n",
 	}
 	_, diags := load(files, func(o *Options) { o.MaxIncludeDepth = 2 })
 	if codes(diags) != diag.CodeIncludeDepth {
@@ -228,8 +228,8 @@ func TestIncludeLimits(t *testing.T) {
 
 	// File count: root + 3 matches with a limit of 3 files.
 	files = map[string]string{
-		"main.lotus": "lotus_config_version 1\ninclude \"d/*.lotus\"\n",
-		"d/1.lotus":  "a 1\n", "d/2.lotus": "a 1\n", "d/3.lotus": "a 1\n",
+		"main.conf": "lotus_config_version 1\ninclude \"d/*.conf\"\n",
+		"d/1.conf":  "a 1\n", "d/2.conf": "a 1\n", "d/3.conf": "a 1\n",
 	}
 	_, diags = load(files, func(o *Options) { o.MaxFiles = 3 })
 	if codes(diags) != diag.CodeTooManyFiles {
@@ -239,11 +239,11 @@ func TestIncludeLimits(t *testing.T) {
 
 func TestInsecureIncludes(t *testing.T) {
 	files := map[string]string{
-		"main.lotus": "lotus_config_version 1\ninclude \"a.lotus\"\n",
-		"a.lotus":    "x 1\n",
+		"main.conf": "lotus_config_version 1\ninclude \"a.conf\"\n",
+		"a.conf":    "x 1\n",
 	}
 	unsafe := func(o *Options) {
-		o.FS = MemFS{Files: files, Unsafe: map[string]string{"a.lotus": "a.lotus is writable by everyone"}}
+		o.FS = MemFS{Files: files, Unsafe: map[string]string{"a.conf": "a.conf is writable by everyone"}}
 	}
 	res, diags := load(files, unsafe)
 	if res != nil || codes(diags) != diag.CodeInsecureInclude {
@@ -259,15 +259,15 @@ func TestInsecureIncludes(t *testing.T) {
 
 func TestVariables(t *testing.T) {
 	res := mustLoad(t, map[string]string{
-		"main.lotus": `lotus_config_version 1
+		"main.conf": `lotus_config_version 1
 let $root = "/var/www"
 let $n = 5
 let $names = [ "a", "b" ]
 let $full = "${root}/site-${n}"
 d $full "${root}" $names $n
-include "b.lotus"
+include "b.conf"
 `,
-		"b.lotus": "let $local = \"x\"\nfrom_b \"${root}/${local}\"\n",
+		"b.conf": "let $local = \"x\"\nfrom_b \"${root}/${local}\"\n",
 	})
 	d := res.File.Statements[0].(*ast.Directive)
 	if s, _ := d.Args[0].(*ast.String).Plain(); s != "/var/www/site-5" {
@@ -289,7 +289,7 @@ include "b.lotus"
 }
 
 func TestVariableUsePositionIsTheUse(t *testing.T) {
-	res := mustLoad(t, map[string]string{"main.lotus": "lotus_config_version 1\nlet $a = 1\nd $a\n"})
+	res := mustLoad(t, map[string]string{"main.conf": "lotus_config_version 1\nlet $a = 1\nd $a\n"})
 	d := res.File.Statements[0].(*ast.Directive)
 	if p := d.Args[0].Position(); p.Line != 3 || p.Col != 3 {
 		t.Errorf("position = %v, want 3:3 (the use)", p)
@@ -299,16 +299,16 @@ func TestVariableUsePositionIsTheUse(t *testing.T) {
 func TestVariableScoping(t *testing.T) {
 	// A variable defined in an included file is not visible to the includer.
 	_, diags := load(map[string]string{
-		"main.lotus": "lotus_config_version 1\ninclude \"a.lotus\"\nd $inner\n",
-		"a.lotus":    "let $inner = 1\n",
+		"main.conf": "lotus_config_version 1\ninclude \"a.conf\"\nd $inner\n",
+		"a.conf":    "let $inner = 1\n",
 	})
 	if codes(diags) != diag.CodeUndefinedVariable {
 		t.Errorf("diags:\n%s", text(diags))
 	}
 	// A variable defined after the include is not visible inside it.
 	_, diags = load(map[string]string{
-		"main.lotus": "lotus_config_version 1\ninclude \"a.lotus\"\nlet $later = 1\n",
-		"a.lotus":    "d $later\n",
+		"main.conf": "lotus_config_version 1\ninclude \"a.conf\"\nlet $later = 1\n",
+		"a.conf":    "d $later\n",
 	})
 	if codes(diags) != diag.CodeUndefinedVariable {
 		t.Errorf("diags:\n%s", text(diags))
@@ -328,7 +328,7 @@ func TestVariableErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, diags := load(map[string]string{"main.lotus": "lotus_config_version 1\n" + tt.body + "\n"})
+			res, diags := load(map[string]string{"main.conf": "lotus_config_version 1\n" + tt.body + "\n"})
 			if res != nil || codes(diags) != tt.code {
 				t.Errorf("codes = %q, want %q\n%s", codes(diags), tt.code, text(diags))
 			}
@@ -337,7 +337,7 @@ func TestVariableErrors(t *testing.T) {
 }
 
 func TestUndefinedVariableSuggestion(t *testing.T) {
-	_, diags := load(map[string]string{"main.lotus": "lotus_config_version 1\nlet $webroot = \"/w\"\nd $webrot\n"})
+	_, diags := load(map[string]string{"main.conf": "lotus_config_version 1\nlet $webroot = \"/w\"\nd $webrot\n"})
 	if len(diags) != 1 || !strings.Contains(diags[0].Hint, "$webroot") {
 		t.Errorf("diags:\n%s", text(diags))
 	}
@@ -345,8 +345,8 @@ func TestUndefinedVariableSuggestion(t *testing.T) {
 
 func TestRedefinitionInIncludedFileIsRejected(t *testing.T) {
 	_, diags := load(map[string]string{
-		"main.lotus": "lotus_config_version 1\nlet $a = 1\ninclude \"a.lotus\"\n",
-		"a.lotus":    "let $a = 2\n",
+		"main.conf": "lotus_config_version 1\nlet $a = 1\ninclude \"a.conf\"\n",
+		"a.conf":    "let $a = 2\n",
 	})
 	if codes(diags) != diag.CodeVariableRedefined {
 		t.Errorf("diags:\n%s", text(diags))
@@ -354,7 +354,7 @@ func TestRedefinitionInIncludedFileIsRejected(t *testing.T) {
 }
 
 func TestEnvFunction(t *testing.T) {
-	res := mustLoad(t, map[string]string{"main.lotus": "lotus_config_version 1\nd env(\"HOME_DIR\") env(\"MISSING\", \"fallback\")\n"})
+	res := mustLoad(t, map[string]string{"main.conf": "lotus_config_version 1\nd env(\"HOME_DIR\") env(\"MISSING\", \"fallback\")\n"})
 	d := res.File.Statements[0].(*ast.Directive)
 	if s, _ := d.Args[0].(*ast.String).Plain(); s != "/home/lotus" {
 		t.Errorf("env = %q", s)
@@ -382,13 +382,13 @@ func TestEnvErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, diags := load(map[string]string{"main.lotus": "lotus_config_version 1\n" + tt.body + "\n"})
+			res, diags := load(map[string]string{"main.conf": "lotus_config_version 1\n" + tt.body + "\n"})
 			if res != nil || codes(diags) != tt.code {
 				t.Errorf("codes = %q, want %q\n%s", codes(diags), tt.code, text(diags))
 			}
 		})
 	}
-	_, diags := load(map[string]string{"main.lotus": "lotus_config_version 1\nd envv(\"X\")\n"})
+	_, diags := load(map[string]string{"main.conf": "lotus_config_version 1\nd envv(\"X\")\n"})
 	if len(diags) != 1 || !strings.Contains(diags[0].Hint, `"env"`) {
 		t.Errorf("expected a did-you-mean hint:\n%s", text(diags))
 	}
@@ -396,8 +396,8 @@ func TestEnvErrors(t *testing.T) {
 
 func TestFileFunction(t *testing.T) {
 	res := mustLoad(t, map[string]string{
-		"main.lotus":     "lotus_config_version 1\ninclude \"conf/a.lotus\"\n",
-		"conf/a.lotus":   "d file(\"token.txt\")\n", // relative to the file that calls it
+		"main.conf":      "lotus_config_version 1\ninclude \"conf/a.conf\"\n",
+		"conf/a.conf":    "d file(\"token.txt\")\n", // relative to the file that calls it
 		"conf/token.txt": "tok-123\r\n",
 	})
 	s := res.File.Statements[0].(*ast.Directive).Args[0].(*ast.String)
@@ -412,10 +412,10 @@ func TestFileFunction(t *testing.T) {
 		name  string
 		files map[string]string
 	}{
-		{"missing", map[string]string{"main.lotus": "lotus_config_version 1\nd file(\"nope\")\n"}},
+		{"missing", map[string]string{"main.conf": "lotus_config_version 1\nd file(\"nope\")\n"}},
 		{"too large", map[string]string{
-			"main.lotus": "lotus_config_version 1\nd file(\"big\")\n", "big": strings.Repeat("x", 64<<10+1)}},
-		{"not utf-8", map[string]string{"main.lotus": "lotus_config_version 1\nd file(\"bin\")\n", "bin": "\xff\xfe"}},
+			"main.conf": "lotus_config_version 1\nd file(\"big\")\n", "big": strings.Repeat("x", 64<<10+1)}},
+		{"not utf-8", map[string]string{"main.conf": "lotus_config_version 1\nd file(\"bin\")\n", "bin": "\xff\xfe"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -428,7 +428,7 @@ func TestFileFunction(t *testing.T) {
 }
 
 func TestSecretsPropagateAndAreRedacted(t *testing.T) {
-	res := mustLoad(t, map[string]string{"main.lotus": `lotus_config_version 1
+	res := mustLoad(t, map[string]string{"main.conf": `lotus_config_version 1
 let $t = env("TOKEN")
 d "Bearer ${t}" $t "plain"
 `})
@@ -449,7 +449,7 @@ d "Bearer ${t}" $t "plain"
 
 func TestEnvTextIsNeverAPlaceholder(t *testing.T) {
 	// Text from env() must not be scanned for {placeholders}.
-	res := mustLoad(t, map[string]string{"main.lotus": "lotus_config_version 1\nd env(\"MISSING\", \"{uri}\")\n"})
+	res := mustLoad(t, map[string]string{"main.conf": "lotus_config_version 1\nd env(\"MISSING\", \"{uri}\")\n"})
 	s := res.File.Statements[0].(*ast.Directive).Args[0].(*ast.String)
 	for _, p := range s.Parts {
 		if !p.Escaped {
@@ -459,7 +459,7 @@ func TestEnvTextIsNeverAPlaceholder(t *testing.T) {
 }
 
 func TestPairsAreResolved(t *testing.T) {
-	res := mustLoad(t, map[string]string{"main.lotus": "lotus_config_version 1\nlet $v = \"x\"\nh {\n \"K\" = \"${v}-1\"\n}\n"})
+	res := mustLoad(t, map[string]string{"main.conf": "lotus_config_version 1\nlet $v = \"x\"\nh {\n \"K\" = \"${v}-1\"\n}\n"})
 	pair := res.File.Statements[0].(*ast.Directive).Block.Statements[0].(*ast.Pair)
 	if v, _ := pair.Value.(*ast.String).Plain(); v != "x-1" {
 		t.Errorf("pair value = %q", v)
@@ -468,9 +468,9 @@ func TestPairsAreResolved(t *testing.T) {
 
 func TestErrorsFromSeveralFilesAreCollected(t *testing.T) {
 	_, diags := load(map[string]string{
-		"main.lotus": "lotus_config_version 1\nd $nope\ninclude \"a.lotus\"\ninclude \"b.lotus\"\n",
-		"a.lotus":    "e env(\"MISSING\")\n",
-		"b.lotus":    "f \"\\q\"\n",
+		"main.conf": "lotus_config_version 1\nd $nope\ninclude \"a.conf\"\ninclude \"b.conf\"\n",
+		"a.conf":    "e env(\"MISSING\")\n",
+		"b.conf":    "f \"\\q\"\n",
 	})
 	if got := codes(diags); got != diag.CodeUndefinedVariable+","+diag.CodeEnvNotSet+","+diag.CodeInvalidEscape {
 		t.Errorf("codes = %q\n%s", got, text(diags))
@@ -478,9 +478,9 @@ func TestErrorsFromSeveralFilesAreCollected(t *testing.T) {
 }
 
 func TestMemFSGlob(t *testing.T) {
-	m := MemFS{Files: map[string]string{"d/a.lotus": "", "d/b.txt": "", "e/c.lotus": ""}}
-	got, _ := m.Glob("d/*.lotus")
-	if len(got) != 1 || got[0] != "d/a.lotus" {
+	m := MemFS{Files: map[string]string{"d/a.conf": "", "d/b.txt": "", "e/c.conf": ""}}
+	got, _ := m.Glob("d/*.conf")
+	if len(got) != 1 || got[0] != "d/a.conf" {
 		t.Errorf("glob = %v", got)
 	}
 }

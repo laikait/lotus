@@ -12,7 +12,7 @@ const tidy = "lotus_config_version 1\nserver {\n    listen \"http\" {\n        a
 
 func writeLotus(t *testing.T, body string) string {
 	t.Helper()
-	p := filepath.Join(t.TempDir(), "main.lotus")
+	p := filepath.Join(t.TempDir(), "main.conf")
 	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestConfigFormatErrors(t *testing.T) {
 	if data, _ := os.ReadFile(bad); string(data) != "server {\n  listen\n" {
 		t.Error("-w must not rewrite a file with errors")
 	}
-	if code, _, _ := runCLI("config", "format", filepath.Join(t.TempDir(), "none.lotus")); code != exitNotFound {
+	if code, _, _ := runCLI("config", "format", filepath.Join(t.TempDir(), "none.conf")); code != exitNotFound {
 		t.Errorf("missing: %d", code)
 	}
 	if code, _, _ := runCLI("config", "format"); code != exitUsage {

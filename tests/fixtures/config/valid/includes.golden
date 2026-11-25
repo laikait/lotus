@@ -2,11 +2,11 @@ File
   Directive "lotus_config_version" @1:1
     Int 1 "1" @1:22
   Include @2:1
-    String @2:9 [text:"sites.d/*.lotus"]
+    String @2:9 [text:"sites.d/*.conf"]
   Include @3:1
-    RawString @3:9 [text:"C:\\LOTUS\\conf\\extra.lotus"]
+    RawString @3:9 [text:"C:\\LOTUS\\conf\\extra.conf"]
   Directive "site" @4:1
     String @4:6 [text:"x"]
     Block @4:10-6:1
       Include @5:5
-        String @5:13 [var:dir text:"/more.lotus"]
+        String @5:13 [var:dir text:"/more.conf"]

@@ -42,7 +42,7 @@ func startConverted(t *testing.T, nginx string) {
 		t.Fatal(err)
 	}
 	res := Convert(nodes, false)
-	out := filepath.Join(t.TempDir(), "converted.lotus")
+	out := filepath.Join(t.TempDir(), "converted.conf")
 	if err := os.WriteFile(out, []byte(res.Config), 0o600); err != nil {
 		t.Fatal(err)
 	}

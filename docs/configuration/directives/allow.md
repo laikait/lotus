@@ -2,13 +2,46 @@
 
 <!-- Generated from the directive registry by `make docs`. Do not edit by hand. -->
 
+## In `admin`
+
 ```text
 allow <networks>
 ```
 
 | | |
 |---|---|
-| **Contexts** | `metrics` |
+| **Arguments** | `networks`: list of IP address or CIDR |
+| **How often** | at most once |
+| **Default** | any |
+| **Request-time placeholders** | no |
+| **Who can set it** | administrators only: refused in files a site includes for its tenant |
+| **Since** | LOTUS 0.1, config language 1 |
+
+### Description
+
+If set, only clients in these networks may reach the admin; others get 403. Checked against the connection's address (not X-Forwarded-For).
+
+### Security
+
+Without allow, anyone who can reach the address sees the sign-in page.
+
+### Example
+
+```text
+address "0.0.0.0:7443"
+certificate "/etc/lotus/admin.pem"
+certificate_key "/etc/lotus/admin.key"
+allow [ "10.0.0.0/8" ]
+```
+
+## In `metrics`
+
+```text
+allow <networks>
+```
+
+| | |
+|---|---|
 | **Arguments** | `networks`: list of IP address or CIDR |
 | **How often** | at most once |
 | **Default** | any |

@@ -460,16 +460,16 @@ func runtimeUnix() bool { return os.PathSeparator == '/' }
 func TestAutomaticCertificatesForSitesAddedByReload(t *testing.T) {
 	env := startPebble(t)
 	storage := filepath.Join(t.TempDir(), "certs")
-	srv, cfg := lotusACME(t, env, storage, nil, "first.lotus-acme.test")
-	waitCert(t, env, "first.lotus-acme.test")
+	srv, cfg := lotusACME(t, env, storage, nil, "first.conf-acme.test")
+	waitCert(t, env, "first.conf-acme.test")
 
 	cfg2 := *cfg
 	root := docroot(t, "second")
-	s2 := siteConf("second.lotus-acme.test", root, "http", "https")
+	s2 := siteConf("second.conf-acme.test", root, "http", "https")
 	s2.TLS = model.TLSAutomatic
 	cfg2.Sites = append(append([]model.Site(nil), cfg.Sites...), s2)
 	must(t, srv.Reload(&cfg2))
-	waitCert(t, env, "second.lotus-acme.test")
+	waitCert(t, env, "second.conf-acme.test")
 
 	// Changing how certificates are obtained needs a restart.
 	cfg3 := cfg2

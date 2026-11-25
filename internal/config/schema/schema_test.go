@@ -77,7 +77,7 @@ func TestEveryContextIsReachable(t *testing.T) {
 			}
 		})
 	}
-	for _, ctx := range []Context{CtxServer, CtxRuntime, CtxListen, CtxLimits, CtxTLS, CtxACME, CtxDNS, CtxMetrics, CtxSite, CtxRoute,
+	for _, ctx := range []Context{CtxServer, CtxRuntime, CtxListen, CtxLimits, CtxTLS, CtxACME, CtxDNS, CtxMetrics, CtxAdmin, CtxSite, CtxRoute,
 		CtxMatch, CtxLogs, CtxPHPBackend, CtxUpstream, CtxBackend, CtxHealthCheck, CtxRateLimit, CtxCache, CtxRouteCache, CtxCompression, CtxSecurityHeaders, CtxControl} {
 		if !reachable[ctx] {
 			t.Errorf("context %q cannot be reached from the root", ctx)

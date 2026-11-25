@@ -11,14 +11,14 @@ import (
 const v1 = "lotus_config_version 1\n\nserver {\n    listen \"http\" {\n        address \"127.0.0.1:8080\"\n    }\n}\n"
 
 func TestCurrentVersionNeedsNothing(t *testing.T) {
-	res, _, err := Source("m.lotus", []byte(v1))
+	res, _, err := Source("m.conf", []byte(v1))
 	if err != nil || res.Changed || res.From != 1 || res.To != 1 || res.Output != nil {
 		t.Errorf("%v %+v", err, res)
 	}
 }
 
 func TestNewerVersionsAreRefused(t *testing.T) {
-	_, _, err := Source("m.lotus", []byte("lotus_config_version 2\n"))
+	_, _, err := Source("m.conf", []byte("lotus_config_version 2\n"))
 	if !errors.Is(err, ErrTooNew) || !strings.Contains(err.Error(), "up to 1") {
 		t.Errorf("%v", err)
 	}
@@ -35,7 +35,7 @@ func TestBrokenFiles(t *testing.T) {
 		"two arguments":  {"lotus_config_version 1 2\n", errBadVersion},
 		"zero":           {"lotus_config_version 0\n", errBadVersion},
 	} {
-		if _, _, err := Source("m.lotus", []byte(tc.src)); !errors.Is(err, tc.want) {
+		if _, _, err := Source("m.conf", []byte(tc.src)); !errors.Is(err, tc.want) {
 			t.Errorf("%s: %v, want %v", name, err, tc.want)
 		}
 	}
@@ -59,7 +59,7 @@ func TestStepsRunInOrder(t *testing.T) {
 		}},
 	}
 	src := "lotus_config_version 1\n\n# keep me\nserver {\n}\n"
-	res, _, err := migrate("m.lotus", []byte(src), 3, steps)
+	res, _, err := migrate("m.conf", []byte(src), 3, steps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestStepsRunInOrder(t *testing.T) {
 }
 
 func TestAMissingStepIsReported(t *testing.T) {
-	_, _, err := migrate("m.lotus", []byte(v1), 3, []Step{{From: 2, Apply: func(*ast.File) error { return nil }}})
+	_, _, err := migrate("m.conf", []byte(v1), 3, []Step{{From: 2, Apply: func(*ast.File) error { return nil }}})
 	if !errors.Is(err, ErrNoPath) || !strings.Contains(err.Error(), "from version 1 to 2") {
 		t.Errorf("%v", err)
 	}
@@ -78,7 +78,7 @@ func TestAMissingStepIsReported(t *testing.T) {
 
 func TestAFailingStepStops(t *testing.T) {
 	boom := errors.New("boom")
-	_, _, err := migrate("m.lotus", []byte(v1), 2, []Step{{From: 1, Apply: func(*ast.File) error { return boom }}})
+	_, _, err := migrate("m.conf", []byte(v1), 2, []Step{{From: 1, Apply: func(*ast.File) error { return boom }}})
 	if !errors.Is(err, boom) {
 		t.Errorf("%v", err)
 	}

@@ -18,7 +18,7 @@ server {
 
 func writeConfig(t *testing.T, content string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "main.lotus")
+	path := filepath.Join(t.TempDir(), "main.conf")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestConfigValidateJSON(t *testing.T) {
 }
 
 func TestConfigValidateMissingFile(t *testing.T) {
-	code, _, errOut := runCLI("config", "validate", filepath.Join(t.TempDir(), "nope.lotus"))
+	code, _, errOut := runCLI("config", "validate", filepath.Join(t.TempDir(), "nope.conf"))
 	if code != exitInvalidConfig || !strings.Contains(errOut, "cannot read configuration file") {
 		t.Errorf("code=%d stderr=%q", code, errOut)
 	}
@@ -112,8 +112,8 @@ func TestConfigUsageErrors(t *testing.T) {
 		{"config"},
 		{"config", "frobnicate"},
 		{"config", "validate"},
-		{"config", "validate", "a.lotus", "b.lotus"},
-		{"config", "validate", "--nope", "a.lotus"},
+		{"config", "validate", "a.conf", "b.conf"},
+		{"config", "validate", "--nope", "a.conf"},
 	}
 	for _, args := range tests {
 		if code, _, _ := runCLI(args...); code != exitUsage {

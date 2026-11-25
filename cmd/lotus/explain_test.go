@@ -38,7 +38,7 @@ server {
     }
 }
 `, filepath.ToSlash(root))
-	path := filepath.Join(dir, "main.lotus")
+	path := filepath.Join(dir, "main.conf")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}

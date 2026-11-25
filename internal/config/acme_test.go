@@ -50,7 +50,7 @@ func TestACMEStorageDefault(t *testing.T) {
 	c := compile(t, strings.Replace(strings.Replace(acmeServer, "%s", `        email "admin@example.com"`, 1), "%s", "", 1))
 	got := filepath.ToSlash(c.TLS.ACME.Storage)
 	if runtime.GOOS == "windows" {
-		if !strings.HasSuffix(got, "lotus/certs") {
+		if !strings.HasSuffix(got, "Lotus/certs") {
 			t.Errorf("storage = %q", got)
 		}
 	} else if got != "/var/lib/lotus/certs" {
@@ -65,7 +65,7 @@ func TestACMEErrors(t *testing.T) {
 		"bad port":      {`http_port 70000`, "", diag.CodeInvalidValue, ""},
 		"no challenges": {"challenges []", "", diag.CodeInvalidValue, ""},
 	} {
-		_, diags := Check("main.lotus", optsFor(map[string]string{"main.lotus": portable(strings.Replace(strings.Replace(acmeServer, "%s", tc.acme, 1), "%s", tc.site, 1))}))
+		_, diags := Check("main.conf", optsFor(map[string]string{"main.conf": portable(strings.Replace(strings.Replace(acmeServer, "%s", tc.acme, 1), "%s", tc.site, 1))}))
 		out := format(diags)
 		if len(errorsOf(diags)) == 0 || !strings.Contains(out, tc.code) || !strings.Contains(out, tc.text) {
 			t.Errorf("%s: want %s %q in:\n%s", name, tc.code, tc.text, out)
@@ -78,7 +78,7 @@ server {
         protocol https }
     site "example.com" { root "/srv/a" }
 }`
-	_, diags := Check("main.lotus", optsFor(map[string]string{"main.lotus": portable(src)}))
+	_, diags := Check("main.conf", optsFor(map[string]string{"main.conf": portable(src)}))
 	if !strings.Contains(format(diags), diag.CodeSiteNoACME) {
 		t.Errorf("a site with automatic TLS and no acme block:\n%s", format(diags))
 	}
@@ -86,10 +86,10 @@ server {
 
 func TestACMESettingsAreAdminOnly(t *testing.T) {
 	files := map[string]string{
-		"main.lotus":   portable(strings.Replace(strings.Replace(acmeServer, "%s", `email "a@b.c"`, 1), "%s", `include "tenant.lotus"`, 1)),
-		"tenant.lotus": `tls manual`,
+		"main.conf":   portable(strings.Replace(strings.Replace(acmeServer, "%s", `email "a@b.c"`, 1), "%s", `include "tenant.conf"`, 1)),
+		"tenant.conf": `tls manual`,
 	}
-	_, diags := Check("main.lotus", optsFor(files))
+	_, diags := Check("main.conf", optsFor(files))
 	if !strings.Contains(format(diags), diag.CodeTenantBoundary) {
 		t.Errorf("a tenant file chose how its site gets a certificate:\n%s", format(diags))
 	}
@@ -147,7 +147,7 @@ func TestDNSErrors(t *testing.T) {
 		"wildcard without dns":          {`email "a@b.c"`, `aliases [ "*.example.com" ]`, "DNS-01"},
 		"wildcard when dns is excluded": {"challenges [ \"http-01\" ]", `aliases [ "*.example.com" ]`, "DNS-01"},
 	} {
-		_, diags := Check("main.lotus", optsFor(map[string]string{"main.lotus": acmeWith(tc.acme, tc.site)}))
+		_, diags := Check("main.conf", optsFor(map[string]string{"main.conf": acmeWith(tc.acme, tc.site)}))
 		out := format(diags)
 		if len(errorsOf(diags)) == 0 || !strings.Contains(out, tc.text) {
 			t.Errorf("%s: want an error mentioning %q:\n%s", name, tc.text, out)
@@ -157,10 +157,10 @@ func TestDNSErrors(t *testing.T) {
 
 func TestDNSSettingsAreAdminOnly(t *testing.T) {
 	files := map[string]string{
-		"main.lotus":   acmeWith(`email "a@b.c"`, `include "tenant.lotus"`),
-		"tenant.lotus": "dns { provider \"exec\"\n command \"/bin/sh\" }",
+		"main.conf":   acmeWith(`email "a@b.c"`, `include "tenant.conf"`),
+		"tenant.conf": "dns { provider \"exec\"\n command \"/bin/sh\" }",
 	}
-	_, diags := Check("main.lotus", optsFor(files))
+	_, diags := Check("main.conf", optsFor(files))
 	if len(errorsOf(diags)) == 0 {
 		t.Errorf("a tenant file configured DNS credentials or a command:\n%s", format(diags))
 	}

@@ -527,7 +527,7 @@ server {
   - Load-time: `let $name = ...`, used as `${name}`, and `env("NAME")`. Resolved once when the config loads.
   - Request-time placeholders: `{uri}`, `{query}`, `{host}`, `{remote_ip}`, `{header.X-Name}`, etc. Only allowed in directives documented as accepting them. Using one anywhere else is a validation error.
 - Types: string, integer, boolean, duration (`ms`, `s`, `m`, `h`, `d`), size (`kb`/`mb`/`gb` = powers of 10; `kib`/`mib`/`gib` = powers of 2), CIDR, regex (RE2, compiled during validation), list, map.
-- `include "path/*.lotus"`: resolved relative to the including file, sorted by name, cycle detection, depth limit 16. Files must not be world-writable (Unix).
+- `include "path/*.conf"`: resolved relative to the including file, sorted by name, cycle detection, depth limit 16. Files must not be world-writable (Unix).
 - Merging: included blocks join the context they're included into. Defining the same singular directive twice in one context is an error, never "last one wins".
 - Unknown directives and directives in the wrong context are errors, with file:line:column and a "did you mean" suggestion.
 - Secrets (`env()`, values of directives marked `secret`) are never printed by `config inspect`, logs or diagnostics.
@@ -582,9 +582,9 @@ Rules:
 
 ```bash
 lotus compat nginx check  /path/to/nginx.conf  [--json]
-lotus compat nginx import /path/to/nginx.conf  -o site.lotus
+lotus compat nginx import /path/to/nginx.conf  -o site.conf
 lotus compat apache check  /path/to/httpd.conf
-lotus compat apache import /path/to/httpd.conf -o site.lotus
+lotus compat apache import /path/to/httpd.conf -o site.conf
 lotus compat htaccess check /var/www/example/.htaccess
 ```
 
@@ -970,7 +970,7 @@ Phase 1–7 work may overlap where items don't depend on each other. A feature i
 # 18. Installation and Distribution
 
 - **Linux:** `.deb`, `.rpm`, static binary; systemd unit with `CAP_NET_BIND_SERVICE`; `lotus` user and group; `/etc/lotus`, `/var/log/lotus`, `/run/lotus`, `/var/lib/lotus` (certificates, cache).
-- **Windows:** signed MSI and zip; service install/remove; Event Log for errors; `%ProgramData%\LOTUS` for config, logs and data.
+- **Windows:** signed MSI and zip; service install/remove; Event Log for errors; `%ProgramFiles%\Lotus` for config, logs and data.
 - **FreeBSD:** port/pkg; `rc.d` script; `/usr/local/etc/lotus`.
 
 Installers never overwrite existing web server configuration. LOTUS runs alongside Nginx and Apache on different listeners. Package upgrades keep user configuration and run `lotus config validate` before restarting.
@@ -1066,7 +1066,7 @@ The project puts correctness, security, reliability and measurable performance a
 
 | Area | Change | Section |
 |---|---|---|
-| Name | Product renamed from "LWS — Laika Web Server" to **LOTUS — Laika Optimized Transport & Unified Server**. The binary is `lotus`, the module `github.com/laikait/lotus`, configuration files use the `.lotus` extension and `lotus_config_version`, diagnostic codes start with `LOTUS-CFG-`, and the control protocol is `lotus.control.v1`. | all |
+| Name | Product renamed from "LWS — Laika Web Server" to **LOTUS — Laika Optimized Transport & Unified Server**. The binary is `lotus`, the module `github.com/laikait/lotus`, configuration files use the `.conf` extension and `lotus_config_version`, diagnostic codes start with `LOTUS-CFG-`, and the control protocol is `lotus.control.v1`. | all |
 | Protocol layer | States that `net/http`, `crypto/tls` and `quic-go` are the protocol layer; removed `protocol/http1`, `protocol/http2` | §1.1, §12 |
 | Positioning | Added differentiators vs Caddy and the others; added non-goals | §1.2, §1.4 |
 | Platforms | Tier model; Linux Tier 1, FreeBSD/Windows Tier 2 at 1.0; platform difference table | §2 |

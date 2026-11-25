@@ -128,7 +128,7 @@ Differences, on purpose:
 
 | Draft | Implementation | Why |
 |---|---|---|
-| Windows: named pipe `\\.\pipe\lotus-control` | Windows: a Unix-domain socket at `%ProgramData%\LOTUS\control.sock` | Go's standard library supports Unix sockets on Windows 10 and later; a named pipe server needs a third-party package. Access control is the file ACL of the socket's directory. Checking those ACLs, and client identity, need the Windows security API and are not done yet. |
+| Windows: named pipe `\\.\pipe\lotus-control` | Windows: a Unix-domain socket at `%ProgramFiles%\Lotus\control.sock` | Go's standard library supports Unix sockets on Windows 10 and later; a named pipe server needs a third-party package. Access control is the file ACL of the socket's directory. Checking those ACLs, and client identity, need the Windows security API and are not done yet. |
 | Socket mode `0660`, group `lotus-admin` | Mode `0600` (owner only) | Group access belongs with roles. Until the peer's identity is checked, owner-only is the safe default. |
 | Roles `operator` and `viewer` | Every client that can open the socket is `operator`; `control { viewer_group }` is refused at start | A viewer role needs the peer's identity (`SO_PEERCRED`, `getpeereid`, the Windows token). Linux reads it for the audit log; the role decision is not built. |
 | Refuse to start if the directory is writable by others | Same, on Unix: group- or world-writable directories are refused unless sticky, and a directory owned by another user (not root) is refused. Missing directories are created with mode `0750`. | Windows: see above. |

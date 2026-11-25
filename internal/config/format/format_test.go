@@ -96,7 +96,7 @@ func shape(f *ast.File) string {
 
 func mustFormat(t *testing.T, src string) string {
 	t.Helper()
-	out, _, err := Source("t.lotus", []byte(src))
+	out, _, err := Source("t.conf", []byte(src))
 	if err != nil {
 		t.Fatalf("%v\n%s", err, src)
 	}
@@ -226,7 +226,7 @@ func TestSemicolonsAndEmptyBlocks(t *testing.T) {
 }
 
 func TestSyntaxErrorsAreRefused(t *testing.T) {
-	_, diags, err := Source("t.lotus", []byte("server {\n  listen\n"))
+	_, diags, err := Source("t.conf", []byte("server {\n  listen\n"))
 	if err != ErrSyntax || len(diags) == 0 {
 		t.Errorf("%v %v", err, diags)
 	}
@@ -256,7 +256,7 @@ func checkStable(t *testing.T, name, src string) {
 
 func TestFixturesAndExamplesAreStable(t *testing.T) {
 	var files []string
-	for _, pat := range []string{"../../../tests/fixtures/config/valid/*.lotus", "../../../tests/fixtures/config/semantic/*.lotus", "../../../configs/examples/*.lotus", "../../../configs/examples/*/*.lotus"} {
+	for _, pat := range []string{"../../../tests/fixtures/config/valid/*.conf", "../../../tests/fixtures/config/semantic/*.conf", "../../../configs/examples/*.conf", "../../../configs/examples/*/*.conf"} {
 		m, _ := filepath.Glob(pat)
 		files = append(files, m...)
 	}
@@ -277,7 +277,7 @@ func FuzzFormat(f *testing.F) {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, src string) {
-		checkStable(t, "fuzz.lotus", src)
+		checkStable(t, "fuzz.conf", src)
 	})
 }
 

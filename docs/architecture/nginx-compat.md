@@ -29,9 +29,9 @@ so the result can be reviewed in one place, in the file you are going to edit an
 
 The translation is always a file `lotus config validate` accepts. A test generates thousands of random Nginx configurations, odd values included, and checks that. Another runs a translated configuration in a real LOTUS server and compares its answers with what Nginx gives (location precedence, `try_files`, `rewrite`, `return`, `if`, `deny`, proxying, error pages, `gzip`, rate limits).
 
-Without `-o` the configuration goes to standard output and the report to standard error, so `lotus compat nginx convert nginx.conf > site.lotus` works. With `-o file` the report goes to standard output; an existing file is not overwritten without `--force`. `--json` prints one JSON document (the configuration, the counts and every issue).
+Without `-o` the configuration goes to standard output and the report to standard error, so `lotus compat nginx convert nginx.conf > site.conf` works. With `-o file` the report goes to standard output; an existing file is not overwritten without `--force`. `--json` prints one JSON document (the configuration, the counts and every issue).
 
-After converting, run `lotus config validate site.lotus`, then `lotus config explain site.lotus http://example.com/some/url` for the URLs that matter: it shows which route, rewrite and file a request gets, without sending it.
+After converting, run `lotus config validate site.conf`, then `lotus config explain site.conf http://example.com/some/url` for the URLs that matter: it shows which route, rewrite and file a request gets, without sending it.
 
 ## What is translated
 

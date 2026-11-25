@@ -14,7 +14,7 @@ lotus service uninstall
 
 **FreeBSD.** `lotus service unit` prints an `rc.d` script; save it as `/usr/local/etc/rc.d/lotus`, make it executable and set `lotus_enable="YES"` in `/etc/rc.conf`.
 
-**Windows.** In an administrator shell, `lotus service install --config C:\ProgramData\LOTUS\main.lotus` registers the `LOTUS` service: starts at boot, restarts after a crash (after 2 s, 10 s, then a minute). Start it with `net start LOTUS`. Under the service manager the server's output goes to `C:\ProgramData\LOTUS\logs\lotus.log` (a service has no console), a stop request from the manager is a graceful stop, and `lotus reload` / `lotus status` work as on any platform. PHP through `php_backend { command ... }` needs no PHP-FPM (`docs/architecture/php.md`).
+**Windows.** In an administrator shell, `lotus service install --config C:\Program Files\Lotus\main.conf` registers the `LOTUS` service: starts at boot, restarts after a crash (after 2 s, 10 s, then a minute). Start it with `net start LOTUS`. Under the service manager the server's output goes to `C:\Program Files\Lotus\logs\lotus.log` (a service has no console), a stop request from the manager is a graceful stop, and `lotus reload` / `lotus status` work as on any platform. PHP through `php_backend { command ... }` needs no PHP-FPM (`docs/architecture/php.md`).
 
 `install` never starts the service and never creates accounts or directories outside the one file or registration it describes.
 

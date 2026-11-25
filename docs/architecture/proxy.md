@@ -37,7 +37,7 @@ server {
 }
 ```
 
-See `configs/examples/proxy.lotus`, and `lotus config docs` for every directive.
+See `configs/examples/proxy.conf`, and `lotus config docs` for every directive.
 
 A route either proxies or serves files: `proxy` with `try_files` or `php` in the
 same route is an error. `rewrite` rules of the route still run first, and the

@@ -228,7 +228,7 @@ server {
     }
 }
 `, port, filepath.ToSlash(filepath.Join(dir, "control.sock")), bp, filepath.ToSlash(www))
-	cfgPath := filepath.Join(dir, "bench.lotus")
+	cfgPath := filepath.Join(dir, "bench.conf")
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		e.stop()
 		return nil, err

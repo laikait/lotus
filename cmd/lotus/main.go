@@ -48,6 +48,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cmdLogs(args[1:], stdout, stderr)
 	case "service":
 		return cmdService(args[1:], stdout, stderr)
+	case "admin":
+		return cmdAdmin(args[1:], stdout, stderr)
 	case "site":
 		return cmdSite(args[1:], stdout, stderr)
 	case "compat":
@@ -108,6 +110,8 @@ Commands:
   status [--json]             Show the running server's state
   certs [--json] [--warn-days N]
                               List the certificates in use and when they expire
+  admin passwd [--role admin|viewer] <name>
+                              Add a web admin account or change its password; also: admin users
   site add [--root DIR] [--aliases A,B] <name>
                               Add a site (a file in the sites.d folder); also: site list, site remove <name>
   cache status [--zone NAME] [--json]

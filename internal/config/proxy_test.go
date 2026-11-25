@@ -109,7 +109,7 @@ func TestUpstreamConfigurationErrors(t *testing.T) {
 		"duplicate backend": {`upstream "x" { backend "http://h:1"
  backend "http://h:1" }`, "", ""},
 	} {
-		_, diags := Check("main.lotus", optsFor(map[string]string{"main.lotus": portable(cfg(tc.src))}))
+		_, diags := Check("main.conf", optsFor(map[string]string{"main.conf": portable(cfg(tc.src))}))
 		errs := errorsOf(diags)
 		if len(errs) == 0 {
 			t.Errorf("%s: accepted", name)
@@ -132,12 +132,12 @@ func TestUpstreamConfigurationErrors(t *testing.T) {
 
 func TestTenantCannotChooseAnUpstream(t *testing.T) {
 	files := map[string]string{
-		"main.lotus": portable(cfg(`upstream "x" { backend "http://h" }
+		"main.conf": portable(cfg(`upstream "x" { backend "http://h" }
 site "a" { root "/r"
-  include "tenant.lotus" }`)),
-		"tenant.lotus": `route "/" { proxy "x" }`,
+  include "tenant.conf" }`)),
+		"tenant.conf": `route "/" { proxy "x" }`,
 	}
-	_, diags := Check("main.lotus", optsFor(files))
+	_, diags := Check("main.conf", optsFor(files))
 	if !strings.Contains(format(diags), diag.CodeTenantBoundary) {
 		t.Errorf("a tenant file chose an upstream:\n%s", format(diags))
 	}

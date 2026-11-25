@@ -34,13 +34,13 @@ server {
 
 At start LOTUS gets a certificate for `example.com` and one for
 `www.example.com` (each name has its own certificate), keeps using them across
-restarts, and renews each about 30 days before it expires. See `configs/examples/acme.lotus`.
+restarts, and renews each about 30 days before it expires. See `configs/examples/acme.conf`.
 
 | Directive | Meaning |
 |---|---|
 | `email` | contact address registered with the CA |
 | `ca` | ACME directory URL; default is Let's Encrypt production. Use the staging URL (`https://acme-staging-v02.api.letsencrypt.org/directory`) while testing |
-| `storage` | where the account key, certificates and private keys are kept; default `/var/lib/lotus/certs` (`%ProgramData%\lotus\certs` on Windows). Created readable by the LOTUS user only |
+| `storage` | where the account key, certificates and private keys are kept; default `/var/lib/lotus/certs` (`%ProgramFiles%\Lotus\certs` on Windows). Created readable by the LOTUS user only |
 | `challenges` | `[ "http-01", "tls-alpn-01" ]` by default, plus `"dns-01"` when there is a `dns` block; use one when the other ports are closed |
 | `dns` | how the record of a DNS-01 validation is published; see below |
 | `http_port`, `tls_alpn_port` | the ports the CA connects to, if not 80 and 443 (a port forward) |
@@ -128,7 +128,7 @@ tls {
 site "example.com" { aliases [ "*.example.com" ] ... }
 ```
 
-See `configs/examples/acme-wildcard.lotus`. With a `dns` block LOTUS also offers
+See `configs/examples/acme-wildcard.conf`. With a `dns` block LOTUS also offers
 DNS-01 for ordinary names; the CA picks. To use DNS only, add
 `challenges [ "dns-01" ]`.
 

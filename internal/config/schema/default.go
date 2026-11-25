@@ -220,6 +220,13 @@ func buildDefault() *Registry {
 			d.Validate = validateMetrics
 			return d
 		}(),
+		func() *Directive {
+			d := container("admin", CtxAdmin,
+				"The web admin: a login page and a dashboard to manage the server, on a listener of its own. Off unless this block is present.",
+				"Whoever signs in to the admin can change what the server does. Keep it on a loopback address, or give it a certificate and an allow list. Accounts are made with `lotus admin passwd`.").withForbidden()
+			d.Validate = validateAdmin
+			return d
+		}(),
 		compression,
 		container("control", CtxControl, "Settings for the local control channel used by the lotus command.", "Anyone who can connect to the control channel can reload or stop the server.").withForbidden(),
 	).Required = []string{"listen"}
@@ -296,7 +303,7 @@ func buildDefault() *Registry {
 			"Use a staging CA while testing to avoid production rate limits."),
 		scalar("eab_key_id", "id", String(), "none",
 			"External account binding key ID, for CAs that require it.", "Treat as a credential."),
-		scalar("storage", "path", Path(), "/var/lib/lotus/certs (Windows: %ProgramData%\\lotus\\certs)",
+		scalar("storage", "path", Path(), "/var/lib/lotus/certs (Windows: %ProgramFiles%\\Lotus\\certs)",
 			"Directory for the ACME account key, certificates and their private keys. Created with access for the LOTUS user only.",
 			"Everything in it is secret. Anyone who can read it can impersonate your sites. Back it up: lost certificates are re-issued, but CAs limit how often."),
 		scalar("ca_root", "path", Path(), "none",
@@ -760,6 +767,29 @@ func buildDefault() *Registry {
 		},
 	).Required = []string{"address"}
 
+	// ---- admin ----
+
+	r.Define(CtxAdmin,
+		scalar("address", "address", Address(HostPort), "none",
+			"Address to listen on, as host:port. 127.0.0.1:7080 keeps the admin on this computer.",
+			"A non-loopback address needs certificate and certificate_key."),
+		scalar("users_file", "path", Path(), "admin-users.txt, next to the main configuration file",
+			"File with the admin accounts (name, role and password hash). Made and changed with `lotus admin passwd`.",
+			"The file holds password hashes, not passwords; keep it readable by the LOTUS service only."),
+		scalar("session_ttl", "duration", Duration(time.Minute), "8h",
+			"How long a sign-in lasts before the admin asks for the password again.", "A short time limits what a stolen session cookie can do."),
+		scalar("certificate", "path", Path(), "none",
+			"PEM certificate chain for the admin listener. With certificate_key it makes the listener HTTPS.", "None."),
+		scalar("certificate_key", "path", Path(), "none",
+			"PEM private key for the admin listener.", "The key must be readable only by the LOTUS service."),
+		&Directive{
+			Name: "allow", Card: Single, Args: []Arg{{Name: "networks", Type: List(CIDR(), 1)}}, TenantForbidden: true,
+			Since: since, Default: "any",
+			Description: "If set, only clients in these networks may reach the admin; others get 403. Checked against the connection's address (not X-Forwarded-For).",
+			Security:    "Without allow, anyone who can reach the address sees the sign-in page.",
+		},
+	).Required = []string{"address"}
+
 	// ---- control ----
 
 	r.Define(CtxControl,
@@ -841,6 +871,37 @@ func validateMetrics(d *ast.Directive, rep Reporter) {
 		rep.Error(a.Pos, diag.CodeInvalidCombination,
 			"the metrics listener is reachable from the network but nothing protects it",
 			"add bearer_token or allow, or listen on 127.0.0.1")
+	}
+}
+
+// validateAdmin checks an admin block: the certificate and its key come as a
+// pair, and a listener that isn't on a loopback address must use them.
+func validateAdmin(d *ast.Directive, rep Reporter) {
+	cert, key := child(d, "certificate"), child(d, "certificate_key")
+	if (cert == nil) != (key == nil) {
+		pos := d.Pos
+		if cert != nil {
+			pos = cert.Pos
+		} else if key != nil {
+			pos = key.Pos
+		}
+		rep.Error(pos, diag.CodeInvalidCombination, "certificate and certificate_key go together", "set both, or neither")
+	}
+	a := child(d, "address")
+	if a == nil || len(a.Args) != 1 {
+		return
+	}
+	host, _, err := net.SplitHostPort(strDirective(a.Args[0]))
+	if err != nil {
+		return // the type check reports it
+	}
+	if ip, perr := netip.ParseAddr(host); host == "localhost" || (perr == nil && ip.IsLoopback()) {
+		return
+	}
+	if cert == nil {
+		rep.Error(a.Pos, diag.CodeInvalidCombination,
+			"the admin is reachable from the network without HTTPS",
+			"add certificate and certificate_key, or listen on 127.0.0.1")
 	}
 }
 

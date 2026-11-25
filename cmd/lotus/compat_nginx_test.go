@@ -53,7 +53,7 @@ func TestCompatNginxConvertCleanConfiguration(t *testing.T) {
 		t.Errorf("the report goes to stderr:\n%s", errOut)
 	}
 	// What was written is a configuration LOTUS accepts.
-	cfg := filepath.Join(t.TempDir(), "out.lotus")
+	cfg := filepath.Join(t.TempDir(), "out.conf")
 	if err := os.WriteFile(cfg, []byte(out), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestCompatNginxConvertReportsWhatNeedsReview(t *testing.T) {
 
 func TestCompatNginxConvertWritesAFile(t *testing.T) {
 	src := writeNginx(t, cleanNginx)
-	dst := filepath.Join(t.TempDir(), "site.lotus")
+	dst := filepath.Join(t.TempDir(), "site.conf")
 	code, out, errOut := runCLI("compat", "nginx", "convert", "-o", dst, src)
 	if code != exitOK || errOut != "" || !strings.Contains(out, "written to "+dst) {
 		t.Fatalf("code=%d\nstdout=%s\nstderr=%s", code, out, errOut)

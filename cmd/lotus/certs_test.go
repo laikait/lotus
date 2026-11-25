@@ -196,7 +196,7 @@ server {
     }
 }
 `, addr, filepath.ToSlash(sock), filepath.ToSlash(root), filepath.ToSlash(certPath), filepath.ToSlash(keyPath))
-	cfgPath := filepath.Join(dir, "main.lotus")
+	cfgPath := filepath.Join(dir, "main.conf")
 	os.WriteFile(cfgPath, []byte(cfg), 0o644)
 
 	ctx, cancel := context.WithCancel(context.Background())

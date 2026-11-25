@@ -35,15 +35,15 @@ const shutdownTimeout = 30 * time.Second
 func defaultConfigPath() string {
 	switch runtime.GOOS {
 	case "windows":
-		base := os.Getenv("ProgramData")
+		base := os.Getenv("ProgramFiles")
 		if base == "" {
-			base = `C:\ProgramData`
+			base = `C:\Program Files`
 		}
-		return filepath.Join(base, "LOTUS", "main.lotus")
+		return filepath.Join(base, "Lotus", "main.conf")
 	case "freebsd", "openbsd", "netbsd", "dragonfly":
-		return "/usr/local/etc/lotus/main.lotus"
+		return "/usr/local/etc/lotus/main.conf"
 	}
-	return "/etc/lotus/main.lotus"
+	return "/etc/lotus/main.conf"
 }
 
 // cmdStart runs the server in the foreground until it receives SIGINT or
@@ -149,15 +149,25 @@ func runServer(ctx context.Context, args []string, stdout, stderr io.Writer, rea
 		_ = srv.Shutdown(context.Background())
 		return exitRuntime
 	}
+	var adm io.Closer // the web admin, when the configuration has an admin block
 	closeControl := func() {
 		if ctl != nil {
 			ctl.Close()
+		}
+		if adm != nil {
+			adm.Close()
 		}
 	}
 
 	if err := srv.Start(); err != nil {
 		closeControl()
 		fmt.Fprintf(stderr, "lotus: cannot start: %v\n", err)
+		return exitRuntime
+	}
+	if adm, err = a.openAdmin(cfg); err != nil {
+		closeControl()
+		_ = srv.Shutdown(context.Background())
+		fmt.Fprintf(stderr, "lotus: admin: %v\n", err)
 		return exitRuntime
 	}
 	log.Info("started", "config", path, "sites", len(cfg.Sites), "listeners", len(cfg.Listeners))

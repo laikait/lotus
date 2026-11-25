@@ -8,6 +8,7 @@ Every directive LOTUS understands, generated from the same registry the validato
 
 ```text
 server
+    admin
     cache
     compression
     control
@@ -43,10 +44,11 @@ A directive that appears in several places (for example `compression`, `cache` o
 |---|---|---|
 | [`access`](access.md) | File that receives the access log. | `logs` |
 | [`acme`](acme.md) | Automatic certificate issuance and renewal through ACME (for example Let's Encrypt). | `tls` |
-| [`address`](address.md) | Address to listen on, as host:port, [ipv6]:port or :port. | `listen`, `metrics` |
+| [`address`](address.md) | Address to listen on, as host:port. | `admin`, `listen`, `metrics` |
+| [`admin`](admin.md) | The web admin: a login page and a dashboard to manage the server, on a listener of its own. | `server` |
 | [`algorithms`](algorithms.md) | The codings LOTUS may use, most preferred first. | `compression` |
 | [`aliases`](aliases.md) | Additional hostnames served by this site. | `site` |
-| [`allow`](allow.md) | If set, only clients in these networks may read the metrics; others get 403. | `metrics` |
+| [`allow`](allow.md) | If set, only clients in these networks may reach the admin; others get 403. | `admin`, `metrics` |
 | [`api_token`](api_token.md) | Cloudflare API token with Zone.DNS:Edit (and Zone:Read unless limited to one zone). | `dns` |
 | [`backend`](backend.md) | A server that requests are sent to: http://host:port, https://host:port or unix:/path. | `upstream` |
 | [`balance`](balance.md) | How requests are spread over the backends. | `upstream` |
@@ -56,8 +58,8 @@ A directive that appears in several places (for example `compression`, `cache` o
 | [`ca`](ca.md) | ACME directory URL of the certificate authority. | `acme` |
 | [`ca_root`](ca_root.md) | PEM file with the root certificate of a private or test CA (such as Pebble), trusted only for talking to the ACME server. | `acme` |
 | [`cache`](cache.md) | Keeps the responses of this route's proxy or PHP in the named cache zone and answers repeated GET requests from there. | `route`, `server` |
-| [`certificate`](certificate.md) | PEM certificate chain file for tls manual. | `site` |
-| [`certificate_key`](certificate_key.md) | PEM private key file that belongs to certificate. | `site` |
+| [`certificate`](certificate.md) | PEM certificate chain for the admin listener. | `admin`, `site` |
+| [`certificate_key`](certificate_key.md) | PEM private key for the admin listener. | `admin`, `site` |
 | [`challenges`](challenges.md) | Which validations LOTUS offers the CA. | `acme` |
 | [`client_ip`](client_ip.md) | True if the client IP is in one of the networks (with !~: if it is in none of them). | `match` |
 | [`command`](command.md) | Program for the exec provider. | `dns`, `php_backend` |
@@ -146,6 +148,7 @@ A directive that appears in several places (for example `compression`, `cache` o
 | [`scheme`](scheme.md) | True if the request used this scheme. | `match` |
 | [`security_headers`](security_headers.md) | Response headers added to every response, written as "Name" = "value" entries. | `site` |
 | [`server`](server.md) | Top-level container for listeners, TLS settings, PHP backends and sites. | `root` |
+| [`session_ttl`](session_ttl.md) | How long a sign-in lasts before the admin asks for the password again. | `admin` |
 | [`site`](site.md) | A virtual host. | `server` |
 | [`socket`](socket.md) | Path of the control socket (named pipe name on Windows). | `control` |
 | [`stale_if_error`](stale_if_error.md) | How long past its lifetime an entry may still be served when the backend fails (500, 502, 503, 504 or no answer). | `route_cache` |
@@ -165,6 +168,7 @@ A directive that appears in several places (for example `compression`, `cache` o
 | [`types`](types.md) | The media types that are compressed: exact ("application/json") or a whole family ("text/*"). | `compression` |
 | [`unhealthy_threshold`](unhealthy_threshold.md) | Failed probes in a row that take a backend out. | `health_check` |
 | [`upstream`](upstream.md) | A group of backend servers that routes send requests to with the proxy directive, with load balancing and health checks. | `server` |
+| [`users_file`](users_file.md) | File with the admin accounts (name, role and password hash). | `admin` |
 | [`viewer_group`](viewer_group.md) | OS group whose members get read-only access to the control channel. | `control` |
 | [`weight`](weight.md) | Share of requests relative to the other backends (round_robin, ip_hash, uri_hash, random and least_conn). | `backend` |
 | [`write_timeout`](write_timeout.md) | Time allowed to send a response. | `limits` |

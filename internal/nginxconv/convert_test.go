@@ -50,7 +50,7 @@ func convert(t *testing.T, conf string, extra ...map[string]string) *Result {
 
 func checkValid(t *testing.T, config_ string) {
 	t.Helper()
-	out := filepath.Join(t.TempDir(), "out.lotus")
+	out := filepath.Join(t.TempDir(), "out.conf")
 	if err := os.WriteFile(out, []byte(config_), 0o600); err != nil {
 		t.Fatal(err)
 	}

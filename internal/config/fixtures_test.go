@@ -23,7 +23,7 @@ func fixtureOptions() loader.Options {
 }
 
 func TestSemanticValidFixtures(t *testing.T) {
-	files, _ := filepath.Glob(filepath.Join(semanticDir, "valid", "*.lotus"))
+	files, _ := filepath.Glob(filepath.Join(semanticDir, "valid", "*.conf"))
 	if len(files) == 0 {
 		t.Fatal("no valid semantic fixtures found")
 	}
@@ -38,12 +38,12 @@ func TestSemanticValidFixtures(t *testing.T) {
 }
 
 func TestSemanticValidFixtureWithIncludesReadsAllFiles(t *testing.T) {
-	res, diags := Check(filepath.Join(semanticDir, "valid", "with-includes.lotus"), fixtureOptions())
+	res, diags := Check(filepath.Join(semanticDir, "valid", "with-includes.conf"), fixtureOptions())
 	if res == nil {
 		t.Fatalf("diags:\n%s", format(diags))
 	}
 	if len(res.Files) != 3 {
-		t.Errorf("files read = %v, want root + shop.lotus + shop-routes.inc", res.Files)
+		t.Errorf("files read = %v, want root + shop.conf + shop-routes.inc", res.Files)
 	}
 }
 
@@ -52,7 +52,7 @@ var expectRe = regexp.MustCompile(`^# expect: (LOTUS-CFG-\d{4}) (\d+):(\d+)$`)
 // Invalid fixtures begin with `# expect: CODE line:col` lines. The errors must
 // match exactly and in order. (The file of an error is not checked.)
 func TestSemanticInvalidFixtures(t *testing.T) {
-	files, _ := filepath.Glob(filepath.Join(semanticDir, "invalid", "*.lotus"))
+	files, _ := filepath.Glob(filepath.Join(semanticDir, "invalid", "*.conf"))
 	if len(files) == 0 {
 		t.Fatal("no invalid semantic fixtures found")
 	}

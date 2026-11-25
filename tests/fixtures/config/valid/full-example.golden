@@ -93,4 +93,4 @@ File
               Directive "php_deny" @57:13
                 Bool true @57:22
           Include @60:9 [blank]
-            String @60:17 [text:"sites.d/example/*.lotus"]
+            String @60:17 [text:"sites.d/example/*.conf"]

@@ -114,7 +114,7 @@ func TestCacheErrors(t *testing.T) {
  cache "pages" }`, "", "cache"},
 		"unknown setting": {`cache "pages" { evict_after 5m }`, `route "/" { proxy "app" }`, "", "evict_after"},
 	} {
-		_, diags := Check("main.lotus", optsFor(map[string]string{"main.lotus": cacheConf("    "+c.server, c.site)}))
+		_, diags := Check("main.conf", optsFor(map[string]string{"main.conf": cacheConf("    "+c.server, c.site)}))
 		out := format(diags)
 		if len(errorsOf(diags)) == 0 || (c.code != "" && !strings.Contains(out, c.code)) || !strings.Contains(out, c.text) {
 			t.Errorf("%s: want %s %q in:\n%s", name, c.code, c.text, out)
@@ -125,15 +125,15 @@ func TestCacheErrors(t *testing.T) {
 func TestCacheIsAdminOnly(t *testing.T) {
 	for name, files := range map[string]map[string]string{
 		"zone in a tenant file": {
-			"main.lotus":   cacheConf("", `include "tenant.lotus"`),
-			"tenant.lotus": `cache "mine"`,
+			"main.conf":   cacheConf("", `include "tenant.conf"`),
+			"tenant.conf": `cache "mine"`,
 		},
 		"cache in a tenant route": {
-			"main.lotus":   cacheConf(`cache "pages"`, `include "tenant.lotus"`),
-			"tenant.lotus": "route \"/x\" { proxy \"app\"\n cache \"pages\" }",
+			"main.conf":   cacheConf(`cache "pages"`, `include "tenant.conf"`),
+			"tenant.conf": "route \"/x\" { proxy \"app\"\n cache \"pages\" }",
 		},
 	} {
-		_, diags := Check("main.lotus", optsFor(files))
+		_, diags := Check("main.conf", optsFor(files))
 		if len(errorsOf(diags)) == 0 {
 			t.Errorf("%s: a tenant file used the cache", name)
 		}

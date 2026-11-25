@@ -11,7 +11,7 @@ storage <path>
 | **Contexts** | `acme` |
 | **Arguments** | `path`: path |
 | **How often** | at most once |
-| **Default** | /var/lib/lotus/certs (Windows: %ProgramData%\lotus\certs) |
+| **Default** | /var/lib/lotus/certs (Windows: %ProgramFiles%\Lotus\certs) |
 | **Request-time placeholders** | no |
 | **Who can set it** | anyone who can edit the file |
 | **Since** | LOTUS 0.1, config language 1 |

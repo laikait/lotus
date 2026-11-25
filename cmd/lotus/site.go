@@ -17,7 +17,7 @@ import (
 
 // siteIncludeLine is what the main configuration needs, inside its server block,
 // for the files made by "lotus site add" to be read.
-const siteIncludeLine = `include "sites.d/*.lotus"`
+const siteIncludeLine = `include "sites.d/*.conf"`
 
 var siteNameRe = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$`)
 
@@ -50,7 +50,7 @@ func defaultSiteRoot(name string) string {
 func sitesDir(cfg string) string { return filepath.Join(filepath.Dir(cfg), "sites.d") }
 
 // siteFile is where the site "name" is kept; the name is checked before it is used.
-func siteFile(cfg, name string) string { return filepath.Join(sitesDir(cfg), name+".lotus") }
+func siteFile(cfg, name string) string { return filepath.Join(sitesDir(cfg), name+".conf") }
 
 func cmdSiteAdd(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("lotus site add", flag.ContinueOnError)
@@ -130,14 +130,14 @@ func cmdSiteList(args []string, stdout, stderr io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
-	files, _ := filepath.Glob(filepath.Join(sitesDir(*cfg), "*.lotus"))
+	files, _ := filepath.Glob(filepath.Join(sitesDir(*cfg), "*.conf"))
 	sort.Strings(files)
 	if len(files) == 0 {
 		fmt.Fprintf(stdout, "no sites in %s (add one with: lotus site add <name>)\n", sitesDir(*cfg))
 		return exitOK
 	}
 	for _, f := range files {
-		fmt.Fprintln(stdout, strings.TrimSuffix(filepath.Base(f), ".lotus"))
+		fmt.Fprintln(stdout, strings.TrimSuffix(filepath.Base(f), ".conf"))
 	}
 	return exitOK
 }

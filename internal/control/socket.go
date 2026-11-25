@@ -1,12 +1,14 @@
 package control
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"syscall"
 	"time"
 )
 
@@ -16,11 +18,11 @@ import (
 func DefaultSocketPath() string {
 	switch runtime.GOOS {
 	case "windows":
-		base := os.Getenv("ProgramData")
+		base := os.Getenv("ProgramFiles")
 		if base == "" {
-			base = `C:\ProgramData`
+			base = `C:\Program Files`
 		}
-		return filepath.Join(base, "LOTUS", "control.sock")
+		return filepath.Join(base, "Lotus", "control.sock")
 	case "darwin":
 		return filepath.Join(os.TempDir(), "lotus", "control.sock")
 	}
@@ -99,6 +101,10 @@ func removeStale(path string) error {
 	if err == nil {
 		conn.Close()
 		return fmt.Errorf("another lotus is already listening on %s", path)
+	}
+	// A connection refused for lack of permission is not a dead socket: a server run by another user may own it.
+	if errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.EACCES) {
+		return fmt.Errorf("control socket %s exists but this user may not connect to it; not removing it", path)
 	}
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("removing the stale control socket: %w", err)

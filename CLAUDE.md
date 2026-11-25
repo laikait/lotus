@@ -1,6 +1,6 @@
 # LOTUS: notes for Claude (and for a new machine)
 
-LOTUS is a web server written in Go: module `github.com/laikait/lotus`, binary `lotus`, config files `.lotus`. Product name: **LOTUS** (Laika Optimized Transport & Unified Server). Never write "LWS" or "Laika Web Server" in code, docs or messages; the project was renamed before release.
+LOTUS is a web server written in Go: module `github.com/laikait/lotus`, binary `lotus`, config files `.conf`. Product name: **LOTUS** (Laika Optimized Transport & Unified Server). Never write "LWS" or "Laika Web Server" in code, docs or messages; the project was renamed before release.
 
 ## How to work with the owner
 
@@ -19,7 +19,7 @@ LOTUS is a web server written in Go: module `github.com/laikait/lotus`, binary `
 - A `.htaccess` subset; Nginx `location` precedence for routing.
 - Extensions: Wasm (wazero) plus out-of-process.
 - ACME through certmagic. Licence Apache-2.0.
-- Windows paths: program `C:\Program Files\Lotus`, config `C:\ProgramData\LOTUS\main.lotus`, web directory `C:\www`. Linux: config `/etc/lotus/main.lotus`, binary `/usr/local/bin/lotus`, web directory `/var/www/public_html` (to be created by the future `.deb`/`.rpm`).
+- Windows paths: program `C:\Program Files\Lotus`, config `C:\Program Files\Lotus\main.conf`, web directory `C:\www`. Linux: config `/etc/lotus/main.conf`, binary `/usr/local/bin/lotus`, web directory `/var/www/public_html` (to be created by the future `.deb`/`.rpm`).
 
 Documents: `docs/architecture/`, `docs/configuration/` (generated directive reference in `docs/configuration/directives/`, made by `make docs`), `docs/roadmap/1.0-checklist.md` (what 1.0 still needs), `docs/benchmarks.md`, `docs/windows-installer.md`, `docs/code-signing.md`.
 
@@ -45,7 +45,9 @@ Done: config language, parser, validator, formatter, migrate; static files, rout
 
 Open items:
 
-1. **Windows service control socket.** After installing the service, `lotus reload` (and `status`, `stop`) from a normal shell says "no running server answered on C:\ProgramData\LOTUS\control.sock". The log says the channel was ready, but the socket file was missing afterwards. Suspected causes: (a) the socket, owned by SYSTEM, can't be reached by a non-administrator, and `internal/control/socket.go` `removeStale` treats a socket it cannot connect to as stale and deletes it (a second `lotus start` would do that); (b) a real bug in how the service creates it. The owner was asked to run `Restart-Service LOTUS; Test-Path C:\ProgramData\LOTUS\control.sock; lotus status` in an Administrator shell. Fix both: make `removeStale` leave sockets it can't connect to because of permissions, and make the CLI say plainly that an Administrator shell is needed. Also decide who may connect (Windows `restrictSocket` is a no-op).
+1. **Windows service control socket (mostly closed 2026-11-26).** The service runs as SYSTEM and its socket gives `Users` read-only, so a normal shell can't connect; `lotus reload` works from an Administrator shell (the owner confirmed). Done: the CLI now prints the real error and says to use an Administrator shell, and `removeStale` leaves a socket it can't connect to because of permissions. Still open: decide who may connect (Windows `restrictSocket` is a no-op; today Administrators and SYSTEM only), and the new CLI message has not been run from a rebuilt exe.
+1b. **`lotus site add|list|remove`** (cmd/lotus/site.go, 2026-11-26): writes `sites.d/NAME.conf` next to the main file, validates, rolls back if invalid; the installer's `main.conf` includes `sites.d/*.conf`. Needs a docs page and a rebuilt installer run.
+1c. **Web admin** (plan: C:\Users\Showket Ahmed\.claude\plans\ok-i-want-to-sorted-eclipse.md; docs/architecture/admin.md). Step 1 built 2026-11-26: `admin { address ... }` block, `internal/admin` (argon2id accounts, sessions, CSRF, lockout, embedded UI, dashboard + Reload), `lotus admin passwd|users`, installer wizard page + Start Menu entry. Checked: unit tests and a run of the real binary over HTTP; the installer was compiled but never run; the page was never opened in a browser; HTTPS mode not run. Next steps: 2 `internal/sitefile` + Sites pages (refactor `cmd/lotus/site.go`), 3 certificates/cache/PHP/server pages + backend methods (`lotus.cert.renew`, `lotus.log.tail`, `lotus.php.status`), 4 logs + configuration editor, 5 docs/checklist item 15.
 2. The installer has not been rebuilt and run since the changes of 2026-11-26 (path `Lotus`, `C:\www`, `PATH` option, logo).
 3. `SECURITY.md` needs a public contact e-mail (not a personal one) from the owner.
 4. SignPath Foundation application for code signing was to be submitted by the owner; after approval set the repository variable `SIGNPATH_ORGANIZATION_ID` and the secret `SIGNPATH_API_TOKEN` (see `docs/code-signing.md`).

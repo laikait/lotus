@@ -1,2 +1,2 @@
-c:\xampp\htdocs\lws\main.lotus: error [LOTUS-CFG-0101]: cannot read configuration file: no such file
-c:\xampp\htdocs\lws\main.lotus: configuration is invalid; not starting
+c:\xampp\htdocs\lws\main.conf: error [LOTUS-CFG-0101]: cannot read configuration file: no such file
+c:\xampp\htdocs\lws\main.conf: configuration is invalid; not starting

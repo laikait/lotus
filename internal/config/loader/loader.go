@@ -328,7 +328,7 @@ func (l *loader) include(s *ast.Include, c *fileCtx) []ast.Statement {
 	if strings.ContainsAny(filepath.Dir(pattern), meta) {
 		l.diags.ErrorHint(pos, diag.CodeBadIncludePath,
 			"wildcards are only allowed in the file name, not in directory names",
-			`for example "sites.d/*.lotus" is fine, "*/sites.lotus" is not`)
+			`for example "sites.d/*.conf" is fine, "*/sites.conf" is not`)
 		return nil
 	}
 	paths := []string{pattern}

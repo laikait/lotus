@@ -180,7 +180,7 @@ func checkText(text string) (bool, []diag.Diagnostic) {
 		return true, nil // can't check; don't claim a problem
 	}
 	defer os.RemoveAll(dir)
-	p := filepath.Join(dir, "converted.lotus")
+	p := filepath.Join(dir, "converted.conf")
 	if err := os.WriteFile(p, []byte(text), 0o600); err != nil {
 		return true, nil
 	}

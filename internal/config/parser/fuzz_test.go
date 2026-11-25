@@ -14,7 +14,7 @@ import (
 // Run it with: go test ./internal/config/parser -fuzz=FuzzParse -fuzztime=60s
 func FuzzParse(f *testing.F) {
 	for _, dir := range []string{"valid", "invalid"} {
-		files, _ := filepath.Glob(filepath.Join(fixtureDir, dir, "*.lotus"))
+		files, _ := filepath.Glob(filepath.Join(fixtureDir, dir, "*.conf"))
 		for _, path := range files {
 			if src, err := os.ReadFile(path); err == nil {
 				f.Add(src)
@@ -25,7 +25,7 @@ func FuzzParse(f *testing.F) {
 	f.Add([]byte("a {\n\"k\" = 1\n}\r\n"))
 
 	f.Fuzz(func(t *testing.T, src []byte) {
-		file, diags := Parse("fuzz.lotus", src)
+		file, diags := Parse("fuzz.conf", src)
 		for _, d := range diags {
 			if d.Pos.Line < 1 || d.Pos.Col < 1 {
 				t.Fatalf("diagnostic with invalid position: %+v", d)
@@ -36,7 +36,7 @@ func FuzzParse(f *testing.F) {
 		}
 		first := ast.Dump(file)
 
-		file2, diags2 := Parse("fuzz.lotus", src)
+		file2, diags2 := Parse("fuzz.conf", src)
 		if len(diags) != len(diags2) || first != ast.Dump(file2) {
 			t.Fatal("parsing is not deterministic")
 		}

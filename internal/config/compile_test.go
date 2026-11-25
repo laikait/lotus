@@ -18,7 +18,7 @@ import (
 
 func compile(t *testing.T, src string) *model.Config {
 	t.Helper()
-	res, diags := Check("main.lotus", optsFor(map[string]string{"main.lotus": portable(src)}))
+	res, diags := Check("main.conf", optsFor(map[string]string{"main.conf": portable(src)}))
 	if res == nil {
 		t.Fatalf("expected a valid configuration:\n%s", format(diags))
 	}
@@ -302,7 +302,7 @@ site "a.test" { listeners [ "s" ] }`), diag.CodeSiteNoACME, "6:6", "acme"},
 				}
 				return
 			}
-			res, diags := Check("main.lotus", optsFor(map[string]string{"main.lotus": tt.src}))
+			res, diags := Check("main.conf", optsFor(map[string]string{"main.conf": tt.src}))
 			if tt.code == "" {
 				if res == nil {
 					t.Fatalf("unexpected errors:\n%s", format(diags))
@@ -326,7 +326,7 @@ site "a.test" { listeners [ "s" ] }`), diag.CodeSiteNoACME, "6:6", "acme"},
 func TestCompileSkippedWhenValidationFails(t *testing.T) {
 	// Validation errors stop the pipeline, so compile-only errors don't pile up
 	// on top of them.
-	_, diags := Check("main.lotus", optsFor(map[string]string{"main.lotus": cfg(`site "a.test" { tls automatic
+	_, diags := Check("main.conf", optsFor(map[string]string{"main.conf": cfg(`site "a.test" { tls automatic
  rot "x" }`)}))
 	if got := codesOf(diags); len(got) != 1 || got[0] != diag.CodeUnknownDirective {
 		t.Errorf("codes = %v\n%s", got, format(diags))
@@ -334,7 +334,7 @@ func TestCompileSkippedWhenValidationFails(t *testing.T) {
 }
 
 func TestInspectJSONRedactsSecrets(t *testing.T) {
-	res, diags := Check("main.lotus", optsFor(map[string]string{"main.lotus": portable(`lotus_config_version 1
+	res, diags := Check("main.conf", optsFor(map[string]string{"main.conf": portable(`lotus_config_version 1
 let $t = env("SECRET")
 server {
     listen "http" { address "0.0.0.0:80" }
@@ -425,7 +425,7 @@ func TestRelativePathsAreResolvedAgainstTheRootFile(t *testing.T) {
 	want := func(rel string) string { return filepath.Join(root, filepath.FromSlash(rel)) }
 
 	files := map[string]string{
-		"conf/main.lotus": `lotus_config_version 1
+		"conf/main.conf": `lotus_config_version 1
 server {
     listen "http" { address "0.0.0.0:80" }
     listen "tls" { address "0.0.0.0:443"
@@ -442,14 +442,14 @@ server {
  error "logs/a.err" }
         route "/x/" { root "other" }
     }
-    include "sites.d/extra.lotus"
+    include "sites.d/extra.conf"
 }
 `,
 		// Paths in an included file are relative to the ROOT file, not to the include.
-		"conf/sites.d/extra.lotus": `site "b.test" { listeners [ "http" ]
+		"conf/sites.d/extra.conf": `site "b.test" { listeners [ "http" ]
  root "from-include" }`,
 	}
-	res, diags := Check("conf/main.lotus", loader.Options{FS: loader.MemFS{Files: files}, Getenv: testEnv})
+	res, diags := Check("conf/main.conf", loader.Options{FS: loader.MemFS{Files: files}, Getenv: testEnv})
 	if res == nil {
 		t.Fatalf("diags:\n%s", format(diags))
 	}

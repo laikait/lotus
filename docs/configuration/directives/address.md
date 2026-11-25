@@ -2,6 +2,35 @@
 
 <!-- Generated from the directive registry by `make docs`. Do not edit by hand. -->
 
+## In `admin`
+
+```text
+address <address>
+```
+
+| | |
+|---|---|
+| **Arguments** | `address`: address (host:port) |
+| **How often** | at most once |
+| **Default** | none |
+| **Request-time placeholders** | no |
+| **Who can set it** | anyone who can edit the file |
+| **Since** | LOTUS 0.1, config language 1 |
+
+### Description
+
+Address to listen on, as host:port. 127.0.0.1:7080 keeps the admin on this computer.
+
+### Security
+
+A non-loopback address needs certificate and certificate_key.
+
+### Example
+
+```text
+address "127.0.0.1:7080"
+```
+
 ## In `listen`
 
 ```text

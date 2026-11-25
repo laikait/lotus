@@ -7,12 +7,12 @@ import (
 )
 
 func TestSystemdUnit(t *testing.T) {
-	u, err := serviceUnit("linux", serviceParams{Config: "/etc/lotus/main.lotus", User: "www", Binary: "/usr/local/bin/lotus"})
+	u, err := serviceUnit("linux", serviceParams{Config: "/etc/lotus/main.conf", User: "www", Binary: "/usr/local/bin/lotus"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"User=www", "ExecStart=/usr/local/bin/lotus start -config /etc/lotus/main.lotus", "ExecReload=/usr/local/bin/lotus reload",
+		"User=www", "ExecStart=/usr/local/bin/lotus start -config /etc/lotus/main.conf", "ExecReload=/usr/local/bin/lotus reload",
 		"AmbientCapabilities=CAP_NET_BIND_SERVICE", "NoNewPrivileges=true", "ProtectSystem=strict", "RuntimeDirectory=lotus",
 		"Restart=on-failure", "WantedBy=multi-user.target",
 	} {
@@ -23,7 +23,7 @@ func TestSystemdUnit(t *testing.T) {
 }
 
 func TestRCScriptAndOtherSystems(t *testing.T) {
-	u, err := serviceUnit("freebsd", serviceParams{Config: "/usr/local/etc/lotus/main.lotus", User: "lotus", Binary: "/usr/local/bin/lotus"})
+	u, err := serviceUnit("freebsd", serviceParams{Config: "/usr/local/etc/lotus/main.conf", User: "lotus", Binary: "/usr/local/bin/lotus"})
 	if err != nil || !strings.Contains(u, "lotus_enable") || !strings.Contains(u, "/usr/local/bin/lotus start -config") {
 		t.Errorf("%v\n%s", err, u)
 	}
@@ -33,14 +33,14 @@ func TestRCScriptAndOtherSystems(t *testing.T) {
 }
 
 func TestServiceUnitCommand(t *testing.T) {
-	code, out, errOut := runCLI("service", "unit", "--config", "/srv/x.lotus", "--user", "web", "--binary", "/opt/lotus")
+	code, out, errOut := runCLI("service", "unit", "--config", "/srv/x.conf", "--user", "web", "--binary", "/opt/lotus")
 	switch runtime.GOOS {
 	case "linux":
-		if code != exitOK || !strings.Contains(out, "start -config /srv/x.lotus") || !strings.Contains(out, "User=web") {
+		if code != exitOK || !strings.Contains(out, "start -config /srv/x.conf") || !strings.Contains(out, "User=web") {
 			t.Errorf("%d %s %s", code, out, errOut)
 		}
 	case "freebsd":
-		if code != exitOK || !strings.Contains(out, "/srv/x.lotus") {
+		if code != exitOK || !strings.Contains(out, "/srv/x.conf") {
 			t.Errorf("%d %s %s", code, out, errOut)
 		}
 	default:

@@ -66,7 +66,7 @@ func TestMetricsErrors(t *testing.T) {
 		"bad network":          {"metrics { address \"127.0.0.1:9180\"\n allow [ \"not-a-network\" ] }", "", ""},
 		"metrics twice":        {"metrics { address \"127.0.0.1:9180\" }\n metrics { address \"127.0.0.1:9181\" }", "", ""},
 	} {
-		_, diags := Check("main.lotus", optsFor(map[string]string{"main.lotus": metricsConf("    "+tc.block, "")}))
+		_, diags := Check("main.conf", optsFor(map[string]string{"main.conf": metricsConf("    "+tc.block, "")}))
 		out := format(diags)
 		if len(errorsOf(diags)) == 0 || !strings.Contains(out, tc.code) || !strings.Contains(out, tc.text) {
 			t.Errorf("%s: want %s %q in:\n%s", name, tc.code, tc.text, out)
@@ -79,10 +79,10 @@ func TestMetricsErrors(t *testing.T) {
 
 func TestMetricsAreAdminOnly(t *testing.T) {
 	files := map[string]string{
-		"main.lotus":   metricsConf("", `include "tenant.lotus"`),
-		"tenant.lotus": "metrics { address \"127.0.0.1:9\" }",
+		"main.conf":   metricsConf("", `include "tenant.conf"`),
+		"tenant.conf": "metrics { address \"127.0.0.1:9\" }",
 	}
-	_, diags := Check("main.lotus", optsFor(files))
+	_, diags := Check("main.conf", optsFor(files))
 	if len(errorsOf(diags)) == 0 {
 		t.Errorf("a tenant file opened a metrics listener:\n%s", format(diags))
 	}

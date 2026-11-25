@@ -15,7 +15,7 @@ listen "https" {
 }
 ```
 
-See `configs/examples/http3.lotus`. The listener serves HTTP/1.1 and HTTP/2 on
+See `configs/examples/http3.conf`. The listener serves HTTP/1.1 and HTTP/2 on
 TCP port 443 as before, and HTTP/3 on **UDP port 443**. That UDP port must be
 open in the firewall and in any cloud security group; this is the usual reason
 HTTP/3 "doesn't work".

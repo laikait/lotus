@@ -21,7 +21,7 @@ const fixtureDir = "../../../tests/fixtures/config"
 
 // Valid fixtures must parse without diagnostics and match their .golden dump.
 func TestValidFixtures(t *testing.T) {
-	files, err := filepath.Glob(filepath.Join(fixtureDir, "valid", "*.lotus"))
+	files, err := filepath.Glob(filepath.Join(fixtureDir, "valid", "*.conf"))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("no valid fixtures found (err=%v)", err)
 	}
@@ -37,7 +37,7 @@ func TestValidFixtures(t *testing.T) {
 				t.Fatalf("unexpected diagnostics:\n%s", formatDiags(diags))
 			}
 			got := ast.Dump(f)
-			golden := strings.TrimSuffix(path, ".lotus") + ".golden"
+			golden := strings.TrimSuffix(path, ".conf") + ".golden"
 			if *update {
 				if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
 					t.Fatal(err)
@@ -66,7 +66,7 @@ type expectation struct {
 // Invalid fixtures start with `# expect: CODE line:col` lines. The errors the
 // parser reports must match them exactly, in order.
 func TestInvalidFixtures(t *testing.T) {
-	files, err := filepath.Glob(filepath.Join(fixtureDir, "invalid", "*.lotus"))
+	files, err := filepath.Glob(filepath.Join(fixtureDir, "invalid", "*.conf"))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("no invalid fixtures found (err=%v)", err)
 	}

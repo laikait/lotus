@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/laikait/lotus/internal/config/diag"
@@ -64,7 +65,16 @@ func dial(socket string, stderr io.Writer) (*control.Client, int) {
 	c, err := control.Dial(socket, "lotus-cli/"+version.Version)
 	if err != nil {
 		if errors.Is(err, control.ErrUnreachable) {
-			fmt.Fprintf(stderr, "lotus: no running server answered on %s\n  is lotus running? use --control (or LOTUS_CONTROL) if its control socket is elsewhere\n", socket)
+			fmt.Fprintf(stderr, "lotus: no running server answered on %s\n  (%v)\n", socket, err)
+			if _, statErr := os.Lstat(socket); statErr == nil {
+				if runtime.GOOS == "windows" {
+					fmt.Fprintln(stderr, "  The socket is there, so the server is probably running but this shell may not use it.\n  The LOTUS service runs as SYSTEM: open PowerShell with \"Run as administrator\" and try again.")
+				} else {
+					fmt.Fprintln(stderr, "  The socket is there, so the server is probably running but this user may not use it: try again with sudo.")
+				}
+			} else {
+				fmt.Fprintln(stderr, "  is lotus running? use --control (or LOTUS_CONTROL) if its control socket is elsewhere")
+			}
 		} else {
 			fmt.Fprintf(stderr, "lotus: %v\n", err)
 		}

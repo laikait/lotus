@@ -19,7 +19,7 @@ server {
 }
 ```
 
-See `configs/examples/metrics.lotus`. Without a `metrics` block nothing is
+See `configs/examples/metrics.conf`. Without a `metrics` block nothing is
 served. Prometheus then scrapes `http://127.0.0.1:9180/metrics`:
 
 ```yaml

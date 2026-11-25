@@ -30,7 +30,7 @@ type stopCall struct {
 }
 
 func (f *fakeBackend) Status() Status {
-	return Status{Version: "9.9.9", PID: 42, Generation: 3, ConfigFile: "/etc/lotus/main.lotus", Sites: 2,
+	return Status{Version: "9.9.9", PID: 42, Generation: 3, ConfigFile: "/etc/lotus/main.conf", Sites: 2,
 		Listeners: []Listener{{Name: "http", Address: "127.0.0.1:80"}}}
 }
 func (f *fakeBackend) Health() Health { return Health{Status: "ok", Checks: []HealthCheck{}} }
@@ -215,11 +215,11 @@ func TestMethods(t *testing.T) {
 	if r := c.call(`{"jsonrpc":"2.0","id":7,"method":"lotus.logs.reopen"}`); r.Error != nil || !strings.Contains(string(r.Result), `"reopened":2`) {
 		t.Errorf("logs.reopen: %+v %s", r.Error, r.Result)
 	}
-	r = c.call(`{"jsonrpc":"2.0","id":8,"method":"lotus.reload","params":{"config":"/etc/other.lotus"}}`)
+	r = c.call(`{"jsonrpc":"2.0","id":8,"method":"lotus.reload","params":{"config":"/etc/other.conf"}}`)
 	if r.Error != nil || !strings.Contains(string(r.Result), `"generation":4`) {
 		t.Errorf("reload: %+v %s", r.Error, r.Result)
 	}
-	if len(fb.reloaded) != 1 || fb.reloaded[0] != "/etc/other.lotus" {
+	if len(fb.reloaded) != 1 || fb.reloaded[0] != "/etc/other.conf" {
 		t.Errorf("reload path = %v", fb.reloaded)
 	}
 	c.call(`{"jsonrpc":"2.0","id":9,"method":"lotus.reload"}`)

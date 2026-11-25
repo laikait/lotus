@@ -33,6 +33,7 @@ var wrappers = map[schema.Context]wrapper{
 	schema.CtxACME:            {parent: schema.CtxTLS, open: "acme {"},
 	schema.CtxDNS:             {parent: schema.CtxACME, open: "dns {"},
 	schema.CtxMetrics:         {parent: schema.CtxServer, open: "metrics {", defaults: map[string]string{"address": `address "127.0.0.1:9100"`}},
+	schema.CtxAdmin:           {parent: schema.CtxServer, open: "admin {", defaults: map[string]string{"address": `address "127.0.0.1:7080"`}},
 	schema.CtxControl:         {parent: schema.CtxServer, open: "control {"},
 	schema.CtxPHPBackend:      {parent: schema.CtxServer, open: `php_backend "extra" {`},
 	schema.CtxUpstream:        {parent: schema.CtxServer, open: `upstream "extra" {`, defaults: map[string]string{"backend": `backend "http://127.0.0.1:9100"`}, inside: []string{`backend "http://127.0.0.1:9100"`}},
@@ -155,7 +156,7 @@ func TestEveryExampleIsValid(t *testing.T) {
 			}
 			text = wrap(ctx, ex)
 		}
-		path := filepath.Join(t.TempDir(), "example.lotus")
+		path := filepath.Join(t.TempDir(), "example.conf")
 		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 			t.Fatal(err)
 		}

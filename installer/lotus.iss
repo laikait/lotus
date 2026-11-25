@@ -3,7 +3,7 @@
 ;
 ; What it does:
 ;   - installs lotus.exe and the examples under C:\Program Files\Lotus
-;   - creates the configuration C:\ProgramData\LOTUS\main.lotus and the web
+;   - creates the configuration C:\Program Files\Lotus\main.conf and the web
 ;     directory C:\www with a sample page, but never replaces them on an upgrade
 ;     and never deletes them on uninstall
 ;   - registers the "LOTUS" Windows service (start at boot) and starts it
@@ -56,31 +56,36 @@ Source: "{#SourceExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\configs\examples\*"; DestDir: "{app}\examples"; Flags: ignoreversion recursesubdirs
-Source: "main.lotus"; DestDir: "{commonappdata}\LOTUS"; Flags: onlyifdoesntexist uninsneveruninstall
+Source: "main.conf"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall
 ; The web directory is C:\www; it is never replaced and never deleted.
 Source: "index.html"; DestDir: "C:\www"; Flags: onlyifdoesntexist uninsneveruninstall
 
 [Icons]
-Name: "{group}\Edit LOTUS configuration"; Filename: "{win}\notepad.exe"; Parameters: """{commonappdata}\LOTUS\main.lotus"""
+Name: "{group}\Edit LOTUS configuration"; Filename: "{win}\notepad.exe"; Parameters: """{app}\main.conf"""
 ; No backslash in a shortcut's name after {group}\: Setup reads each one as a folder (that made "Open LOTUS site folder (C:" and error 123).
 Name: "{group}\Open LOTUS site folder"; Filename: "C:\www"
-Name: "{group}\Open LOTUS log"; Filename: "{win}\notepad.exe"; Parameters: """{commonappdata}\LOTUS\logs\lotus.log"""
+Name: "{group}\Open LOTUS admin"; Filename: "{sys}\cmd.exe"; Parameters: "/c start """" http://127.0.0.1:7080/"; Flags: runminimized
+Name: "{group}\Open LOTUS log"; Filename: "{win}\notepad.exe"; Parameters: """{app}\logs\lotus.log"""
 Name: "{group}\Start LOTUS"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -Command ""Start-Service LOTUS"""; Flags: runminimized
 Name: "{group}\Stop LOTUS"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -Command ""Stop-Service LOTUS"""; Flags: runminimized
 Name: "{group}\Restart LOTUS"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -Command ""Restart-Service LOTUS"""; Flags: runminimized
 Name: "{group}\Uninstall LOTUS"; Filename: "{uninstallexe}"
 
 [Run]
-Filename: "{app}\lotus.exe"; Parameters: "config validate ""{commonappdata}\LOTUS\main.lotus"""; Flags: runhidden waituntilterminated; StatusMsg: "Checking the configuration..."
-Filename: "{app}\lotus.exe"; Parameters: "service install --config ""{commonappdata}\LOTUS\main.lotus"""; Flags: runhidden waituntilterminated; StatusMsg: "Registering the LOTUS service..."
+Filename: "{app}\lotus.exe"; Parameters: "config validate ""{app}\main.conf"""; Flags: runhidden waituntilterminated; StatusMsg: "Checking the configuration..."
+Filename: "{app}\lotus.exe"; Parameters: "service install --config ""{app}\main.conf"""; Flags: runhidden waituntilterminated; StatusMsg: "Registering the LOTUS service..."
 Filename: "{sys}\sc.exe"; Parameters: "start LOTUS"; Flags: runhidden waituntilterminated; StatusMsg: "Starting LOTUS..."
-Filename: "http://127.0.0.1:8080/"; Description: "Open the sample site in the browser"; Flags: postinstall shellexec skipifsilent nowait
+Filename: "http://127.0.0.1:7080/"; Description: "Open the LOTUS admin in the browser"; Flags: postinstall shellexec skipifsilent nowait
+Filename: "http://127.0.0.1:8080/"; Description: "Open the sample site in the browser"; Flags: postinstall shellexec skipifsilent nowait unchecked
 
 [UninstallRun]
 Filename: "{sys}\sc.exe"; Parameters: "stop LOTUS"; Flags: runhidden waituntilterminated; RunOnceId: "StopLotus"
 Filename: "{app}\lotus.exe"; Parameters: "service uninstall"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveLotusService"
 
 [Code]
+var
+  AdminPage: TInputQueryWizardPage;
+
 // True if dir is not yet one of the entries of the system PATH.
 function NeedsPath(dir: string): Boolean;
 var
@@ -114,10 +119,56 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   rc: Integer;
+  pwFile: string;
 begin
   if CurStep = ssInstall then begin
     Exec(ExpandConstant('{sys}\sc.exe'), 'stop LOTUS', '', SW_HIDE, ewWaitUntilTerminated, rc);
     Sleep(2000);
     Exec(ExpandConstant('{sys}\sc.exe'), 'delete LOTUS', '', SW_HIDE, ewWaitUntilTerminated, rc);
+  end;
+  // Make the first admin account. The password goes to the program in a file that is deleted at once.
+  if (CurStep = ssPostInstall) and (AdminPage <> nil) and (AdminPage.Values[1] <> '') then begin
+    pwFile := ExpandConstant('{tmp}\lotus-admin-pw.txt');
+    if SaveStringToFile(pwFile, AdminPage.Values[1] + #13#10, False) then begin
+      Exec(ExpandConstant('{app}\lotus.exe'),
+        'admin passwd "' + AdminPage.Values[0] + '" --password-file "' + pwFile + '" --config "' + ExpandConstant('{app}\main.conf') + '"',
+        '', SW_HIDE, ewWaitUntilTerminated, rc);
+      DeleteFile(pwFile);
+      // The accounts file holds password hashes: only SYSTEM and Administrators may read it.
+      Exec(ExpandConstant('{sys}\icacls.exe'),
+        '"' + ExpandConstant('{app}\admin-users.txt') + '" /inheritance:r /grant:r *S-1-5-18:F *S-1-5-32-544:F',
+        '', SW_HIDE, ewWaitUntilTerminated, rc);
+    end;
+  end;
+end;
+
+// The page that asks for the first admin account. It is left out when the admin already has accounts.
+procedure InitializeWizard();
+begin
+  if not FileExists(ExpandConstant('{app}\admin-users.txt')) then begin
+    AdminPage := CreateInputQueryPage(wpSelectTasks, 'Web admin account',
+      'Choose how you sign in to the LOTUS admin',
+      'The admin is at http://127.0.0.1:7080/ and only works on this computer. Leave the password empty to make an account later with "lotus admin passwd NAME".');
+    AdminPage.Add('Name:', False);
+    AdminPage.Add('Password (at least 10 characters):', True);
+    AdminPage.Add('Password again:', True);
+    AdminPage.Values[0] := 'admin';
+  end;
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if (AdminPage <> nil) and (CurPageID = AdminPage.ID) and (AdminPage.Values[1] <> '') then begin
+    if Length(AdminPage.Values[1]) < 10 then begin
+      MsgBox('The password must be at least 10 characters.', mbError, MB_OK);
+      Result := False;
+    end else if AdminPage.Values[1] <> AdminPage.Values[2] then begin
+      MsgBox('The two passwords are not the same.', mbError, MB_OK);
+      Result := False;
+    end else if Length(AdminPage.Values[0]) = 0 then begin
+      MsgBox('Type a name for the account.', mbError, MB_OK);
+      Result := False;
+    end;
   end;
 end;
