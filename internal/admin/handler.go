@@ -123,6 +123,7 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, http.StatusOK, s.opts.Backend.Certificates())
 	}))
 	mux.HandleFunc("POST /v1/reload", s.auth(RoleAdmin, s.reload))
+	mux.HandleFunc("POST /v1/certs/renew", s.auth(RoleAdmin, s.certRenew))
 	mux.HandleFunc("GET /v1/cache", s.auth(RoleViewer, s.cacheStatus))
 	mux.HandleFunc("POST /v1/cache/purge", s.auth(RoleAdmin, s.cachePurge))
 	mux.HandleFunc("GET /v1/php", s.auth(RoleViewer, s.phpStatus))

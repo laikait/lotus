@@ -20,6 +20,9 @@ type Backend interface {
 	Sites() []Site
 	// Certificates lists the certificates in use and those still to be obtained.
 	Certificates() []Certificate
+	// CertRenew gets a new certificate for a domain with automatic TLS now, and waits for the CA. An unknown domain is
+	// CodeNotFound, one renewed in the last day CodeInvalidParams, a CA that refuses CodeInternal.
+	CertRenew(domain string) *Error
 	// CacheStatus describes the cache zones, or only one of them. An unknown
 	// zone is an *Error with CodeNotFound.
 	CacheStatus(zone string) ([]CacheZone, *Error)
@@ -280,7 +283,7 @@ func fail(id json.RawMessage, code int, msg string) response {
 }
 
 func (s *Server) methods() []string {
-	return []string{MethodStatus, MethodHealth, MethodReload, MethodStop, MethodLogsReopen, MethodConfigInspect, MethodSiteList, MethodCertList, MethodCacheStatus, MethodCachePurge}
+	return []string{MethodStatus, MethodHealth, MethodReload, MethodStop, MethodLogsReopen, MethodConfigInspect, MethodSiteList, MethodCertList, MethodCertRenew, MethodCacheStatus, MethodCachePurge}
 }
 
 func (s *Server) hello(params json.RawMessage) (any, *Error) {
@@ -296,7 +299,7 @@ func (s *Server) hello(params json.RawMessage) (any, *Error) {
 }
 
 // operatorMethods change something; they are audited.
-var operatorMethods = map[string]bool{MethodReload: true, MethodStop: true, MethodLogsReopen: true, MethodCachePurge: true}
+var operatorMethods = map[string]bool{MethodReload: true, MethodStop: true, MethodLogsReopen: true, MethodCachePurge: true, MethodCertRenew: true}
 
 func (s *Server) call(method string, params json.RawMessage, peer peerInfo) (result any, rpcErr *Error) {
 	b := s.opts.Backend
@@ -333,6 +336,18 @@ func (s *Server) call(method string, params json.RawMessage, peer peerInfo) (res
 			return nil, err
 		}
 		return b.Certificates(), nil
+	case MethodCertRenew:
+		var p CertRenewParams
+		if err := decodeParams(params, &p); err != nil {
+			return nil, err
+		}
+		if p.Domain == "" {
+			return nil, NewError(CodeInvalidParams, "say which domain to renew", nil)
+		}
+		if err := b.CertRenew(p.Domain); err != nil {
+			return nil, err
+		}
+		return map[string]bool{"renewed": true}, nil
 	case MethodCacheStatus:
 		var p CacheStatusParams
 		if err := decodeParams(params, &p); err != nil {

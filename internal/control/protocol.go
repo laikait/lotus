@@ -43,6 +43,7 @@ const (
 	MethodConfigInspect  = "lotus.config.inspect"
 	MethodSiteList       = "lotus.site.list"
 	MethodCertList       = "lotus.cert.list"
+	MethodCertRenew      = "lotus.cert.renew"
 	MethodCacheStatus    = "lotus.cache.status"
 	MethodCachePurge     = "lotus.cache.purge"
 	MethodHello          = "lotus.hello"
@@ -152,6 +153,11 @@ type CacheZone struct {
 	Stored       uint64 `json:"stored"`
 	Evictions    uint64 `json:"evictions"`
 	Purged       uint64 `json:"purged"`
+}
+
+// CertRenewParams are the parameters of lotus.cert.renew.
+type CertRenewParams struct {
+	Domain string `json:"domain"`
 }
 
 // CachePurgeParams are the parameters of lotus.cache.purge. Exactly one of All,

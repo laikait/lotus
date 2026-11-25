@@ -2,7 +2,7 @@
 
 The web admin is a sign-in page and a dashboard, served by LOTUS on a listener of its own (the idea of LiteSpeed's WebAdmin). It is optional and off unless the configuration has an `admin` block. It never replaces the control channel: it uses the same operations (`control.Backend`) as the `lotus` command, through `internal/admin`.
 
-**Status (2026-11-26):** the plan is built: the `admin` block, accounts, sign-in, sessions, the dashboard (status, health, listeners, sites, certificates), Reload, the Sites page (add, edit, delete), the Cache, PHP and Server pages, the Logs viewer and the Configuration editor. Not built: certificate renewal (certmagic's renew call does not refresh the certificate in memory, and it needs a real CA to test).
+**Status (2026-11-26):** the plan is built: the `admin` block, accounts, sign-in, sessions, the dashboard (status, health, listeners, sites, certificates), Reload, the Sites page (add, edit, delete), the Cache, PHP and Server pages, the Logs viewer and the Configuration editor. Certificates that LOTUS obtains itself (`tls automatic`) have a Renew button on the Dashboard (admin role): it asks the CA for a new certificate now and loads it, checked against Pebble. A certificate issued less than a day ago is not renewed again, because CAs limit duplicate certificates (Let's Encrypt: 5 a week); `acme.MinRenewAge` holds that limit.
 
 ## Logs and Configuration (admin role only)
 
@@ -81,6 +81,7 @@ The password is asked twice without echo; `--password-stdin` and `--password-fil
 | `POST /v1/site-files` `{name, aliases, root, index, tls, create_root}` | admin | `{ok, generation}`; 422 for a bad value or an invalid configuration (with `diagnostics`), 409 if the name exists |
 | `PUT /v1/site-files/{name}` `{aliases, root, index, tls}` | admin | as above; 404 if missing, 409 if the file was changed by hand |
 | `DELETE /v1/site-files/{name}` | admin | `{ok, generation}`; the web directory is not touched |
+| `POST /v1/certs/renew` `{domain}` | admin | `{ok}` after the CA has issued the certificate (up to a minute); 404 for a name without an automatic certificate, 422 when the current one is under a day old |
 | `GET /v1/cache` | any | the cache zones, as `lotus.cache.status` |
 | `POST /v1/cache/purge` `{zone, host, path, prefix, all}` | admin | `{ok, purged}`; 422 unless exactly one of path, prefix, all; 404 for an unknown zone |
 | `GET /v1/php` | any | `[{name, command, processes, alive, restarts}]` |

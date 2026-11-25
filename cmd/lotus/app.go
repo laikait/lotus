@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/laikait/lotus/internal/acme"
 	"github.com/laikait/lotus/internal/cache"
 	"github.com/laikait/lotus/internal/config"
 	"github.com/laikait/lotus/internal/config/diag"
@@ -165,6 +167,25 @@ func (a *app) Sites() []control.Site {
 // Certificates implements control.Backend.
 func (a *app) Certificates() []control.Certificate {
 	return toControlCerts(a.srv.Certificates(), time.Now())
+}
+
+// certRenewTimeout bounds one renewal. It stays below the admin listener's write timeout, so the page gets an answer.
+const certRenewTimeout = 55 * time.Second
+
+// CertRenew implements control.Backend.
+func (a *app) CertRenew(domain string) *control.Error {
+	ctx, cancel := context.WithTimeout(context.Background(), certRenewTimeout)
+	defer cancel()
+	err := a.srv.RenewCertificate(ctx, domain)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, acme.ErrNotManaged), errors.Is(err, server.ErrNoACME):
+		return control.NewError(control.CodeNotFound, err.Error(), nil)
+	case errors.Is(err, acme.ErrRenewedRecently):
+		return control.NewError(control.CodeInvalidParams, err.Error(), nil)
+	}
+	return control.NewError(control.CodeInternal, err.Error(), nil)
 }
 
 // CacheStatus implements control.Backend.

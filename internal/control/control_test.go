@@ -21,6 +21,7 @@ type fakeBackend struct {
 	stopped  []stopCall
 	reopened int
 	purges   []CachePurgeParams
+	renewed  []string
 	reloadFn func(path string) (ReloadResult, *Error)
 }
 
@@ -50,6 +51,16 @@ func (f *fakeBackend) CacheStatus(zone string) ([]CacheZone, *Error) {
 	}
 	return []CacheZone{{Zone: "pages", Entries: 3, Bytes: 4096, MaxBytes: 1 << 20, Hits: 7, Misses: 2}}, nil
 }
+func (f *fakeBackend) CertRenew(domain string) *Error {
+	f.mu.Lock()
+	f.renewed = append(f.renewed, domain)
+	f.mu.Unlock()
+	if domain == "unknown.test" {
+		return NewError(CodeNotFound, "no such certificate", nil)
+	}
+	return nil
+}
+
 func (f *fakeBackend) CachePurge(p CachePurgeParams) (int, *Error) {
 	f.mu.Lock()
 	f.purges = append(f.purges, p)
@@ -251,6 +262,19 @@ func TestCacheMethods(t *testing.T) {
 	}
 	if len(fb.purges) != 1 || fb.purges[0] != (CachePurgeParams{Zone: "pages", Host: "a.test", Prefix: "/news/"}) {
 		t.Errorf("the backend got %+v", fb.purges)
+	}
+	r = c.call(`{"jsonrpc":"2.0","id":70,"method":"lotus.cert.renew","params":{"domain":"a.example.com"}}`)
+	if r.Error != nil || !strings.Contains(string(r.Result), `"renewed":true`) {
+		t.Fatalf("renew: %+v %s", r.Error, r.Result)
+	}
+	if len(fb.renewed) != 1 || fb.renewed[0] != "a.example.com" {
+		t.Errorf("the backend got %v", fb.renewed)
+	}
+	if r := c.call(`{"jsonrpc":"2.0","id":71,"method":"lotus.cert.renew","params":{"domain":"unknown.test"}}`); r.Error == nil || r.Error.Code != CodeNotFound {
+		t.Errorf("an unknown domain: %+v", r)
+	}
+	if r := c.call(`{"jsonrpc":"2.0","id":72,"method":"lotus.cert.renew","params":{}}`); r.Error == nil || r.Error.Code != CodeInvalidParams {
+		t.Errorf("no domain: %+v", r)
 	}
 	if r := c.call(`{"jsonrpc":"2.0","id":7,"method":"lotus.cache.purge","params":{"zone":"pages"}}`); r.Error == nil || r.Error.Code != CodeInvalidParams {
 		t.Errorf("purge without a target: %+v", r.Error)

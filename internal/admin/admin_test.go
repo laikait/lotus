@@ -19,6 +19,8 @@ type fakeBackend struct {
 	reloads   int
 	reloadErr *control.Error // when set, Reload refuses
 	purged    []control.CachePurgeParams
+	renewed   []string
+	renewErr  *control.Error // when set, CertRenew refuses
 	stops     int
 	reopened  int
 }
@@ -40,6 +42,10 @@ func (f *fakeBackend) CachePurge(p control.CachePurgeParams) (int, *control.Erro
 		return 0, control.NewError(control.CodeInvalidParams, "say what to purge", nil)
 	}
 	return 3, nil
+}
+func (f *fakeBackend) CertRenew(domain string) *control.Error {
+	f.renewed = append(f.renewed, domain)
+	return f.renewErr
 }
 func (f *fakeBackend) Reload(string) (control.ReloadResult, *control.Error) {
 	f.reloads++

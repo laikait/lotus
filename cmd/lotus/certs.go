@@ -16,8 +16,41 @@ import (
 // missing, expired or about to expire, so a monitoring check can use it.
 const exitCertProblem = 8
 
-// cmdCerts lists the certificates of the running server.
+// cmdCertsRenew gets a new certificate for one domain of the running server now.
+func cmdCertsRenew(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("lotus certs renew", flag.ContinueOnError)
+	socket := controlFlags(fs)
+	fs.SetOutput(stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(stderr, "usage: lotus certs renew [--control SOCKET] <domain>")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if fs.NArg() != 1 {
+		fs.Usage()
+		return exitUsage
+	}
+	c, code := dial(*socket, stderr)
+	if c == nil {
+		return code
+	}
+	defer c.Close()
+	c.Timeout = 2 * time.Minute // the CA may take a while
+	if err := c.Call(control.MethodCertRenew, control.CertRenewParams{Domain: fs.Arg(0)}, nil); err != nil {
+		fmt.Fprintf(stderr, "lotus: %v\n", err)
+		return exitCodeFor(err)
+	}
+	fmt.Fprintf(stdout, "certificate for %s renewed\n", fs.Arg(0))
+	return exitOK
+}
+
+// cmdCerts lists the certificates of the running server; "lotus certs renew DOMAIN" renews one.
 func cmdCerts(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "renew" {
+		return cmdCertsRenew(args[1:], stdout, stderr)
+	}
 	fs := flag.NewFlagSet("lotus certs", flag.ContinueOnError)
 	socket := controlFlags(fs)
 	jsonOut := fs.Bool("json", false, "print the certificates as JSON")

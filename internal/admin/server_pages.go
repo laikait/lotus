@@ -28,6 +28,29 @@ func httpStatusOf(e *control.Error) int {
 	return http.StatusInternalServerError
 }
 
+type renewBody struct {
+	Domain string `json:"domain"`
+}
+
+// certRenew gets a new certificate for one automatic-TLS name now. It waits for the CA, for up to a minute.
+func (s *Server) certRenew(w http.ResponseWriter, r *http.Request, sess *session) {
+	var b renewBody
+	if !decodeBody(w, r, &b) {
+		return
+	}
+	if b.Domain == "" {
+		writeError(w, http.StatusUnprocessableEntity, "say which domain to renew")
+		return
+	}
+	if err := s.opts.Backend.CertRenew(b.Domain); err != nil {
+		s.log.Warn("certificate renewal refused", "domain", b.Domain, "user", sess.user, "ip", remote(r), "reason", err.Message)
+		writeError(w, httpStatusOf(err), err.Message)
+		return
+	}
+	s.log.Info("certificate renewed", "domain", b.Domain, "user", sess.user, "ip", remote(r))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 func (s *Server) cacheStatus(w http.ResponseWriter, r *http.Request, _ *session) {
 	zones, err := s.opts.Backend.CacheStatus("")
 	if err != nil {

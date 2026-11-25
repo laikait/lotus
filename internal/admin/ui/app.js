@@ -120,8 +120,25 @@
       return [s.name, (s.aliases || []).join(", ") || "-", (s.listeners || []).join(", ") || "-", s.tls || "off"];
     }), 4, "No sites yet.");
     fillRows("certs", (certs || []).map(function (c) {
-      return [(c.domains || []).join(", "), c.issuer || "-", c.not_after ? new Date(c.not_after).toLocaleString() : "-", pill(c.status)];
-    }), 4, "No certificates.");
+      var act = el("span");
+      if (c.managed && role === "admin") act = renewButton(c);
+      return [(c.domains || []).join(", "), c.issuer || "-", c.not_after ? new Date(c.not_after).toLocaleString() : "-", pill(c.status), act];
+    }), 5, "No certificates.");
+  }
+
+  // A certificate that LOTUS obtains itself (tls automatic) can be renewed here. The name asked for is the managed
+  // name of the certificate, not the first domain in the list.
+  function renewButton(c) {
+    var b = el("button", "Renew", "btn btn-quiet");
+    b.type = "button"; b.title = "Renew the certificate of " + c.name; b.setAttribute("aria-label", "Renew the certificate of " + c.name);
+    b.addEventListener("click", function () {
+      if (!window.confirm("Ask the certificate authority for a new certificate for " + c.name + " now? It can take up to a minute.")) return;
+      b.disabled = true; b.textContent = "Renewing...";
+      api("POST", "/v1/certs/renew", { domain: c.name })
+        .then(function () { toast("Certificate for " + c.name + " renewed."); return loadDashboard(); })
+        .catch(function (e) { if (e.status === 401) { signedOut(); return; } toast(e.message, "bad"); b.disabled = false; b.textContent = "Renew"; });
+    });
+    return b;
   }
 
   function failed(e) {

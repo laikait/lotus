@@ -131,7 +131,7 @@ http {
     server {
         listen 127.0.0.1:%d;
         server_name x.test;
-        root %s;
+        root "%s";
         index index.html;
         error_page 404 /404.html;
         add_header X-Frame-Options DENY;
@@ -225,7 +225,7 @@ http {
     server {
         listen 127.0.0.1:%d;
         server_name x.test;
-        root %s;
+        root "%s";
         location = / { limit_req zone=slow burst=1 nodelay; }
         location /small/ { client_max_body_size 10; return 200 "ok"; }
     }

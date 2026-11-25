@@ -184,6 +184,70 @@ type CertStatus struct {
 	Issuer   string    // who issued it; empty unless Ready
 }
 
+// Renewal errors the callers tell apart.
+var (
+	// ErrNotManaged means the name is not one the manager obtains certificates for.
+	ErrNotManaged = errors.New("this name has no automatic certificate here")
+	// ErrRenewedRecently means the certificate was issued less than MinRenewAge ago.
+	ErrRenewedRecently = errors.New("the certificate was issued less than a day ago; a CA limits how often it issues for the same names, so renew it later")
+)
+
+// MinRenewAge is how old the current certificate must be before Renew replaces it. Certificate authorities limit
+// duplicate certificates (Let's Encrypt: 5 a week), so a button that can be pressed again and again must not be able
+// to use that allowance up. Tests set it to zero.
+var MinRenewAge = 24 * time.Hour
+
+// Renew gets a new certificate for a managed name now, and loads it, so that the next handshake uses it (certmagic
+// stores a renewed certificate but does not put it in its in-memory cache by itself). A name that has no certificate
+// yet is obtained instead. It waits for the CA, so give it a context with a time limit.
+func (m *Manager) Renew(ctx context.Context, name string) error {
+	m.mu.Lock()
+	managed := m.managed[name]
+	m.mu.Unlock()
+	if !managed {
+		return ErrNotManaged
+	}
+	have := false
+	var oldHashes []string // the certificates in memory now; they are dropped once the new one is loaded
+	for _, c := range m.cache.AllMatchingCertificates(name) {
+		if c.Leaf == nil || !slices.Contains(c.Names, name) {
+			continue
+		}
+		have = true
+		oldHashes = append(oldHashes, c.Hash())
+		if time.Since(c.Leaf.NotBefore) < MinRenewAge {
+			return ErrRenewedRecently
+		}
+	}
+	var err error
+	if have {
+		err = m.cfg.RenewCertSync(ctx, name, true)
+	} else {
+		err = m.cfg.ObtainCertSync(ctx, name)
+	}
+	if err != nil {
+		m.log.Warn("acme: renewal failed", "name", name, "error", err)
+		return fmt.Errorf("the CA did not issue a certificate: %w", err)
+	}
+	fresh, err := m.cfg.CacheManagedCertificate(ctx, name)
+	if err != nil {
+		return fmt.Errorf("the new certificate could not be loaded: %w", err)
+	}
+	// Loading adds the new certificate next to the old ones, and a handshake could still pick an old one:
+	// take the old ones out, so the new one is the only certificate for the name.
+	var drop []string
+	for _, h := range oldHashes {
+		if h != fresh.Hash() {
+			drop = append(drop, h)
+		}
+	}
+	if len(drop) > 0 {
+		m.cache.Remove(drop)
+	}
+	m.log.Info("acme: certificate renewed", "name", name)
+	return nil
+}
+
 // Certificates reports, for each managed name, whether its certificate is
 // loaded and when it expires.
 func (m *Manager) Certificates() []CertStatus {

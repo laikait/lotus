@@ -457,19 +457,61 @@ func TestWildcardCertificateThroughDNS01(t *testing.T) {
 
 func runtimeUnix() bool { return os.PathSeparator == '/' }
 
+func TestRenewCertificateWithPebble(t *testing.T) {
+	env := startPebble(t)
+	storage := filepath.Join(t.TempDir(), "certs")
+	srv, _ := lotusACME(t, env, storage, nil, "renew.lotus-acme.test")
+	first := waitCert(t, env, "renew.lotus-acme.test")
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// A certificate issued a moment ago is not replaced: the CA's duplicate limit is not for a button to use up.
+	if err := srv.RenewCertificate(ctx, "renew.lotus-acme.test"); !errors.Is(err, acme.ErrRenewedRecently) {
+		t.Fatalf("renewing a fresh certificate: %v", err)
+	}
+	// A name that is not a managed one is refused without asking the CA.
+	if err := srv.RenewCertificate(ctx, "not-a-site.test"); !errors.Is(err, acme.ErrNotManaged) {
+		t.Errorf("renewing an unknown name: %v", err)
+	}
+
+	old := acme.MinRenewAge
+	acme.MinRenewAge = 0
+	defer func() { acme.MinRenewAge = old }()
+	must(t, srv.RenewCertificate(ctx, "renew.lotus-acme.test"))
+
+	// The next handshake gets the new certificate: renewing loads it, it does not wait for a restart.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		st, err := handshake(t, env, "renew.lotus-acme.test")
+		must(t, err)
+		if st.PeerCertificates[0].SerialNumber.Cmp(first.SerialNumber) != 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the server still serves the old certificate after a renewal")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	for _, c := range srv.Certificates() {
+		if c.Name == "renew.lotus-acme.test" && !c.Ready {
+			t.Errorf("the certificate is not ready after renewing: %+v", c)
+		}
+	}
+}
+
 func TestAutomaticCertificatesForSitesAddedByReload(t *testing.T) {
 	env := startPebble(t)
 	storage := filepath.Join(t.TempDir(), "certs")
-	srv, cfg := lotusACME(t, env, storage, nil, "first.conf-acme.test")
-	waitCert(t, env, "first.conf-acme.test")
+	srv, cfg := lotusACME(t, env, storage, nil, "first.lotus-acme.test")
+	waitCert(t, env, "first.lotus-acme.test")
 
 	cfg2 := *cfg
 	root := docroot(t, "second")
-	s2 := siteConf("second.conf-acme.test", root, "http", "https")
+	s2 := siteConf("second.lotus-acme.test", root, "http", "https")
 	s2.TLS = model.TLSAutomatic
 	cfg2.Sites = append(append([]model.Site(nil), cfg.Sites...), s2)
 	must(t, srv.Reload(&cfg2))
-	waitCert(t, env, "second.conf-acme.test")
+	waitCert(t, env, "second.lotus-acme.test")
 
 	// Changing how certificates are obtained needs a restart.
 	cfg3 := cfg2
