@@ -54,6 +54,7 @@ bin/lotus start -config configs/examples/static-site.lotus     # then open http:
 | [Rate limits](docs/architecture/limits.md) | Connection limits per address, request rate limits, password lock-out |
 | [Compression](docs/architecture/compression.md) | Brotli, Zstandard and gzip, precompressed files, what is and is not compressed, BREACH |
 | [Configuration reference](docs/configuration/directives/index.md) | Every directive: arguments, default, who can set it, security notes (generated) |
+| [Benchmarks](docs/benchmarks.md) | `make bench`: scenarios, method, how to read the numbers, what is not measured |
 | [Moving from Nginx](docs/architecture/nginx-compat.md) | `lotus compat nginx convert`: what is translated, approximated, ignored or lost |
 | [Packaging and services](docs/architecture/packaging.md) | systemd, rc.d, Windows service, release archives, signing plan |
 | [Response cache](docs/architecture/cache.md) | Zones, what is stored and what never is, keys and `Vary`, stale copies, purging, security |

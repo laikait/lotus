@@ -16,7 +16,7 @@ GOVULNCHECK_VERSION := v1.10.0
 
 PLATFORMS := linux/amd64 linux/arm64 freebsd/amd64 windows/amd64 darwin/arm64
 
-.PHONY: all build test race vet fmt fmt-check lint vuln cross dist docs check clean
+.PHONY: all build test race vet fmt fmt-check lint vuln cross dist docs bench check clean
 
 all: check build
 
@@ -54,6 +54,9 @@ cross:
 
 docs:
 	go run ./tools/docgen docs/configuration/directives
+
+bench: build
+	go run ./tools/bench -lotus bin/lotus
 
 dist:
 	scripts/release.sh $(VERSION)
