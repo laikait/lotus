@@ -147,6 +147,11 @@ func TestACrashedProcessIsReplaced(t *testing.T) {
 	if second.body == first.body {
 		t.Error("the same process id after a crash")
 	}
+	// The pool counts the restart just after the new process is up, so a quick request can be answered a moment
+	// before the counter moves: wait for it instead of reading it once.
+	for end := time.Now().Add(2 * time.Second); p.Restarts() < 1 && time.Now().Before(end); {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if p.Restarts() < 1 {
 		t.Errorf("restarts = %d", p.Restarts())
 	}
