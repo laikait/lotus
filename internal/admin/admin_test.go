@@ -209,13 +209,13 @@ func TestChangesNeedTheCSRFTokenAndTheAdminRole(t *testing.T) {
 
 func TestSessionsExpireAndEndOnSignOut(t *testing.T) {
 	e := newEnv(t)
-	cookie, csrf := e.signIn("ada", "correct horse battery")
+	cookie, _ := e.signIn("ada", "correct horse battery")
 	e.now = e.now.Add(2 * time.Hour)
 	if rec := e.do("GET", "/v1/status", "", "", cookie); rec.Code != 401 {
 		t.Errorf("an expired session still works: %d", rec.Code)
 	}
 
-	cookie, csrf = e.signIn("ada", "correct horse battery")
+	cookie, csrf := e.signIn("ada", "correct horse battery")
 	if rec := e.do("POST", "/v1/logout", "", csrf, cookie); rec.Code != 200 {
 		t.Fatalf("logout: %d", rec.Code)
 	}

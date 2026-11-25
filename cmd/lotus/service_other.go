@@ -30,6 +30,10 @@ func serviceUninstall(stdout, stderr io.Writer) int {
 // programs in a special way.
 func runAsService(args []string, stdout, stderr io.Writer) (int, bool) { return 0, false }
 
+// serviceLogPath is where the Windows service writes its log; there is no such file elsewhere (the system's own
+// logging, such as journald, keeps the server's output).
+func serviceLogPath() string { return "" }
+
 var systemdPath = "/etc/systemd/system/lotus.service"
 
 func serviceInstallLinux(p serviceParams, force bool, stdout, stderr io.Writer) int {

@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -138,12 +137,5 @@ func diagnostics(in []diag.Diagnostic) []map[string]string {
 }
 
 func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
-		writeError(w, http.StatusBadRequest, "the request is not valid JSON for this form")
-		return false
-	}
-	return true
+	return decodeBodyLimit(w, r, v, maxBody)
 }

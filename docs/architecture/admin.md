@@ -2,7 +2,17 @@
 
 The web admin is a sign-in page and a dashboard, served by LOTUS on a listener of its own (the idea of LiteSpeed's WebAdmin). It is optional and off unless the configuration has an `admin` block. It never replaces the control channel: it uses the same operations (`control.Backend`) as the `lotus` command, through `internal/admin`.
 
-**Status (2026-11-26):** steps 1 to 3 of the plan are built: the `admin` block, accounts, sign-in, sessions, the dashboard (status, health, listeners, sites, certificates), Reload, the Sites page (add, edit, delete), and the Cache, PHP and Server pages. Not built yet: certificate renewal (certmagic's renew call does not refresh the certificate in memory, and it needs a real CA to test), the log viewer and the configuration editor (step 4).
+**Status (2026-11-26):** the plan is built: the `admin` block, accounts, sign-in, sessions, the dashboard (status, health, listeners, sites, certificates), Reload, the Sites page (add, edit, delete), the Cache, PHP and Server pages, the Logs viewer and the Configuration editor. Not built: certificate renewal (certmagic's renew call does not refresh the certificate in memory, and it needs a real CA to test).
+
+## Logs and Configuration (admin role only)
+
+Both show raw data that can hold addresses, URLs and secrets, so every route needs the `admin` role, even to read.
+
+- **Logs:** the end of a log file (the last 512 KiB; 100 to 1000 lines, newest last) with an optional text filter. The page picks a log by an id from the list the server gives (`service` for the Windows service's output file, `site.NAME.access` and `site.NAME.error` for site logs that are written to a file). It never sends a path, so no other file can be asked for. Lines are cut at 2,000 characters. On Linux the server's own output goes to the system journal, not to a file; use `journalctl -u lotus`.
+- **Configuration:** edit `main.conf` or a `.conf` file directly in `sites.d` (no other path, drive or `..` is accepted). **Check** loads the whole configuration with the new text and shows the problems, without keeping anything. **Save and reload** does the same, then keeps the file (the old text stays next to it as `NAME.conf.bak`, which is not read as configuration), then reloads; if the server refuses the reload the old text is put back. A file with a mistake is never saved. Files are limited to 256 KiB of UTF-8 without NUL.
+- A site file made by the Sites page shows a note: keep its first comment line and layout, or the Sites page lists it as written by hand.
+- **Know what this allows:** someone who can save a configuration here can change what the server serves, reads and runs (for example a `php_backend` `command` runs a program as the service account). Admin accounts should be people who could already administer the machine. This is why the editor is for the `admin` role only, the sign-in is rate limited, and every save, refusal and undo is logged with the account and address.
+- A change to the `admin { }` block itself is not applied by a reload; restart the service. Saving a mistake in it is still refused by the check.
 
 ## Cache, PHP and Server pages
 
@@ -75,6 +85,12 @@ The password is asked twice without echo; `--password-stdin` and `--password-fil
 | `POST /v1/cache/purge` `{zone, host, path, prefix, all}` | admin | `{ok, purged}`; 422 unless exactly one of path, prefix, all; 404 for an unknown zone |
 | `GET /v1/php` | any | `[{name, command, processes, alive, restarts}]` |
 | `POST /v1/logs/reopen` | admin | `{ok, reopened}` |
+| `GET /v1/logs` | admin | `[{id, name}]` |
+| `GET /v1/logs/{id}?lines=200&filter=text` | admin | `{lines, size}` (404 for an id that is not listed) |
+| `GET /v1/config/files` | admin | `{files: [{name, size, managed}], max_size}` |
+| `GET /v1/config/file?name=main.conf` | admin | `{name, content}` |
+| `POST /v1/config/validate` `{name, content}` | admin | `{ok, diagnostics}` or 422 with the problems; nothing is kept |
+| `PUT /v1/config/file` `{name, content}` | admin | `{ok, generation}`, or 422 with the problems (nothing saved) |
 
 ## Not covered by tests
 

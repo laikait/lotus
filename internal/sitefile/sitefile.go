@@ -115,7 +115,8 @@ func Normalize(sp Spec) Spec {
 	}
 	sp.Aliases = nonEmpty(sp.Aliases)
 	sp.Index = nonEmpty(sp.Index)
-	sp.Root = filepath.ToSlash(strings.TrimSpace(sp.Root))
+	// A pasted Windows path uses backslashes; filepath.ToSlash would leave them on Linux, so replace them here.
+	sp.Root = strings.ReplaceAll(strings.TrimSpace(sp.Root), `\`, "/")
 	if sp.Root == "" && sp.Name != "" {
 		sp.Root = DefaultRoot(sp.Name)
 	}
@@ -186,7 +187,7 @@ func checkPath(p string) error {
 	}
 	for _, part := range strings.Split(p, "/") {
 		if part == ".." {
-			return errors.New("the web directory may not contain ..")
+			return errors.New("the web directory may not contain a .. folder")
 		}
 	}
 	return nil

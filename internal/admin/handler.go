@@ -34,8 +34,9 @@ const (
 // Options configure a Server.
 type Options struct {
 	Backend    control.Backend
-	Sites      *sitefile.Store  // the sites.d folder; nil: no site pages
-	PHP        func() []PHPPool // the managed php-cgi pools; nil: none
+	Sites      *sitefile.Store    // the sites.d folder; nil: no site pages
+	PHP        func() []PHPPool   // the managed php-cgi pools; nil: none
+	Logs       func() []LogSource // the log files that can be shown; nil: none
 	Users      Users
 	SessionTTL time.Duration
 	Allow      []netip.Prefix // empty: any address
@@ -126,7 +127,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/cache/purge", s.auth(RoleAdmin, s.cachePurge))
 	mux.HandleFunc("GET /v1/php", s.auth(RoleViewer, s.phpStatus))
 	mux.HandleFunc("POST /v1/logs/reopen", s.auth(RoleAdmin, s.reopenLogs))
+	// Logs and the raw configuration files can hold addresses, URLs and secrets: admin role only, even to read.
+	mux.HandleFunc("GET /v1/logs", s.auth(RoleAdmin, s.logList))
+	mux.HandleFunc("GET /v1/logs/{id}", s.auth(RoleAdmin, s.logTail))
 	if s.opts.Sites != nil {
+		mux.HandleFunc("GET /v1/config/files", s.auth(RoleAdmin, s.configFiles))
+		mux.HandleFunc("GET /v1/config/file", s.auth(RoleAdmin, s.configRead))
+		mux.HandleFunc("POST /v1/config/validate", s.auth(RoleAdmin, s.configValidate))
+		mux.HandleFunc("PUT /v1/config/file", s.auth(RoleAdmin, s.configSave))
 		mux.HandleFunc("GET /v1/site-files", s.auth(RoleViewer, s.listSiteFiles))
 		mux.HandleFunc("POST /v1/site-files", s.auth(RoleAdmin, s.addSite))
 		mux.HandleFunc("PUT /v1/site-files/{name}", s.auth(RoleAdmin, s.updateSite))

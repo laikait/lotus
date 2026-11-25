@@ -63,3 +63,10 @@ select { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-r
 .error ul { margin: 6px 0 0; padding-left: 20px; }
 .card + .card { margin-top: 14px; }
 .table td .pill { white-space: nowrap; }
+.filters { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 10px; }
+.filters > div { min-width: 160px; }
+.filters > div:nth-child(2) { flex: 1; min-width: 220px; }
+.logview { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 0; overflow: auto; max-height: 60vh; font: 12.5px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre; }
+.editor { width: 100%; min-height: 46vh; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 4; resize: vertical; }
+.editor:focus-visible, .logview:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.success { color: var(--ok); }

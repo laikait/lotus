@@ -15,6 +15,8 @@
     <a href="#sites" data-view="sites">Sites</a>
     <a href="#cache" data-view="cache">Cache</a>
     <a href="#php" data-view="php">PHP</a>
+    <a href="#logs" data-view="logs" data-admin>Logs</a>
+    <a href="#config" data-view="config" data-admin>Configuration</a>
     <a href="#server" data-view="server">Server</a>
   </nav>
   <span class="spacer"></span>
@@ -33,7 +35,6 @@
       <p id="login-error" class="error" role="alert" hidden></p>
       <button class="btn" type="submit">Sign in</button>
     </form>
-    <p class="hint">Accounts are made on the server with <code>lotus admin passwd NAME</code>.</p>
   </section>
 
   <div id="toast" class="toast" role="status" hidden></div>
@@ -143,6 +144,53 @@
       <tbody id="php-rows"></tbody>
     </table>
     <p class="hint">Only pools that LOTUS starts itself (a <code>php_backend</code> with <code>command</code>) are listed. A <code>fastcgi_pass</code> backend runs outside LOTUS.</p>
+  </section>
+
+  <section id="logspage" data-page="logs" hidden>
+    <div class="toolbar">
+      <h1>Logs</h1>
+      <span class="spacer"></span>
+      <button id="logs-refresh" class="btn btn-quiet" type="button" title="Refresh" aria-label="Refresh the log">Refresh</button>
+    </div>
+    <div class="filters">
+      <div>
+        <label for="l-source">Log</label>
+        <select id="l-source"></select>
+      </div>
+      <div>
+        <label for="l-filter">Show only lines containing</label>
+        <input id="l-filter" type="text" maxlength="100" spellcheck="false" placeholder="for example 404 or error">
+      </div>
+      <div>
+        <label for="l-lines">Lines</label>
+        <select id="l-lines"><option>100</option><option selected>200</option><option>500</option><option>1000</option></select>
+      </div>
+    </div>
+    <p id="logs-note" class="hint" hidden></p>
+    <pre id="logs-view" class="logview" tabindex="0" aria-label="Log lines"></pre>
+    <p class="hint">Shows the end of the file (the last 512 KiB). On Linux the server's own output goes to the system journal, not to a file: use <code>journalctl -u lotus</code>.</p>
+  </section>
+
+  <section id="configpage" data-page="config" hidden>
+    <div class="toolbar">
+      <h1>Configuration</h1>
+      <span class="spacer"></span>
+    </div>
+    <p class="notice">This edits the real files. Whoever can save here can change what the server serves, runs and reads, so keep admin accounts to people you trust. A change is checked as a whole first, and a file with a mistake is never saved. The old text is kept next to the file as <code>.bak</code>.</p>
+    <div class="filters">
+      <div>
+        <label for="c-file">File</label>
+        <select id="c-file"></select>
+      </div>
+    </div>
+    <p id="c-managed" class="hint" hidden>This site is also managed by the Sites page. Keep the first comment line and the layout, or the Sites page will show it as written by hand.</p>
+    <textarea id="c-text" class="editor" spellcheck="false" wrap="off" aria-label="Configuration file text"></textarea>
+    <div id="c-result" class="error" role="alert" hidden></div>
+    <div class="actions">
+      <button id="c-validate" class="btn btn-quiet" type="button">Check</button>
+      <button id="c-save" class="btn" type="button">Save and reload</button>
+      <button id="c-revert" class="btn btn-quiet" type="button">Discard changes</button>
+    </div>
   </section>
 
   <section id="serverpage" data-page="server" hidden>

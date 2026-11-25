@@ -63,7 +63,7 @@ func (a *app) openAdmin(cfg *model.Config) (io.Closer, error) {
 		a.log.Warn("the admin has no accounts: nobody can sign in", "users_file", users.Path, "fix", "run: lotus admin passwd NAME")
 	}
 	srv := admin.New(admin.Options{
-		Backend: a, Sites: &sitefile.Store{Config: a.path}, PHP: a.phpPools, Users: users, SessionTTL: ad.SessionTTL, Allow: ad.Allow, Secure: secure, Log: a.log,
+		Backend: a, Sites: &sitefile.Store{Config: a.path}, PHP: a.phpPools, Logs: a.logSources, Users: users, SessionTTL: ad.SessionTTL, Allow: ad.Allow, Secure: secure, Log: a.log,
 	})
 	go func() {
 		if err := srv.Serve(ln); err != nil {
@@ -76,6 +76,26 @@ func (a *app) openAdmin(cfg *model.Config) (io.Closer, error) {
 	}
 	a.log.Info("admin ready", "url", scheme+"://"+ad.Address+"/")
 	return adminCloser{srv}, nil
+}
+
+// logSources lists the log files the admin may show: the Windows service's log, when it exists, and every site's
+// access and error log that is written to a file. Sources are looked up by id, never by a path from the page.
+func (a *app) logSources() []admin.LogSource {
+	var out []admin.LogSource
+	if p := serviceLogPath(); p != "" {
+		if _, err := os.Stat(p); err == nil {
+			out = append(out, admin.LogSource{ID: "service", Name: "Server log (service output)", Path: p})
+		}
+	}
+	for _, s := range a.srv.Config().Sites {
+		if t := s.Logs.Access; !t.Off && t.Path != "" {
+			out = append(out, admin.LogSource{ID: "site." + s.Name + ".access", Name: s.Name + " access log", Path: t.Path})
+		}
+		if t := s.Logs.Error; !t.Off && t.Path != "" {
+			out = append(out, admin.LogSource{ID: "site." + s.Name + ".error", Name: s.Name + " error log", Path: t.Path})
+		}
+	}
+	return out
 }
 
 // phpPools describes the managed php-cgi pools for the admin's PHP page.

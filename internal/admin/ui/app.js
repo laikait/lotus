@@ -45,12 +45,13 @@
   // ---- views ----
 
   function showView(name) {
-    view = ["sites", "cache", "php", "server"].indexOf(name) >= 0 ? name : "dashboard";
+    view = ["sites", "cache", "php", "server", "logs", "config"].indexOf(name) >= 0 ? name : "dashboard";
+    if ((view === "logs" || view === "config") && role !== "admin") view = "dashboard"; // the raw files and logs are for admins
     document.querySelectorAll("[data-page]").forEach(function (p) { p.hidden = p.getAttribute("data-page") !== view; });
     document.querySelectorAll("#nav a").forEach(function (a) {
       if (a.getAttribute("data-view") === view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     });
-    var loaders = { sites: loadSites, cache: loadCache, php: loadPHP, server: loadServer };
+    var loaders = { sites: loadSites, cache: loadCache, php: loadPHP, server: loadServer, logs: loadLogs, config: loadConfig };
     return (loaders[view] || loadDashboard)();
   }
 
@@ -311,6 +312,132 @@
   }
   $("php-refresh").addEventListener("click", function () { loadPHP(); });
 
+  // ---- logs ----
+
+  function loadLogs() {
+    return api("GET", "/v1/logs").then(function (list) {
+      var sel = $("l-source"), keep = sel.value;
+      sel.replaceChildren();
+      (list || []).forEach(function (s) { var o = el("option", s.name); o.value = s.id; sel.appendChild(o); });
+      if (keep) sel.value = keep;
+      if (!list || !list.length) {
+        $("logs-view").textContent = "";
+        showLogNote("No log files are configured for the admin to show.");
+        return;
+      }
+      return showLog();
+    }).catch(failed);
+  }
+
+  function showLogNote(text) { var n = $("logs-note"); n.textContent = text || ""; n.hidden = !text; }
+
+  function showLog() {
+    var id = $("l-source").value;
+    if (!id) return Promise.resolve();
+    var q = "?lines=" + encodeURIComponent($("l-lines").value) + "&filter=" + encodeURIComponent($("l-filter").value.trim());
+    return api("GET", "/v1/logs/" + encodeURIComponent(id) + q).then(function (d) {
+      var view = $("logs-view");
+      view.textContent = (d.lines || []).join("\n");
+      showLogNote(d.note || ((d.lines || []).length ? "" : "No lines match."));
+      view.scrollTop = view.scrollHeight;
+    }).catch(failed);
+  }
+
+  $("logs-refresh").addEventListener("click", function () { showLog(); });
+  $("l-source").addEventListener("change", showLog);
+  $("l-lines").addEventListener("change", showLog);
+  $("l-filter").addEventListener("keydown", function (ev) { if (ev.key === "Enter") { ev.preventDefault(); showLog(); } });
+  $("l-filter").addEventListener("change", showLog);
+
+  // ---- configuration editor ----
+
+  var cfgOriginal = "";
+  var cfgFiles = [];
+
+  function loadConfig() {
+    return api("GET", "/v1/config/files").then(function (d) {
+      cfgFiles = d.files || [];
+      var sel = $("c-file"), keep = sel.value;
+      sel.replaceChildren();
+      cfgFiles.forEach(function (f) { var o = el("option", f.name); o.value = f.name; sel.appendChild(o); });
+      if (keep && cfgFiles.some(function (f) { return f.name === keep; })) sel.value = keep;
+      return openConfigFile();
+    }).catch(failed);
+  }
+
+  function openConfigFile() {
+    var name = $("c-file").value;
+    $("c-result").hidden = true;
+    var f = cfgFiles.filter(function (x) { return x.name === name; })[0];
+    $("c-managed").hidden = !(f && f.managed);
+    if (!name) { $("c-text").value = ""; return Promise.resolve(); }
+    return api("GET", "/v1/config/file?name=" + encodeURIComponent(name)).then(function (d) {
+      cfgOriginal = d.content; $("c-text").value = d.content;
+    }).catch(failed);
+  }
+
+  function showCfgResult(ok, e, okText) {
+    var box = $("c-result");
+    box.replaceChildren();
+    box.className = ok ? "success" : "error";
+    box.appendChild(el("div", ok ? okText : e.message));
+    var list = ok ? e.diagnostics : (e.data && e.data.diagnostics);
+    if (Array.isArray(list) && list.length) {
+      var ul = el("ul");
+      list.slice(0, 12).forEach(function (d) {
+        ul.appendChild(el("li", (d.where ? d.where + ": " : "") + d.message + (d.hint ? " (" + d.hint + ")" : "")));
+      });
+      box.appendChild(ul);
+    }
+    box.hidden = false;
+  }
+
+  function cfgBody() { return { name: $("c-file").value, content: $("c-text").value }; }
+
+  $("c-file").addEventListener("change", function () {
+    if ($("c-text").value !== cfgOriginal && !window.confirm("Discard your changes to this file?")) { return; }
+    openConfigFile();
+  });
+
+  $("c-revert").addEventListener("click", function () { $("c-text").value = cfgOriginal; $("c-result").hidden = true; });
+
+  $("c-validate").addEventListener("click", function () {
+    var b = $("c-validate"); b.disabled = true;
+    api("POST", "/v1/config/validate", cfgBody())
+      .then(function (r) { showCfgResult(true, r, "The configuration is valid with this file."); })
+      .catch(function (e) { if (e.status === 401) { signedOut(); return; } showCfgResult(false, e); })
+      .then(function () { b.disabled = false; });
+  });
+
+  $("c-save").addEventListener("click", function () {
+    var b = $("c-save"); b.disabled = true;
+    api("PUT", "/v1/config/file", cfgBody())
+      .then(function (r) {
+        cfgOriginal = $("c-text").value;
+        showCfgResult(true, {}, "Saved and loaded (generation " + r.generation + ").");
+        toast("Configuration saved and loaded.");
+      })
+      .catch(function (e) { if (e.status === 401) { signedOut(); return; } showCfgResult(false, e); })
+      .then(function () { b.disabled = false; });
+  });
+
+  // Tab inserts a tab in the editor, not a move to the next control (Escape then Tab leaves it).
+  $("c-text").addEventListener("keydown", function (ev) {
+    if (ev.key === "Tab" && !ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.defaultPrevented && ev.target.dataset.tabs !== "off") {
+      ev.preventDefault();
+      var t = ev.target, s = t.selectionStart;
+      t.value = t.value.slice(0, s) + "    " + t.value.slice(t.selectionEnd);
+      t.selectionStart = t.selectionEnd = s + 4;
+    } else if (ev.key === "Escape") {
+      ev.target.dataset.tabs = "off";
+    }
+  });
+  $("c-text").addEventListener("blur", function (ev) { delete ev.target.dataset.tabs; });
+
+  window.addEventListener("beforeunload", function (ev) {
+    if (csrf && $("c-text").value !== cfgOriginal) { ev.preventDefault(); ev.returnValue = ""; }
+  });
+
   // ---- server ----
 
   function loadServer() {
@@ -339,6 +466,7 @@
     csrf = sess.csrf; role = sess.role;
     $("who").textContent = sess.user + " (" + sess.role + ")";
     $("reload").hidden = sess.role !== "admin";
+    document.querySelectorAll("#nav [data-admin]").forEach(function (a) { a.hidden = sess.role !== "admin"; });
     $("login").hidden = true;
     ["nav", "logout", "who"].forEach(function (id) { $(id).hidden = false; });
     return showView(location.hash.slice(1));
