@@ -47,7 +47,13 @@ On the development machine, one run of 2–3 seconds per scenario showed these r
 | proxy-cached | 19,900 | 23,100 |
 | not-found | 15,100 | 24,200 |
 
-The one number worth acting on is `static-1k` on Windows, about a fifth of `ping` and a quarter of Linux: a small static file is slower than a proxied request, which should not be. The static path resolves each URL with a check of every path component (the safety guarantee against traversal, symlink escapes and device names), and on Windows those file-system calls are slow, probably more so with antivirus scanning. A profile of that path is the next performance task. Everything else is plausible for a first measurement.
+The one number worth acting on was `static-1k` on Windows, about a fifth of `ping` and a quarter of Linux: a small static file was slower than a proxied request.
+
+**What the profile showed.** Almost all of the time of a small-file request on Windows is in system calls: closing a file handle (about half), reading, and the per-component `Lstat` of the path check. That is the cost of the platform (very likely antivirus scanning on open and close), and Go's own `http.FileServer` pays it too: on the same machine it needs about 166 µs per request in `internal/staticfiles`' benchmark, where LOTUS needed about 238 µs.
+
+**What was fixed.** Resolving a path made four file-system calls where three are needed: the final `Stat` repeated what the walk had already learned. Dropping it cut `fspath.Open` from about 198 µs to 87 µs and the request from about 238 µs to about 180 µs, within about 10% of the standard library's handler. The safety checks are unchanged: every component is still looked at with `Lstat`, and the opened file is still checked for being a regular file or a directory (the check that matters for a swap between the look and the open).
+
+**What is left.** The remaining cost is the platform's. Linux is not affected. Reducing it further would need an open-file cache like Nginx's `open_file_cache`, which trades freshness and some of the symlink guarantees for speed; that is a decision for later, not a fix. Use `go test ./internal/fspath ./internal/staticfiles -bench .` to see the numbers on another machine.
 
 These runs were short and on a shared machine; they are a starting point, not a result to quote.
 

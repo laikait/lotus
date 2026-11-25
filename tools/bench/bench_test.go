@@ -87,6 +87,9 @@ func TestSmokeRun(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds the server")
 	}
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("needs the go command to build the server")
+	}
 	exe := filepath.Join(t.TempDir(), "lotus")
 	if runtime.GOOS == "windows" {
 		exe += ".exe"

@@ -1,0 +1,54 @@
+# LOTUS: notes for Claude (and for a new machine)
+
+LOTUS is a web server written in Go: module `github.com/laikait/lotus`, binary `lotus`, config files `.lotus`. Product name: **LOTUS** (Laika Optimized Transport & Unified Server). Never write "LWS" or "Laika Web Server" in code, docs or messages; the project was renamed before release.
+
+## How to work with the owner
+
+- The owner drives the project step by step, usually by saying "go next". Do the recommended next step; don't ask what to do.
+- End every substantive reply with a concrete **"Next:"** recommendation.
+- **The owner commits and pushes. Never commit or push.** Give a suggested commit message instead.
+- Use they/them for people whose pronouns are not stated.
+- Keep personal details (names, e-mail addresses) out of requests to outside services and out of the repo.
+- Report honestly: say what was tested and what was not (the Windows service has been run only by the owner, by hand).
+
+## Decisions already made (don't re-ask)
+
+- Positioning: PHP and shared hosting, Apache/Nginx migration.
+- 1.0 is the core server. Linux is Tier 1; FreeBSD and Windows are Tier 2.
+- PHP on Windows through a managed `php-cgi` pool run by LOTUS.
+- A `.htaccess` subset; Nginx `location` precedence for routing.
+- Extensions: Wasm (wazero) plus out-of-process.
+- ACME through certmagic. Licence Apache-2.0.
+- Windows paths: program `C:\Program Files\Lotus`, config `C:\ProgramData\LOTUS\main.lotus`, web directory `C:\www`. Linux: config `/etc/lotus/main.lotus`, binary `/usr/local/bin/lotus`, web directory `/var/www/public_html` (to be created by the future `.deb`/`.rpm`).
+
+Documents: `docs/architecture/`, `docs/configuration/` (generated directive reference in `docs/configuration/directives/`, made by `make docs`), `docs/roadmap/1.0-checklist.md` (what 1.0 still needs), `docs/benchmarks.md`, `docs/windows-installer.md`, `docs/code-signing.md`.
+
+## Setting up on a new machine
+
+1. Install Go (version in `go.mod`) and Git. Optional: Inno Setup 6/7 (Windows installer), WSL with Ubuntu (Linux test run), `staticcheck` (`go install honnef.co/go/tools/cmd/staticcheck@v0.8.2`), XAMPP's `php-cgi` (PHP tests).
+2. `go build ./... && go test ./...`
+3. Before handing work over, the full check is: `gofmt -l .` (prints nothing), `go vet ./...`, cross-vet with `GOOS=linux|freebsd|darwin|windows`, `staticcheck ./...`, `go test ./...`, and `bash scripts/test-linux-wsl.sh` for the Linux run (it sometimes fails with "Cannot allocate memory" in WSL; run it again). `-race` is left to CI.
+4. Useful commands: `make build`, `make docs` (regenerates the directive reference; a test fails if the pages are stale), `make bench` (`tools/bench`), `make dist` (release archives), `scripts\build-installer.ps1` (Windows installer).
+
+## Gotchas
+
+- Edit line endings with care: files are LF. After a `git stash` round trip on Windows a file can come back as CRLF and fail `gofmt -l`; fix with `sed -i 's/\r$//' FILE`.
+- The Bash tool of Claude Code drops backslashes and breaks on some quotes in heredocs; write files with the Write/Edit tools.
+- `gh` is not installed on the owner's machine; use `curl` against the GitHub API if needed.
+- A WSL run needs the `go` command on PATH for tests that build the server; those tests skip themselves otherwise.
+- Windows file access is slow (antivirus); see the profile in `docs/benchmarks.md`.
+- `cmd/lotus/rsrc_windows_amd64.syso` is the logo as a Windows resource; regenerate it with `go run ./tools/mkicon -syso cmd/lotus/rsrc_windows_amd64.syso`. The logo is a placeholder.
+
+## State at the last session (2026-11-26)
+
+Done: config language, parser, validator, formatter, migrate; static files, routing, proxy, cache, compression, TLS and ACME, PHP/FastCGI (including the managed pool), `.htaccess` subset, control channel, metrics, HTTP/3, Nginx translator (`lotus compat nginx convert`), service install (systemd, rc.d, Windows service), release scripts and workflow, generated directive reference with tested examples, benchmark harness, Windows installer (Inno Setup, written but only partly tested).
+
+Open items:
+
+1. **Windows service control socket.** After installing the service, `lotus reload` (and `status`, `stop`) from a normal shell says "no running server answered on C:\ProgramData\LOTUS\control.sock". The log says the channel was ready, but the socket file was missing afterwards. Suspected causes: (a) the socket, owned by SYSTEM, can't be reached by a non-administrator, and `internal/control/socket.go` `removeStale` treats a socket it cannot connect to as stale and deletes it (a second `lotus start` would do that); (b) a real bug in how the service creates it. The owner was asked to run `Restart-Service LOTUS; Test-Path C:\ProgramData\LOTUS\control.sock; lotus status` in an Administrator shell. Fix both: make `removeStale` leave sockets it can't connect to because of permissions, and make the CLI say plainly that an Administrator shell is needed. Also decide who may connect (Windows `restrictSocket` is a no-op).
+2. The installer has not been rebuilt and run since the changes of 2026-11-26 (path `Lotus`, `C:\www`, `PATH` option, logo).
+3. `SECURITY.md` needs a public contact e-mail (not a personal one) from the owner.
+4. SignPath Foundation application for code signing was to be submitted by the owner; after approval set the repository variable `SIGNPATH_ORGANIZATION_ID` and the secret `SIGNPATH_API_TOKEN` (see `docs/code-signing.md`).
+5. The team and timeline (§24 of the spec) and the overdue Phase 1 re-estimate in `docs/roadmap/estimates.md`.
+
+Backlog (from `docs/roadmap/1.0-checklist.md`): application tests and templates for WordPress, Laravel, Symfony, Drupal and Joomla (recommended next: WordPress and Laravel with XAMPP's `php-cgi`); binary upgrade; a file-system cache tier; `.deb`/`.rpm`/MSI packages; mTLS, audit log, PROXY protocol, a third DNS provider, the network admin API; a FreeBSD CI run; a 1,000-reload test and a soak test; the security suite and an external review; the module-architecture decision (recommended: 1.x); an Apache `httpd.conf` translator; an open-file cache for static files (a trade-off, not a fix).

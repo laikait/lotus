@@ -1,0 +1,29 @@
+# LOTUS configuration. This is the file the LOTUS service reads.
+#
+# After you change it:
+#   1. check it:    "C:\Program Files\Lotus\lotus.exe" config validate "C:\ProgramData\LOTUS\main.lotus"
+#   2. apply it:    "C:\Program Files\Lotus\lotus.exe" reload      (from an Administrator shell)
+#      or restart the service from the Start Menu entry "Restart LOTUS".
+#
+# More examples are in the "examples" folder of the installation.
+
+lotus_config_version 1
+
+server {
+    # Only this computer can reach the server until you change the address.
+    # Use "0.0.0.0:80" to accept connections from the network.
+    listen "http" {
+        address "127.0.0.1:8080"
+    }
+
+    site "localhost" {
+        root "C:/www"         # the web directory; use forward slashes
+        index [ "index.html" ]
+        tls off
+
+        security_headers {
+            "X-Content-Type-Options" = "nosniff"
+            "X-Frame-Options" = "DENY"
+        }
+    }
+}

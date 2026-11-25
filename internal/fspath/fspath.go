@@ -153,6 +153,7 @@ func (r *Resolver) open(urlPath string, htaccess bool) (*File, error) {
 	}
 
 	cur := ""
+	var last fs.FileInfo // what the final segment is (after following a link)
 	for i, seg := range segs {
 		if cur == "" {
 			cur = seg
@@ -174,16 +175,23 @@ func (r *Resolver) open(urlPath string, htaccess bool) (*File, error) {
 		if i < len(segs)-1 && !fi.IsDir() {
 			return nil, ErrNotFound // a file in the middle of the path
 		}
+		last = fi
 	}
 
 	rel := cur
 	if rel == "" {
 		rel = "."
 	}
-	// Check the type before opening: opening a FIFO could block forever.
-	st, err := r.root.Stat(rel)
-	if err != nil {
-		return nil, mapErr(err)
+	// Check the type before opening: opening a FIFO could block forever. The
+	// walk above has already looked at the final segment; only the root itself
+	// still needs a look. (A swap after this point is caught by the check on
+	// the opened file below.)
+	st := last
+	if st == nil {
+		var err error
+		if st, err = r.root.Stat(rel); err != nil {
+			return nil, mapErr(err)
+		}
 	}
 	if !st.Mode().IsRegular() && !st.IsDir() {
 		return nil, fmt.Errorf("%w: not a regular file or directory", ErrForbidden)
