@@ -16,7 +16,7 @@ GOVULNCHECK_VERSION := v1.10.0
 
 PLATFORMS := linux/amd64 linux/arm64 freebsd/amd64 windows/amd64 darwin/arm64
 
-.PHONY: all build test race vet fmt fmt-check lint vuln cross dist check clean
+.PHONY: all build test race vet fmt fmt-check lint vuln cross dist docs check clean
 
 all: check build
 
@@ -51,6 +51,9 @@ cross:
 		GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' \
 			-o bin/lotus-$$os-$$arch$$ext ./cmd/lotus || exit 1; \
 	done
+
+docs:
+	go run ./tools/docgen docs/configuration/directives
 
 dist:
 	scripts/release.sh $(VERSION)

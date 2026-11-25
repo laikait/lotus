@@ -95,6 +95,8 @@ Commands:
                               Print the effective configuration as JSON (secrets redacted)
   config explain [options] <file> <url>
                               Show which site, route and action a request would get
+  config format [--check] [--write] <file>...
+                              Print files in the canonical style (or rewrite them, or list the ones that differ)
   reload [--control SOCKET] [--config FILE]
                               Make the running server load its configuration again
   stop [--now] [--timeout 30s]
@@ -121,6 +123,7 @@ socket (default %s; set another with --control or LOTUS_CONTROL).
 Exit codes: 0 success, 1 usage error, 2 invalid configuration, 3 no running server,
 4 permission denied, 5 reload already running, 6 uses a feature not implemented yet,
 7 not found, 8 a certificate is missing, expired or about to expire (lotus certs),
+9 a file is not formatted (lotus config format --check),
 10 the server could not start or failed.
 `, control.DefaultSocketPath())
 }

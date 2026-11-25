@@ -239,6 +239,8 @@ Error codes are stable across releases and listed in `docs/configuration/errors.
 
 ## 8. Formatter rules (`lotus config format`)
 
+Implemented in `internal/config/format`. `lotus config format <file>` prints the formatted file, `--write` rewrites it, `--check` lists files that would change (exit 9). A file with syntax errors is never formatted. Includes are not followed: each file is formatted on its own.
+
 - 4-space indentation. One directive per line. One space between arguments.
 - Opening `{` on the same line as the directive. `}` on its own line.
 - Lists: on one line if the whole line is ≤ 100 columns. Otherwise one item per line with a trailing comma.

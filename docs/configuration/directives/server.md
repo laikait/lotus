@@ -1,0 +1,25 @@
+# `server`
+
+<!-- Generated from the directive registry by `make docs`. Do not edit by hand. -->
+
+```text
+server { ... }
+```
+
+| | |
+|---|---|
+| **Contexts** | `root` |
+| **Block** | required, with the directives of the `server` context |
+| **How often** | at most once |
+| **Default** | none |
+| **Request-time placeholders** | no |
+| **Who can set it** | administrators only: refused in files a site includes for its tenant |
+| **Since** | LOTUS 0.1, config language 1 |
+
+### Description
+
+Top-level container for listeners, TLS settings, PHP backends and sites.
+
+### Security
+
+Defines everything LOTUS serves. Only administrators should be able to edit the file that contains it.

@@ -8,7 +8,7 @@ An independent, cross-platform web server written in Go. It's built for PHP and 
 
 ## What works today
 
-- **Configuration:** the `.lotus` language (parser, includes, variables, `env()`/`file()`), a directive registry, validation with line/column errors, and `lotus config validate` / `lotus config inspect` (secrets redacted) / `lotus config explain <file> <url>`, which shows the site, route, `match` block, rewrites, `try_files` candidates and error page a request would get, step by step, without sending it.
+- **Configuration:** the `.lotus` language (parser, includes, variables, `env()`/`file()`), a directive registry, validation with line/column errors, and `lotus config validate` / `lotus config inspect` (secrets redacted) / `lotus config format` (canonical style, comments kept; `--check` for CI, `--write` to rewrite), and `lotus config explain <file> <url>`, which shows the site, route, `match` block, rewrites, `try_files` candidates and error page a request would get, step by step, without sending it.
 - **Serving:** `lotus start` runs HTTP/1.1 and HTTPS (HTTP/2 included), virtual hosts with wildcard names, SNI certificate selection (`tls manual`), static files (ETag, Range, HEAD, index files, no directory listings), security headers, access logs (Combined format), connection and body limits, and graceful shutdown.
 - **Routing:** `route` blocks follow the Nginx `location` model (exact, prefix, `^~`, regex, named routes), with `return` (redirects and fixed responses), `try_files` (including `=404` and `@named` fallbacks, at most 10 internal redirects), `match` blocks (method, header, query, cookie, client IP, scheme, host), `rewrite` (`last`, `redirect`, `permanent`), `error_page` (a path or `@named` route, original status kept), per-route `root` and `max_request_body`, and request-time placeholders such as `{uri}` and `{re.1}`. See `configs/examples/routes.lotus`.
 - **Client IP:** `trusted_proxies` makes LOTUS believe `Forwarded` / `X-Forwarded-For` only from the listed networks, reading the chain from the right and skipping trusted hops. Access logs, `client_ip` conditions and `{remote_ip}` use the resolved address.
@@ -53,6 +53,7 @@ bin/lotus start -config configs/examples/static-site.lotus     # then open http:
 | [HTTP/3](docs/architecture/http3.md) | QUIC over UDP, Alt-Svc, what is the same and what differs, system settings |
 | [Rate limits](docs/architecture/limits.md) | Connection limits per address, request rate limits, password lock-out |
 | [Compression](docs/architecture/compression.md) | Brotli, Zstandard and gzip, precompressed files, what is and is not compressed, BREACH |
+| [Configuration reference](docs/configuration/directives/index.md) | Every directive: arguments, default, who can set it, security notes (generated) |
 | [Moving from Nginx](docs/architecture/nginx-compat.md) | `lotus compat nginx convert`: what is translated, approximated, ignored or lost |
 | [Packaging and services](docs/architecture/packaging.md) | systemd, rc.d, Windows service, release archives, signing plan |
 | [Response cache](docs/architecture/cache.md) | Zones, what is stored and what never is, keys and `Vary`, stale copies, purging, security |
