@@ -63,7 +63,7 @@ func (a *app) openAdmin(cfg *model.Config) (io.Closer, error) {
 		a.log.Warn("the admin has no accounts: nobody can sign in", "users_file", users.Path, "fix", "run: lotus admin passwd NAME")
 	}
 	srv := admin.New(admin.Options{
-		Backend: a, Sites: &sitefile.Store{Config: a.path}, Users: users, SessionTTL: ad.SessionTTL, Allow: ad.Allow, Secure: secure, Log: a.log,
+		Backend: a, Sites: &sitefile.Store{Config: a.path}, PHP: a.phpPools, Users: users, SessionTTL: ad.SessionTTL, Allow: ad.Allow, Secure: secure, Log: a.log,
 	})
 	go func() {
 		if err := srv.Serve(ln); err != nil {
@@ -76,6 +76,16 @@ func (a *app) openAdmin(cfg *model.Config) (io.Closer, error) {
 	}
 	a.log.Info("admin ready", "url", scheme+"://"+ad.Address+"/")
 	return adminCloser{srv}, nil
+}
+
+// phpPools describes the managed php-cgi pools for the admin's PHP page.
+func (a *app) phpPools() []admin.PHPPool {
+	infos := a.srv.PHPPools()
+	out := make([]admin.PHPPool, 0, len(infos))
+	for _, i := range infos {
+		out = append(out, admin.PHPPool{Name: i.Name, Command: i.Command, Processes: i.Processes, Alive: i.Alive, Restarts: i.Restarts})
+	}
+	return out
 }
 
 type adminCloser struct{ s *admin.Server }

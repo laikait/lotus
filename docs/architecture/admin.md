@@ -2,7 +2,13 @@
 
 The web admin is a sign-in page and a dashboard, served by LOTUS on a listener of its own (the idea of LiteSpeed's WebAdmin). It is optional and off unless the configuration has an `admin` block. It never replaces the control channel: it uses the same operations (`control.Backend`) as the `lotus` command, through `internal/admin`.
 
-**Status (2026-11-26):** steps 1 and 2 of the plan are built: the `admin` block, accounts, sign-in, sessions, the dashboard (status, health, listeners, sites, certificates), Reload, and the Sites page (add, edit, delete). Not built yet: certificate renewal, PHP, cache, logs, the configuration editor (next steps).
+**Status (2026-11-26):** steps 1 to 3 of the plan are built: the `admin` block, accounts, sign-in, sessions, the dashboard (status, health, listeners, sites, certificates), Reload, the Sites page (add, edit, delete), and the Cache, PHP and Server pages. Not built yet: certificate renewal (certmagic's renew call does not refresh the certificate in memory, and it needs a real CA to test), the log viewer and the configuration editor (step 4).
+
+## Cache, PHP and Server pages
+
+- **Cache:** a row per zone (entries, size against the budget, hits, misses, stale, evicted, purged) and a purge form: one path, everything under a path, or the whole zone, optionally for one host. Purging the whole zone asks for a confirmation. The work is done by the same functions as `lotus cache purge`.
+- **PHP:** read-only. For each php-cgi pool that LOTUS starts itself (`php_backend` with `command`): the command, the wanted number of processes, how many run now, and how often one was restarted. A `fastcgi_pass` backend is outside LOTUS and not listed.
+- **Server:** Reload configuration and Reopen log files. There is deliberately no Stop or Restart: the admin is part of the server, so a stop would end the page that asked for it and could not be undone from there. Stop and start the service from the operating system (Windows: the Start Menu entries or `Stop-Service LOTUS`; Linux: `systemctl`), or `lotus stop` from a shell.
 
 ## Sites
 
@@ -65,6 +71,10 @@ The password is asked twice without echo; `--password-stdin` and `--password-fil
 | `POST /v1/site-files` `{name, aliases, root, index, tls, create_root}` | admin | `{ok, generation}`; 422 for a bad value or an invalid configuration (with `diagnostics`), 409 if the name exists |
 | `PUT /v1/site-files/{name}` `{aliases, root, index, tls}` | admin | as above; 404 if missing, 409 if the file was changed by hand |
 | `DELETE /v1/site-files/{name}` | admin | `{ok, generation}`; the web directory is not touched |
+| `GET /v1/cache` | any | the cache zones, as `lotus.cache.status` |
+| `POST /v1/cache/purge` `{zone, host, path, prefix, all}` | admin | `{ok, purged}`; 422 unless exactly one of path, prefix, all; 404 for an unknown zone |
+| `GET /v1/php` | any | `[{name, command, processes, alive, restarts}]` |
+| `POST /v1/logs/reopen` | admin | `{ok, reopened}` |
 
 ## Not covered by tests
 

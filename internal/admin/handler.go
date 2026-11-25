@@ -34,7 +34,8 @@ const (
 // Options configure a Server.
 type Options struct {
 	Backend    control.Backend
-	Sites      *sitefile.Store // the sites.d folder; nil: no site pages
+	Sites      *sitefile.Store  // the sites.d folder; nil: no site pages
+	PHP        func() []PHPPool // the managed php-cgi pools; nil: none
 	Users      Users
 	SessionTTL time.Duration
 	Allow      []netip.Prefix // empty: any address
@@ -121,6 +122,10 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, http.StatusOK, s.opts.Backend.Certificates())
 	}))
 	mux.HandleFunc("POST /v1/reload", s.auth(RoleAdmin, s.reload))
+	mux.HandleFunc("GET /v1/cache", s.auth(RoleViewer, s.cacheStatus))
+	mux.HandleFunc("POST /v1/cache/purge", s.auth(RoleAdmin, s.cachePurge))
+	mux.HandleFunc("GET /v1/php", s.auth(RoleViewer, s.phpStatus))
+	mux.HandleFunc("POST /v1/logs/reopen", s.auth(RoleAdmin, s.reopenLogs))
 	if s.opts.Sites != nil {
 		mux.HandleFunc("GET /v1/site-files", s.auth(RoleViewer, s.listSiteFiles))
 		mux.HandleFunc("POST /v1/site-files", s.auth(RoleAdmin, s.addSite))

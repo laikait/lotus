@@ -13,6 +13,9 @@
   <nav id="nav" class="nav" hidden aria-label="Main">
     <a href="#dashboard" data-view="dashboard">Dashboard</a>
     <a href="#sites" data-view="sites">Sites</a>
+    <a href="#cache" data-view="cache">Cache</a>
+    <a href="#php" data-view="php">PHP</a>
+    <a href="#server" data-view="server">Server</a>
   </nav>
   <span class="spacer"></span>
   <span id="who" class="who" hidden></span>
@@ -93,6 +96,67 @@
         <button id="site-cancel" class="btn btn-quiet" type="button">Cancel</button>
       </div>
     </form>
+  </section>
+
+  <section id="cachepage" data-page="cache" hidden>
+    <div class="toolbar">
+      <h1>Cache</h1>
+      <span class="spacer"></span>
+      <button id="cache-refresh" class="btn btn-quiet" type="button" title="Refresh" aria-label="Refresh the cache figures">Refresh</button>
+    </div>
+    <table class="table">
+      <thead><tr><th>Zone</th><th>Entries</th><th>Size</th><th>Hits</th><th>Misses</th><th>Stale</th><th>Evicted</th><th>Purged</th></tr></thead>
+      <tbody id="cache-rows"></tbody>
+    </table>
+
+    <form id="purge-form" class="card form" hidden>
+      <h2>Purge</h2>
+      <label for="p-zone">Zone</label>
+      <select id="p-zone"></select>
+      <label for="p-what">What to remove</label>
+      <select id="p-what">
+        <option value="path">One path</option>
+        <option value="prefix">Everything under a path</option>
+        <option value="all">Everything in the zone</option>
+      </select>
+      <div id="p-path-wrap">
+        <label for="p-path">Path <span class="muted">(starts with /)</span></label>
+        <input id="p-path" type="text" maxlength="1000" placeholder="/blog/" spellcheck="false">
+      </div>
+      <label for="p-host">Host <span class="muted">(optional: only this site)</span></label>
+      <input id="p-host" type="text" maxlength="253" placeholder="example.com" spellcheck="false" autocapitalize="off">
+      <div id="purge-errors" class="error" role="alert" hidden></div>
+      <div class="actions">
+        <button id="purge-go" class="btn btn-danger" type="submit">Purge</button>
+      </div>
+    </form>
+  </section>
+
+  <section id="phppage" data-page="php" hidden>
+    <div class="toolbar">
+      <h1>PHP</h1>
+      <span class="spacer"></span>
+      <button id="php-refresh" class="btn btn-quiet" type="button" title="Refresh" aria-label="Refresh the PHP figures">Refresh</button>
+    </div>
+    <table class="table">
+      <thead><tr><th>Pool</th><th>Command</th><th>Processes</th><th>Running</th><th>Restarts</th></tr></thead>
+      <tbody id="php-rows"></tbody>
+    </table>
+    <p class="hint">Only pools that LOTUS starts itself (a <code>php_backend</code> with <code>command</code>) are listed. A <code>fastcgi_pass</code> backend runs outside LOTUS.</p>
+  </section>
+
+  <section id="serverpage" data-page="server" hidden>
+    <div class="toolbar"><h1>Server</h1></div>
+    <div class="card form">
+      <h2>Configuration</h2>
+      <p>Load <code>main.conf</code> and the site files again without stopping the server. Nothing changes if the files have a mistake.</p>
+      <button id="server-reload" class="btn" type="button">Reload configuration</button>
+    </div>
+    <div class="card form">
+      <h2>Logs</h2>
+      <p>Close and open the log files again, after a rotation tool moved them.</p>
+      <button id="server-logs" class="btn" type="button">Reopen log files</button>
+    </div>
   </section>
 </main>
 <script src="app.js"></script>

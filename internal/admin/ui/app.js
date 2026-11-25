@@ -45,12 +45,13 @@
   // ---- views ----
 
   function showView(name) {
-    view = name === "sites" ? "sites" : "dashboard";
+    view = ["sites", "cache", "php", "server"].indexOf(name) >= 0 ? name : "dashboard";
     document.querySelectorAll("[data-page]").forEach(function (p) { p.hidden = p.getAttribute("data-page") !== view; });
     document.querySelectorAll("#nav a").forEach(function (a) {
       if (a.getAttribute("data-view") === view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     });
-    return view === "sites" ? loadSites() : loadDashboard();
+    var loaders = { sites: loadSites, cache: loadCache, php: loadPHP, server: loadServer };
+    return (loaders[view] || loadDashboard)();
   }
 
   window.addEventListener("hashchange", function () { if (csrf) showView(location.hash.slice(1)); });
@@ -263,6 +264,74 @@
       .then(function () { toast("Site " + name + " deleted."); return loadSites(); })
       .catch(failed);
   }
+
+  // ---- cache ----
+
+  function loadCache() {
+    return api("GET", "/v1/cache").then(function (zones) {
+      fillRows("cache-rows", (zones || []).map(function (z) {
+        return [z.zone, z.entries, bytes(z.bytes) + " of " + bytes(z.max_bytes), z.hits, z.misses, z.stale, z.evictions, z.purged];
+      }), 8, "No cache zones. Add a cache block to the configuration.");
+      var sel = $("p-zone");
+      sel.replaceChildren();
+      (zones || []).forEach(function (z) { var o = el("option", z.zone); o.value = z.zone; sel.appendChild(o); });
+      $("purge-form").hidden = role !== "admin" || !zones || !zones.length;
+    }).catch(failed);
+  }
+
+  function syncPurgeForm() { $("p-path-wrap").hidden = $("p-what").value === "all"; }
+  $("p-what").addEventListener("change", syncPurgeForm);
+  $("cache-refresh").addEventListener("click", function () { loadCache(); });
+
+  $("purge-form").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var what = $("p-what").value, body = { zone: $("p-zone").value, host: $("p-host").value.trim() };
+    if (what === "all") body.all = true; else body[what] = $("p-path").value.trim();
+    if (what === "all" && !window.confirm("Remove everything stored in the zone " + body.zone + "?")) return;
+    var btn = $("purge-go"), box = $("purge-errors");
+    btn.disabled = true; box.hidden = true;
+    api("POST", "/v1/cache/purge", body)
+      .then(function (r) { toast(r.purged + " stored response(s) removed."); return loadCache(); })
+      .catch(function (e) {
+        if (e.status === 401) { signedOut(); return; }
+        box.textContent = e.message; box.hidden = false;
+      })
+      .then(function () { btn.disabled = false; });
+  });
+
+  // ---- php ----
+
+  function loadPHP() {
+    return api("GET", "/v1/php").then(function (pools) {
+      fillRows("php-rows", (pools || []).map(function (p) {
+        var state = p.alive === p.processes ? el("span", p.alive + " of " + p.processes, "pill ok") : el("span", p.alive + " of " + p.processes, "pill warn");
+        return [p.name, p.command, p.processes, state, p.restarts];
+      }), 5, "No managed PHP pools.");
+    }).catch(failed);
+  }
+  $("php-refresh").addEventListener("click", function () { loadPHP(); });
+
+  // ---- server ----
+
+  function loadServer() {
+    var admin = role === "admin";
+    ["server-reload", "server-logs"].forEach(function (id) { $(id).disabled = !admin; });
+    return Promise.resolve();
+  }
+
+  function act(btn, request, okText) {
+    btn.disabled = true;
+    request.then(function (r) { toast(typeof okText === "function" ? okText(r) : okText); })
+      .catch(function (e) { if (e.status === 401) { signedOut(); return; } toast(e.message, "bad"); })
+      .then(function () { btn.disabled = false; });
+  }
+
+  $("server-reload").addEventListener("click", function () {
+    act($("server-reload"), api("POST", "/v1/reload"), function (r) { return "Configuration loaded (generation " + r.generation + ")."; });
+  });
+  $("server-logs").addEventListener("click", function () {
+    act($("server-logs"), api("POST", "/v1/logs/reopen"), function (r) { return r.reopened + " log file(s) reopened."; });
+  });
 
   // ---- sign in and out ----
 

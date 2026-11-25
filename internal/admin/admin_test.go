@@ -18,6 +18,9 @@ import (
 type fakeBackend struct {
 	reloads   int
 	reloadErr *control.Error // when set, Reload refuses
+	purged    []control.CachePurgeParams
+	stops     int
+	reopened  int
 }
 
 func (f *fakeBackend) Status() control.Status {
@@ -28,9 +31,15 @@ func (f *fakeBackend) Sites() []control.Site  { return []control.Site{{Name: "ex
 func (f *fakeBackend) Certificates() []control.Certificate {
 	return nil
 }
-func (f *fakeBackend) CacheStatus(string) ([]control.CacheZone, *control.Error) { return nil, nil }
-func (f *fakeBackend) CachePurge(control.CachePurgeParams) (int, *control.Error) {
-	return 0, nil
+func (f *fakeBackend) CacheStatus(string) ([]control.CacheZone, *control.Error) {
+	return []control.CacheZone{{Zone: "images", Entries: 3, Hits: 10}}, nil
+}
+func (f *fakeBackend) CachePurge(p control.CachePurgeParams) (int, *control.Error) {
+	f.purged = append(f.purged, p)
+	if !p.All && p.Path == "" && p.Prefix == "" {
+		return 0, control.NewError(control.CodeInvalidParams, "say what to purge", nil)
+	}
+	return 3, nil
 }
 func (f *fakeBackend) Reload(string) (control.ReloadResult, *control.Error) {
 	f.reloads++
@@ -39,8 +48,8 @@ func (f *fakeBackend) Reload(string) (control.ReloadResult, *control.Error) {
 	}
 	return control.ReloadResult{Generation: 7}, nil
 }
-func (f *fakeBackend) Stop(bool, time.Duration)                               {}
-func (f *fakeBackend) ReopenLogs() (int, *control.Error)                      { return 0, nil }
+func (f *fakeBackend) Stop(bool, time.Duration)                               { f.stops++ }
+func (f *fakeBackend) ReopenLogs() (int, *control.Error)                      { f.reopened++; return 2, nil }
 func (f *fakeBackend) InspectConfig(string) (json.RawMessage, *control.Error) { return nil, nil }
 
 type env struct {

@@ -2,6 +2,7 @@ package server
 
 import (
 	"io"
+	"sort"
 	"sync"
 	"time"
 
@@ -110,6 +111,29 @@ func (p poolCloser) Close() error {
 type sharedPool struct {
 	pool *phpproc.Pool
 	refs int
+	name string // the first backend that asked for it
+	spec phpproc.Spec
+}
+
+// PHPPoolInfo describes one managed php-cgi pool.
+type PHPPoolInfo struct {
+	Name      string
+	Command   string
+	Processes int // wanted
+	Alive     int // running now
+	Restarts  int64
+}
+
+// PHPPools lists the managed php-cgi pools in use, sorted by name.
+func (s *Server) PHPPools() []PHPPoolInfo {
+	s.poolMu.Lock()
+	defer s.poolMu.Unlock()
+	out := make([]PHPPoolInfo, 0, len(s.pools))
+	for _, sp := range s.pools {
+		out = append(out, PHPPoolInfo{Name: sp.name, Command: sp.spec.Command, Processes: sp.spec.Processes, Alive: sp.pool.Alive(), Restarts: sp.pool.Restarts()})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
 
 // managedPool returns the process pool for a backend with `command`, starting
@@ -133,7 +157,7 @@ func (s *Server) managedPool(b model.PHPBackend) (phpBackend, io.Closer, error) 
 		if err != nil {
 			return nil, nil, err
 		}
-		sp = &sharedPool{pool: pool}
+		sp = &sharedPool{pool: pool, name: b.Name, spec: spec}
 		if s.pools == nil {
 			s.pools = map[string]*sharedPool{}
 		}
