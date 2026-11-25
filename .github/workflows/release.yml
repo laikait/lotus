@@ -2,8 +2,12 @@ name: Release
 
 # Builds the archives for a version tag (v1.2.3) and attaches them, with
 # SHA256SUMS, to a draft GitHub release. A person reviews the draft and
-# publishes it. Signing the Windows binary is a step to add here once a
-# certificate exists (docs/packaging.md).
+# publishes it.
+#
+# Windows signing (docs/code-signing.md) is off until the repository variable
+# SIGNPATH_ORGANIZATION_ID is set (Settings, Secrets and variables, Actions,
+# Variables) and the secret SIGNPATH_API_TOKEN exists. Then lotus.exe is signed
+# by SignPath before it goes into the Windows archive.
 
 on:
   push:
@@ -15,6 +19,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      SIGN: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -24,6 +30,34 @@ jobs:
           go-version: stable
       - run: go test ./...
       - run: scripts/release.sh "${GITHUB_REF_NAME}"
+
+      - name: Take out the Windows program to be signed
+        if: env.SIGN == 'true'
+        run: |
+          mkdir unsigned
+          unzip -p dist/lotus-*-windows-amd64.zip '*/lotus.exe' > unsigned/lotus.exe
+      - name: Upload it for SignPath
+        id: unsigned
+        if: env.SIGN == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: unsigned-lotus-exe
+          path: unsigned/lotus.exe
+      - name: Sign it with SignPath
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@a2c5b60d9c75f073142b653c354b632eedce097b
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'lotus' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG || 'release-signing' }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+      - name: Put the signed program into the Windows archive
+        if: env.SIGN == 'true'
+        run: python3 scripts/replace-windows-exe.py dist signed/lotus.exe
+
       - name: Draft the release
         env:
           GH_TOKEN: ${{ github.token }}

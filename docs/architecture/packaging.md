@@ -36,7 +36,7 @@ The program is not signed yet, so Windows shows "Unknown publisher" (when it ask
 - check the SHA-256 against `SHA256SUMS` from the release page;
 - after checking, remove the download mark with `Unblock-File lotus.exe`.
 
-The plan for signed releases: Authenticode-sign `lotus.exe` with a timestamp in the release workflow, using a certificate whose key lives in a hardware module or a signing service (SignPath Foundation offers signing to open-source projects free of charge; Azure's managed signing service and an OV/EV certificate are the alternatives). A signature gives the publisher name; SmartScreen reputation still needs downloads over time with a stable signer. This needs a decision on the publisher identity, so it is not wired in yet.
+The plan for signed releases: Authenticode-sign `lotus.exe` with a timestamp in the release workflow, using a certificate whose key lives in a hardware module or a signing service (SignPath Foundation offers signing to open-source projects free of charge; Azure's managed signing service and an OV/EV certificate are the alternatives). A signature gives the publisher name; SmartScreen reputation still needs downloads over time with a stable signer. The release workflow already has the signing steps; they switch on when the SignPath variables exist (`docs/code-signing.md`).
 
 ## Not built yet
 
