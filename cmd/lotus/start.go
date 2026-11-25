@@ -52,6 +52,9 @@ func defaultConfigPath() string {
 // Windows. Service managers (systemd, the Windows service control manager,
 // rc.d) are responsible for running it in the background.
 func cmdStart(args []string, stdout, stderr io.Writer) int {
+	if code, ok := runAsService(args, stdout, stderr); ok {
+		return code
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

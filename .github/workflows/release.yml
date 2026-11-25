@@ -1,0 +1,30 @@
+name: Release
+
+# Builds the archives for a version tag (v1.2.3) and attaches them, with
+# SHA256SUMS, to a draft GitHub release. A person reviews the draft and
+# publishes it. Signing the Windows binary is a step to add here once a
+# certificate exists (docs/packaging.md).
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: stable
+      - run: go test ./...
+      - run: scripts/release.sh "${GITHUB_REF_NAME}"
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" dist/lotus-* dist/SHA256SUMS --draft --verify-tag --title "${GITHUB_REF_NAME}" --generate-notes

@@ -46,6 +46,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cmdCache(args[1:], stdout, stderr)
 	case "logs":
 		return cmdLogs(args[1:], stdout, stderr)
+	case "service":
+		return cmdService(args[1:], stdout, stderr)
 	case "compat":
 		return cmdCompat(args[1:], stdout, stderr)
 	case "help", "--help", "-h":
@@ -105,6 +107,8 @@ Commands:
   cache purge [--zone NAME] [--host HOST] (--path PATH | --prefix PREFIX | --all)
                               Remove stored responses from a cache zone
   logs reopen                 Reopen the log files (after log rotation)
+  service unit|install|uninstall [--config FILE] [--user NAME]
+                              Print or install the systemd unit, rc.d script or Windows service
   compat htaccess check [--json] [--all] <file>
                               Report which directives of a .htaccess file LOTUS can apply
   compat nginx convert [--json] [--all] [-o file [--force]] <nginx.conf>

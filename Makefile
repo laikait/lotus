@@ -16,7 +16,7 @@ GOVULNCHECK_VERSION := v1.10.0
 
 PLATFORMS := linux/amd64 linux/arm64 freebsd/amd64 windows/amd64 darwin/arm64
 
-.PHONY: all build test race vet fmt fmt-check lint vuln cross check clean
+.PHONY: all build test race vet fmt fmt-check lint vuln cross dist check clean
 
 all: check build
 
@@ -52,7 +52,10 @@ cross:
 			-o bin/lotus-$$os-$$arch$$ext ./cmd/lotus || exit 1; \
 	done
 
+dist:
+	scripts/release.sh $(VERSION)
+
 check: fmt-check vet test
 
 clean:
-	rm -rf bin
+	rm -rf bin dist
