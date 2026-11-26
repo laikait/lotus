@@ -14,6 +14,14 @@ Both show raw data that can hold addresses, URLs and secrets, so every route nee
 - **Know what this allows:** someone who can save a configuration here can change what the server serves, reads and runs (for example a `php_backend` `command` runs a program as the service account). Admin accounts should be people who could already administer the machine. This is why the editor is for the `admin` role only, the sign-in is rate limited, and every save, refusal and undo is logged with the account and address.
 - A change to the `admin { }` block itself is not applied by a reload; restart the service. Saving a mistake in it is still refused by the check.
 
+## Earlier versions (Configuration page, admin role)
+
+Every change made through the Sites page or the Configuration editor keeps the text the file had before it, in `history/<file>/YYYYMMDD-HHMMSS-<account>.conf` next to the main configuration file (a site file `sites.d/x.conf` is kept in `history/sites.d__x.conf/`). The folder is outside `sites.d`, so no include reads a version as configuration. The newest 20 per file are kept; an unchanged text is not kept twice; a change that is refused or undone keeps nothing. The page lists them (time, account, size) and **Load into editor** puts one in the editor; the normal Check and Save and reload then apply, so a restored version is checked as a whole like any edit. Names and ids are checked against fixed patterns, so no other path can be asked for. Changes made with the `lotus site` command or by hand are not recorded. History is a convenience for undoing mistakes, not an audit log (the audit lines are in the server log).
+
+## Users (admin role)
+
+The Users page lists the accounts of the users file and adds, changes (role and/or password) and deletes them; the same file `lotus admin passwd` writes. Rules, all enforced on the server: a password has at least 10 characters; the last admin can't be deleted or demoted; you can't delete your own account or change your own role (another admin does that); changing your own password needs the current one; changing another account's password needs no old password. A changed or deleted account's sessions end at once (your own session stays when you change your own password), because a session keeps the role it was opened with. Every change is written to the server log with the account and address.
+
 ## Traffic (live statistics, any signed-in account)
 
 Like the real-time statistics of other servers' admin panels. The page reads `GET /v1/traffic` every 3 seconds while it is open and the browser tab is visible (nothing is polled otherwise) and keeps the last 60 readings (3 minutes) in the browser. The server sends totals only, read from the atomic counters the metrics already keep (`Server.Traffic`, `internal/server/traffic.go`), so nothing is added to the request path; the page works out the rates from two readings. It shows requests per second, data sent per second, open connections against the limit, the share of errors, refused connections and dropped requests, three sparklines (requests, data, errors; drawn as inline SVG, no chart library) and a table by site (requests/s, data/s, 2xx, 3xx, 4xx, 5xx, average time, rate limited). Totals count from the start of the server; a reload does not reset them. Requests that no site answered are shown as "(no site matched)".
@@ -105,6 +113,12 @@ The password is asked twice without echo; `--password-stdin` and `--password-fil
 | `DELETE /v1/site-files/{name}` | admin | `{ok, generation}`; the web directory is not touched |
 | `POST /v1/certs/renew` `{domain}` | admin | `{ok}` after the CA has issued the certificate (up to a minute); 404 for a name without an automatic certificate, 422 when the current one is under a day old |
 | `GET /v1/traffic` | any | `{time_ms, uptime_seconds, connections, connection_limit, rejected, dropped, classes, sites: [{name, requests, class[], bytes, rate_limited, latency_seconds}], unrouted}`: running totals since the start |
+| `GET /v1/users` | admin | `[{name, role, self}]` (never a hash) |
+| `POST /v1/users` `{name, role, password}` | admin | `{ok}`; 422 for a bad name, role or short password, 409 if the name exists |
+| `PUT /v1/users/{name}` `{role?, password?, current_password?}` | admin | `{ok, sessions_ended}`; 422 for the last-admin and own-role rules, 403 for a wrong current password |
+| `DELETE /v1/users/{name}` | admin | `{ok}`; 422 for yourself or the last admin, 404 if missing |
+| `GET /v1/config/history?name=` | admin | `{name, versions: [{id, time, who, size}], keep}` |
+| `GET /v1/config/version?name=&id=` | admin | `{name, id, content}`; 404 for an id that was not made by the program |
 | `GET /v1/cache` | any | the cache zones, as `lotus.cache.status` |
 | `POST /v1/cache/purge` `{zone, host, path, prefix, all}` | admin | `{ok, purged}`; 422 unless exactly one of path, prefix, all; 404 for an unknown zone |
 | `GET /v1/php` | any | `[{name, command, processes, alive, restarts}]` |

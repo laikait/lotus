@@ -168,6 +168,11 @@ func (u Users) Set(name, role, password string) error {
 	if !replaced {
 		list = append(list, User{Name: name, Role: role, Hash: hash})
 	}
+	return u.write(list)
+}
+
+// write replaces the users file with list.
+func (u Users) write(list []User) error {
 	var b strings.Builder
 	b.WriteString("# LOTUS admin accounts: name:role:password hash. Change them with \"lotus admin passwd\", not by hand.\n")
 	for _, c := range list {
@@ -193,4 +198,50 @@ func (u Users) Set(name, role, password string) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), u.Path)
+}
+
+// ErrNoUser means there is no account of that name.
+var ErrNoUser = errors.New("there is no such account")
+
+// Delete removes an account.
+func (u Users) Delete(name string) error {
+	list, err := u.List()
+	if err != nil {
+		return err
+	}
+	for i := range list {
+		if list[i].Name == name {
+			return u.write(append(list[:i], list[i+1:]...))
+		}
+	}
+	return ErrNoUser
+}
+
+// SetRole changes the role of an account and keeps its password.
+func (u Users) SetRole(name, role string) error {
+	if role != RoleAdmin && role != RoleViewer {
+		return fmt.Errorf("the role must be %q or %q", RoleAdmin, RoleViewer)
+	}
+	list, err := u.List()
+	if err != nil {
+		return err
+	}
+	for i := range list {
+		if list[i].Name == name {
+			list[i].Role = role
+			return u.write(list)
+		}
+	}
+	return ErrNoUser
+}
+
+// Admins counts the accounts with the admin role.
+func Admins(list []User) int {
+	n := 0
+	for _, c := range list {
+		if c.Role == RoleAdmin {
+			n++
+		}
+	}
+	return n
 }

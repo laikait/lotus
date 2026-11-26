@@ -62,6 +62,7 @@ type Server struct {
 	log  *slog.Logger
 	http *http.Server
 
+	userMu   sync.Mutex // one change of the users file at a time
 	mu       sync.Mutex
 	sessions map[string]*session
 	fails    map[string]*failures
@@ -129,6 +130,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/cache/purge", s.auth(RoleAdmin, s.cachePurge))
 	mux.HandleFunc("GET /v1/traffic", s.auth(RoleViewer, s.traffic))
 	mux.HandleFunc("GET /v1/php", s.auth(RoleViewer, s.phpStatus))
+	mux.HandleFunc("GET /v1/users", s.auth(RoleAdmin, s.userList))
+	mux.HandleFunc("POST /v1/users", s.auth(RoleAdmin, s.userAdd))
+	mux.HandleFunc("PUT /v1/users/{name}", s.auth(RoleAdmin, s.userChange))
+	mux.HandleFunc("DELETE /v1/users/{name}", s.auth(RoleAdmin, s.userDelete))
 	mux.HandleFunc("POST /v1/logs/reopen", s.auth(RoleAdmin, s.reopenLogs))
 	// Logs and the raw configuration files can hold addresses, URLs and secrets: admin role only, even to read.
 	mux.HandleFunc("GET /v1/logs", s.auth(RoleAdmin, s.logList))
@@ -138,6 +143,8 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /v1/config/file", s.auth(RoleAdmin, s.configRead))
 		mux.HandleFunc("POST /v1/config/validate", s.auth(RoleAdmin, s.configValidate))
 		mux.HandleFunc("PUT /v1/config/file", s.auth(RoleAdmin, s.configSave))
+		mux.HandleFunc("GET /v1/config/history", s.auth(RoleAdmin, s.configHistory))
+		mux.HandleFunc("GET /v1/config/version", s.auth(RoleAdmin, s.configVersion))
 		mux.HandleFunc("GET /v1/site-files", s.auth(RoleViewer, s.listSiteFiles))
 		mux.HandleFunc("POST /v1/site-files", s.auth(RoleAdmin, s.addSite))
 		mux.HandleFunc("PUT /v1/site-files/{name}", s.auth(RoleAdmin, s.updateSite))

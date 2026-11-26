@@ -18,6 +18,7 @@
     <a href="#php" data-view="php">PHP</a>
     <a href="#logs" data-view="logs" data-admin>Logs</a>
     <a href="#config" data-view="config" data-admin>Configuration</a>
+    <a href="#users" data-view="users" data-admin>Users</a>
     <a href="#server" data-view="server">Server</a>
   </nav>
   <span class="spacer"></span>
@@ -256,6 +257,44 @@
       <button id="c-save" class="btn" type="button">Save and reload</button>
       <button id="c-revert" class="btn btn-quiet" type="button">Discard changes</button>
     </div>
+    <h2>Earlier versions</h2>
+    <p class="hint">Each change made here (or on the Sites page) keeps the text the file had before it. Load one into the editor, then Check or Save to use it. The last 20 are kept.</p>
+    <table class="table">
+      <thead><tr><th>Saved</th><th>Changed by</th><th>Size</th><th>Actions</th></tr></thead>
+      <tbody id="c-history"></tbody>
+    </table>
+  </section>
+
+  <section id="userspage" data-page="users" hidden>
+    <div class="toolbar">
+      <h1>Users</h1>
+      <span class="spacer"></span>
+      <button id="user-add" class="btn" type="button">Add account</button>
+    </div>
+    <table class="table">
+      <thead><tr><th>Name</th><th>Role</th><th>Actions</th></tr></thead>
+      <tbody id="user-rows"></tbody>
+    </table>
+    <p class="hint">Admins can change things; viewers can only look. A changed or deleted account is signed out at once. The last admin can't be deleted or demoted. Passwords have at least 10 characters.</p>
+
+    <form id="user-form" class="card form" hidden autocomplete="off">
+      <h2 id="user-form-title">Add an account</h2>
+      <label for="u-name">Name</label>
+      <input id="u-name" type="text" required maxlength="64" autocapitalize="off" spellcheck="false" autocomplete="off">
+      <label for="u-role">Role</label>
+      <select id="u-role"><option value="viewer">Viewer (look only)</option><option value="admin">Admin</option></select>
+      <div id="u-current-wrap" hidden>
+        <label for="u-current">Your current password <span class="muted">(needed to change your own password)</span></label>
+        <input id="u-current" type="password" maxlength="256" autocomplete="current-password">
+      </div>
+      <label for="u-pass" id="u-pass-label">Password</label>
+      <input id="u-pass" type="password" maxlength="256" autocomplete="new-password">
+      <div id="user-errors" class="error" role="alert" hidden></div>
+      <div class="actions">
+        <button id="user-save" class="btn" type="submit">Save</button>
+        <button id="user-cancel" class="btn btn-quiet" type="button">Cancel</button>
+      </div>
+    </form>
   </section>
 
   <section id="serverpage" data-page="server" hidden>

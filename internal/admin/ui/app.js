@@ -45,13 +45,13 @@
   // ---- views ----
 
   function showView(name) {
-    view = ["sites", "cache", "php", "server", "logs", "config", "traffic"].indexOf(name) >= 0 ? name : "dashboard";
-    if ((view === "logs" || view === "config") && role !== "admin") view = "dashboard"; // the raw files and logs are for admins
+    view = ["sites", "cache", "php", "server", "logs", "config", "traffic", "users"].indexOf(name) >= 0 ? name : "dashboard";
+    if ((view === "logs" || view === "config" || view === "users") && role !== "admin") view = "dashboard"; // the raw files and logs are for admins
     document.querySelectorAll("[data-page]").forEach(function (p) { p.hidden = p.getAttribute("data-page") !== view; });
     document.querySelectorAll("#nav a").forEach(function (a) {
       if (a.getAttribute("data-view") === view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     });
-    var loaders = { traffic: loadTraffic, sites: loadSites, cache: loadCache, php: loadPHP, server: loadServer, logs: loadLogs, config: loadConfig };
+    var loaders = { traffic: loadTraffic, sites: loadSites, cache: loadCache, php: loadPHP, server: loadServer, logs: loadLogs, config: loadConfig, users: loadUsers };
     return (loaders[view] || loadDashboard)();
   }
 
@@ -579,9 +579,41 @@
     $("c-result").hidden = true;
     var f = cfgFiles.filter(function (x) { return x.name === name; })[0];
     $("c-managed").hidden = !(f && f.managed);
-    if (!name) { $("c-text").value = ""; return Promise.resolve(); }
+    if (!name) { $("c-text").value = ""; $("c-history").replaceChildren(); return Promise.resolve(); }
     return api("GET", "/v1/config/file?name=" + encodeURIComponent(name)).then(function (d) {
       cfgOriginal = d.content; $("c-text").value = d.content;
+      return loadHistory();
+    }).catch(failed);
+  }
+
+  function loadHistory() {
+    var name = $("c-file").value;
+    return api("GET", "/v1/config/history?name=" + encodeURIComponent(name)).then(function (d) {
+      var body = $("c-history");
+      body.replaceChildren();
+      if (!d.versions || !d.versions.length) {
+        var tr = el("tr"), td = el("td", "No earlier versions yet.", "empty");
+        td.colSpan = 4; tr.appendChild(td); body.appendChild(tr);
+        return;
+      }
+      d.versions.forEach(function (v) {
+        var tr = el("tr");
+        tr.appendChild(el("td", new Date(v.time).toLocaleString()));
+        tr.appendChild(el("td", v.who));
+        tr.appendChild(el("td", v.size + " bytes"));
+        var act = el("td"), btn = el("button", "Load into editor", "btn btn-quiet");
+        btn.type = "button"; btn.setAttribute("aria-label", "Load the version of " + new Date(v.time).toLocaleString() + " into the editor");
+        btn.addEventListener("click", function () { loadVersion(name, v); });
+        act.appendChild(btn); tr.appendChild(act); body.appendChild(tr);
+      });
+    }).catch(failed);
+  }
+
+  function loadVersion(name, v) {
+    if ($("c-text").value !== cfgOriginal && !window.confirm("Replace your unsaved changes in the editor with this version?")) return;
+    api("GET", "/v1/config/version?name=" + encodeURIComponent(name) + "&id=" + encodeURIComponent(v.id)).then(function (d) {
+      $("c-text").value = d.content;
+      showCfgResult(true, {}, "Version of " + new Date(v.time).toLocaleString() + " is in the editor. Press Check, then Save and reload, to use it.");
     }).catch(failed);
   }
 
@@ -625,6 +657,7 @@
         cfgOriginal = $("c-text").value;
         showCfgResult(true, {}, "Saved and loaded (generation " + r.generation + ").");
         toast("Configuration saved and loaded.");
+        loadHistory();
       })
       .catch(function (e) { if (e.status === 401) { signedOut(); return; } showCfgResult(false, e); })
       .then(function () { b.disabled = false; });
@@ -646,6 +679,83 @@
   window.addEventListener("beforeunload", function (ev) {
     if (csrf && $("c-text").value !== cfgOriginal) { ev.preventDefault(); ev.returnValue = ""; }
   });
+
+  // ---- users ----
+
+  var userEditing = null;
+
+  function loadUsers() {
+    return api("GET", "/v1/users").then(function (list) {
+      var body = $("user-rows");
+      body.replaceChildren();
+      list.forEach(function (u) {
+        var tr = el("tr");
+        tr.appendChild(el("td", u.name + (u.self ? " (you)" : "")));
+        tr.appendChild(el("td", u.role));
+        var act = el("td"), box = el("div", null, "row-actions");
+        var edit = el("button", "Change", "btn btn-quiet");
+        edit.type = "button"; edit.setAttribute("aria-label", "Change the account " + u.name);
+        edit.addEventListener("click", function () { openUserForm(u); });
+        box.appendChild(edit);
+        if (!u.self) {
+          var del = el("button", "Delete", "btn btn-danger");
+          del.type = "button"; del.setAttribute("aria-label", "Delete the account " + u.name);
+          del.addEventListener("click", function () { deleteUser(u.name); });
+          box.appendChild(del);
+        }
+        act.appendChild(box); tr.appendChild(act); body.appendChild(tr);
+      });
+    }).catch(failed);
+  }
+
+  function openUserForm(u) {
+    userEditing = u ? u.name : null;
+    $("user-form-title").textContent = u ? "Change " + u.name : "Add an account";
+    $("u-name").value = u ? u.name : ""; $("u-name").readOnly = !!u;
+    $("u-role").value = u ? u.role : "viewer";
+    $("u-role").disabled = !!(u && u.self); // your own role is changed by another admin
+    $("u-pass").value = ""; $("u-current").value = "";
+    $("u-pass").required = !u;
+    $("u-pass-label").textContent = u ? "New password (leave empty to keep the old one)" : "Password";
+    $("u-current-wrap").hidden = !(u && u.self);
+    $("user-errors").hidden = true;
+    $("user-form").hidden = false;
+    (u ? $("u-pass") : $("u-name")).focus();
+  }
+
+  function closeUserForm() { $("user-form").hidden = true; $("u-pass").value = ""; $("u-current").value = ""; userEditing = null; }
+
+  $("user-add").addEventListener("click", function () { openUserForm(null); });
+  $("user-cancel").addEventListener("click", closeUserForm);
+
+  $("user-form").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var btn = $("user-save"), req;
+    if (userEditing) {
+      var body = {};
+      if ($("u-pass").value) { body.password = $("u-pass").value; if (!$("u-current-wrap").hidden) body.current_password = $("u-current").value; }
+      if (!$("u-role").disabled) body.role = $("u-role").value;
+      req = api("PUT", "/v1/users/" + encodeURIComponent(userEditing), body);
+    } else {
+      req = api("POST", "/v1/users", { name: $("u-name").value.trim(), role: $("u-role").value, password: $("u-pass").value });
+    }
+    btn.disabled = true; $("user-errors").hidden = true;
+    req.then(function () {
+      toast(userEditing ? "Account changed." : "Account added.");
+      closeUserForm();
+      return loadUsers();
+    }).catch(function (e) {
+      if (e.status === 401) { signedOut(); return; }
+      var box = $("user-errors"); box.textContent = e.message; box.hidden = false;
+    }).then(function () { btn.disabled = false; });
+  });
+
+  function deleteUser(name) {
+    if (!window.confirm("Delete the account " + name + "? It is signed out at once.")) return;
+    api("DELETE", "/v1/users/" + encodeURIComponent(name))
+      .then(function () { toast("Account " + name + " deleted."); return loadUsers(); })
+      .catch(function (e) { if (e.status === 401) { signedOut(); return; } toast(e.message, "bad"); });
+  }
 
   // ---- server ----
 

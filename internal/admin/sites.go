@@ -84,6 +84,9 @@ func (s *Server) finishSiteChange(w http.ResponseWriter, r *http.Request, sess *
 		})
 		return
 	}
+	if len(old) > 0 {
+		s.keepVersion(sitefile.SiteFileName(name), old, sess.user)
+	}
 	s.log.Info("site changed", "action", action, "site", name, "user", sess.user, "ip", remote(r), "generation", res.Generation)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "generation": res.Generation})
 }

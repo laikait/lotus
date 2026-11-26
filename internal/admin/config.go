@@ -70,6 +70,7 @@ func (s *Server) configSave(w http.ResponseWriter, r *http.Request, sess *sessio
 		})
 		return
 	}
+	s.keepVersion(b.Name, old, sess.user)
 	s.log.Info("configuration file saved", "file", b.Name, "user", sess.user, "ip", remote(r), "generation", res.Generation)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "generation": res.Generation})
 }
