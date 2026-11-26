@@ -32,7 +32,9 @@ func TestTrafficCountsWhatWasServed(t *testing.T) {
 	if a.Bytes < 3*uint64(len("hello traffic")) {
 		t.Errorf("a.test bytes = %d", a.Bytes)
 	}
-	if a.LatencySum <= 0 {
+	// The latency sum is not checked: on Windows the clock is coarse enough
+	// that a fast request can be measured as 0 ns.
+	if a.LatencySum < 0 {
 		t.Errorf("a.test latency sum = %v", a.LatencySum)
 	}
 	if b.Requests != 0 {
