@@ -39,6 +39,22 @@ type Spec struct {
 	Root    string   `json:"root"`
 	Index   []string `json:"index"`
 	TLS     string   `json:"tls"` // "off" or "automatic"
+
+	// Spec version 2: the template and the settings of the Advanced section. All are optional.
+	Template        string            `json:"template,omitempty"`         // static (default), php, wordpress, laravel, proxy
+	PHPBackend      string            `json:"php_backend,omitempty"`      // name of a php_backend, for the PHP templates
+	ProxyURL        string            `json:"proxy_url,omitempty"`        // http(s)://host:port, for the proxy template
+	RateRequests    int               `json:"rate_requests,omitempty"`    // 0: no rate limit
+	RatePer         string            `json:"rate_per,omitempty"`         // 1s, 1m or 1h
+	RateBurst       int               `json:"rate_burst,omitempty"`       // 0: the server's default
+	Compression     string            `json:"compression,omitempty"`      // "" (server default), on, off
+	SecurityHeaders string            `json:"security_headers,omitempty"` // "", basic
+	Symlinks        string            `json:"symlinks,omitempty"`         // "", follow, owner_match, deny
+	Dotfiles        string            `json:"dotfiles,omitempty"`         // "", deny, allow
+	HTAccess        bool              `json:"htaccess,omitempty"`
+	ErrorPages      map[string]string `json:"error_pages,omitempty"` // "404" -> "/404.html"
+	AccessLog       string            `json:"access_log,omitempty"`
+	ErrorLog        string            `json:"error_log,omitempty"`
 }
 
 // Entry is a site file found in the folder.
@@ -120,12 +136,13 @@ func Normalize(sp Spec) Spec {
 	if sp.Root == "" && sp.Name != "" {
 		sp.Root = DefaultRoot(sp.Name)
 	}
-	if len(sp.Index) == 0 {
+	if len(sp.Index) == 0 && !isPHP(sp.Template) {
 		sp.Index = []string{"index.html"}
 	}
 	if sp.TLS == "" {
 		sp.TLS = "off"
 	}
+	normalizeSettings(&sp)
 	return sp
 }
 
@@ -171,7 +188,7 @@ func Validate(sp Spec) error {
 	if sp.TLS != "off" && sp.TLS != "automatic" {
 		return errors.New(`tls must be "off" or "automatic"`)
 	}
-	return nil
+	return validateSettings(sp)
 }
 
 // checkPath accepts an absolute path that can be written inside a quoted string of the configuration.
@@ -193,19 +210,8 @@ func checkPath(p string) error {
 	return nil
 }
 
-// Render is the text of a site file.
-func Render(sp Spec) string {
-	var b strings.Builder
-	b.WriteString(Marker + "\n")
-	fmt.Fprintf(&b, "site %q {\n", sp.Name)
-	if len(sp.Aliases) > 0 {
-		fmt.Fprintf(&b, "    aliases %s\n", quoteList(sp.Aliases))
-	}
-	fmt.Fprintf(&b, "    root %q\n", sp.Root)
-	fmt.Fprintf(&b, "    index %s\n", quoteList(sp.Index))
-	fmt.Fprintf(&b, "    tls %s\n}\n", sp.TLS)
-	return b.String()
-}
+// Render is the text of a site file for a normalized, valid spec.
+func Render(sp Spec) string { return render(sp) }
 
 func quoteList(items []string) string {
 	q := make([]string, len(items))
@@ -215,8 +221,17 @@ func quoteList(items []string) string {
 	return "[ " + strings.Join(q, ", ") + " ]"
 }
 
-// Parse reads a file in the layout Render writes. ok is false for anything else, such as a file edited by hand.
-func Parse(text string) (sp Spec, ok bool) {
+// Parse reads a file in the layout Render writes (or the older layout without the spec line). ok is false for
+// anything else, such as a file edited by hand.
+func Parse(text string) (Spec, bool) {
+	if sp, ok := parseV2(text); ok {
+		return sp, true
+	}
+	return parseLegacy(text)
+}
+
+// parseLegacy reads the first layout: the marker, then site { aliases root index tls }. Saving upgrades it.
+func parseLegacy(text string) (sp Spec, ok bool) {
 	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
 	if len(lines) == 0 || strings.TrimSpace(lines[0]) != Marker {
 		return Spec{}, false
@@ -446,10 +461,24 @@ func (s *Store) write(file, text string, old []byte) error {
 	return nil
 }
 
-// makeRoot makes the web directory and, if it is empty of an index page, a sample one.
+// makeRoot makes the web directory and, if it has no index page, a sample one. A proxy site has no files.
 func makeRoot(sp Spec) {
-	dir := filepath.FromSlash(sp.Root)
+	if sp.Template == "proxy" {
+		return
+	}
+	dir := filepath.FromSlash(DocRoot(sp))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	if isPHP(sp.Template) {
+		if sp.Template == "wordpress" {
+			return // the person puts WordPress here
+		}
+		page := filepath.Join(dir, "index.php")
+		if _, err := os.Stat(page); err != nil {
+			body := "<?php\necho '<h1>" + sp.Name + "</h1><p>PHP ' . PHP_VERSION . ' is served by LOTUS.</p>';\n"
+			_ = os.WriteFile(page, []byte(body), 0o644)
+		}
 		return
 	}
 	for _, name := range sp.Index {

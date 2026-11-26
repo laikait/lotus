@@ -28,6 +28,8 @@ func (s *Server) listSiteFiles(w http.ResponseWriter, r *http.Request, _ *sessio
 	writeJSON(w, http.StatusOK, map[string]any{
 		"entries":      list,
 		"default_root": sitefile.DefaultRoot("NAME"),
+		"templates":    sitefile.Templates,
+		"php_backends": s.opts.Sites.PHPBackendNames(),
 		"hint":         s.opts.Sites.IncludeHint(),
 	})
 }

@@ -78,3 +78,8 @@ select { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-r
 .chart .area { fill: var(--accent); opacity: .12; stroke: none; }
 .chart .now { font-weight: 600; color: var(--ink); }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.advanced { margin: 16px 0 8px; border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; }
+.advanced summary { cursor: pointer; font-weight: 600; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 4px 14px; margin-top: 8px; }
+#f-template-note { margin-top: 4px; }

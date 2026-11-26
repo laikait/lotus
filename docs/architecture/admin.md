@@ -30,7 +30,21 @@ For a new site the Web directory box is filled from the name as you type it: the
 
 ## Sites
 
-The Sites page works on the files of the `sites.d` folder next to the main configuration file (`internal/sitefile`, the same code as `lotus site add|list|remove`). A site has a name, aliases, a web directory, index files and TLS `off` or `automatic`.
+The Sites page works on the files of the `sites.d` folder next to the main configuration file (`internal/sitefile`, the same code as `lotus site add|list|remove`). A site has a name, aliases, a web directory, index files and TLS `off` or `automatic`, plus a **type** and the settings of the Advanced section.
+
+**Types (templates).** The type decides the routes; they are made from fixed fields, never from typed text:
+
+| Type | What it writes |
+|---|---|
+| Static files | the site only |
+| PHP application | `.php` files run through the chosen `php_backend`; other URLs that are not files go to `/index.php` (front controller); PHP never runs in `/uploads/` |
+| WordPress | as PHP, with `/wp-content/uploads/` never executed |
+| Laravel | as PHP, serving the `public` folder inside the web directory |
+| Reverse proxy | an `upstream "site-NAME"` with one backend (`http(s)://host:port`) and a route `/` that proxies to it; no web directory, no `root` line |
+
+**Advanced settings** (all optional): rate limit (requests per second, minute or hour per client, with burst), compression on/off (default: the server's), security headers (basic: nosniff, frame, referrer), symbolic links, dotfiles, `.htaccess`, error pages for 403, 404 and 500, access and error log files. Each is an enum or a strict pattern, and the whole configuration is checked before anything is kept.
+
+**File format.** A file has the marker line, then `# spec: {JSON}` with everything the form holds, then the rendered text. It is editable only if its whole text equals what the program renders from that JSON; any hand edit (even of the JSON) makes it "written by hand" and read-only here. Files made before this format (marker and fixed lines, no spec line) are still read as static sites and upgraded on the next save. The PHP backend list in the form is the `php_backend` names of the current configuration.
 
 - A file made here starts with a marker line and has a fixed layout. Only such a file can be edited or deleted in the admin. A file changed by hand (anything beyond that layout, or without the marker) is listed as "written by hand" and never rewritten. Sites in `main.conf` show on the Dashboard only.
 - Every change is written to a temporary file, renamed into place, and the **whole configuration is checked**. If it is not valid, the old file is put back and the problems (file, line, message, hint) are shown in the form.
@@ -85,8 +99,8 @@ The password is asked twice without echo; `--password-stdin` and `--password-fil
 | `GET /v1/session` | any | `{user, role, csrf}` |
 | `GET /v1/status`, `/v1/health`, `/v1/sites`, `/v1/certs` | any | as `lotus.status`, `lotus.health`, `lotus.site.list`, `lotus.cert.list` |
 | `POST /v1/reload` | admin | `{ok, generation, diagnostics}`; 422 with the diagnostics for an invalid configuration |
-| `GET /v1/site-files` | any | `{entries: [{name, aliases, root, index, tls, file, editable}], default_root, hint}` |
-| `POST /v1/site-files` `{name, aliases, root, index, tls, create_root}` | admin | `{ok, generation}`; 422 for a bad value or an invalid configuration (with `diagnostics`), 409 if the name exists |
+| `GET /v1/site-files` | any | `{entries: [{name, aliases, root, index, tls, template, php_backend, proxy_url, rate_requests, rate_per, rate_burst, compression, security_headers, symlinks, dotfiles, htaccess, error_pages, access_log, error_log, file, editable}], default_root, templates, php_backends, hint}` |
+| `POST /v1/site-files` `{name, aliases, root, index, tls, template, …settings, create_root}` | admin | `{ok, generation}`; 422 for a bad value or an invalid configuration (with `diagnostics`), 409 if the name exists |
 | `PUT /v1/site-files/{name}` `{aliases, root, index, tls}` | admin | as above; 404 if missing, 409 if the file was changed by hand |
 | `DELETE /v1/site-files/{name}` | admin | `{ok, generation}`; the web directory is not touched |
 | `POST /v1/certs/renew` `{domain}` | admin | `{ok}` after the CA has issued the certificate (up to a minute); 404 for a name without an automatic certificate, 422 when the current one is under a day old |

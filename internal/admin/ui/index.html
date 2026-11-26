@@ -71,26 +71,70 @@
     </div>
     <p id="site-hint" class="notice" hidden></p>
     <table class="table">
-      <thead><tr><th>Name</th><th>Aliases</th><th>Web directory</th><th>Index</th><th>TLS</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Name</th><th>Type</th><th>Aliases</th><th>Web directory</th><th>Index</th><th>TLS</th><th>Actions</th></tr></thead>
       <tbody id="site-rows"></tbody>
     </table>
     <p class="hint">Sites made here or with <code>lotus site add</code> can be changed here. A site written by hand, or in <code>main.conf</code>, is shown on the Dashboard and stays as you wrote it.</p>
 
     <form id="site-form" class="card form" hidden>
       <h2 id="site-form-title">Add a site</h2>
+      <label for="f-template">Type of site</label>
+      <select id="f-template">
+        <option value="static">Static files</option>
+        <option value="php">PHP application</option>
+        <option value="wordpress">WordPress</option>
+        <option value="laravel">Laravel</option>
+        <option value="proxy">Reverse proxy</option>
+      </select>
+      <p id="f-template-note" class="hint"></p>
       <label for="f-name">Name</label>
       <input id="f-name" type="text" required maxlength="253" placeholder="example.com" autocapitalize="off" spellcheck="false">
       <label for="f-aliases">Aliases <span class="muted">(separate with commas; *.example.com is allowed)</span></label>
       <input id="f-aliases" type="text" maxlength="2000" placeholder="www.example.com" autocapitalize="off" spellcheck="false">
-      <label for="f-root">Web directory</label>
-      <input id="f-root" type="text" required maxlength="500" spellcheck="false">
-      <label for="f-index">Index files <span class="muted">(separate with commas)</span></label>
-      <input id="f-index" type="text" maxlength="500" value="index.html" spellcheck="false">
+      <div id="f-files">
+        <label for="f-root">Web directory</label>
+        <input id="f-root" type="text" required maxlength="500" spellcheck="false">
+        <label for="f-index">Index files <span class="muted">(separate with commas)</span></label>
+        <input id="f-index" type="text" maxlength="500" value="index.html" spellcheck="false">
+      </div>
+      <div id="f-php-wrap" hidden>
+        <label for="f-php">PHP backend <span class="muted">(a php_backend of main.conf)</span></label>
+        <select id="f-php"></select>
+      </div>
+      <div id="f-proxy-wrap" hidden>
+        <label for="f-proxy">Send requests to <span class="muted">(for example http://127.0.0.1:3000)</span></label>
+        <input id="f-proxy" type="text" maxlength="200" spellcheck="false" autocapitalize="off" placeholder="http://127.0.0.1:3000">
+      </div>
       <label for="f-tls">TLS</label>
       <select id="f-tls">
         <option value="off">Off (plain HTTP)</option>
         <option value="automatic">Automatic (certificate from ACME; needs an HTTPS listener)</option>
       </select>
+      <details class="advanced">
+        <summary>Advanced settings</summary>
+        <div class="grid2">
+          <div><label for="f-rate">Rate limit: requests per client</label>
+            <input id="f-rate" type="number" min="0" max="100000" value="0"></div>
+          <div><label for="f-per">per</label>
+            <select id="f-per"><option value="1s">second</option><option value="1m">minute</option><option value="1h">hour</option></select></div>
+          <div><label for="f-burst">Burst <span class="muted">(0 = same as requests)</span></label>
+            <input id="f-burst" type="number" min="0" max="100000" value="0"></div>
+          <div><label for="f-compression">Compression</label>
+            <select id="f-compression"><option value="">Server default</option><option value="on">On</option><option value="off">Off</option></select></div>
+          <div><label for="f-headers">Security headers</label>
+            <select id="f-headers"><option value="">None</option><option value="basic">Basic (nosniff, frame, referrer)</option></select></div>
+          <div><label for="f-symlinks">Symbolic links</label>
+            <select id="f-symlinks"><option value="">Server default</option><option value="owner_match">Same owner only</option><option value="follow">Follow</option><option value="deny">Refuse</option></select></div>
+          <div><label for="f-dotfiles">Files starting with a dot</label>
+            <select id="f-dotfiles"><option value="">Server default (refused)</option><option value="deny">Refuse</option><option value="allow">Allow</option></select></div>
+          <div><label class="check"><input id="f-htaccess" type="checkbox"> Read .htaccess files</label></div>
+          <div><label for="f-e403">Page for 403</label><input id="f-e403" type="text" maxlength="200" placeholder="/403.html" spellcheck="false"></div>
+          <div><label for="f-e404">Page for 404</label><input id="f-e404" type="text" maxlength="200" placeholder="/404.html" spellcheck="false"></div>
+          <div><label for="f-e500">Page for 500</label><input id="f-e500" type="text" maxlength="200" placeholder="/500.html" spellcheck="false"></div>
+          <div><label for="f-alog">Access log file <span class="muted">(full path)</span></label><input id="f-alog" type="text" maxlength="500" spellcheck="false"></div>
+          <div><label for="f-elog">Error log file <span class="muted">(full path)</span></label><input id="f-elog" type="text" maxlength="500" spellcheck="false"></div>
+        </div>
+      </details>
       <label class="check" id="f-root-wrap"><input id="f-create" type="checkbox" checked> Create the web directory with a sample page</label>
       <div id="site-errors" class="error" role="alert" hidden></div>
       <div class="actions">

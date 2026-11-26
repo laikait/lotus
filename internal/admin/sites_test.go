@@ -180,3 +180,29 @@ func TestOnlyAnAdminChangesSites(t *testing.T) {
 		t.Error("a refused call changed the folder")
 	}
 }
+
+func TestTemplatesAndSettingsThroughTheAPI(t *testing.T) {
+	e, _, cookie, csrf := siteEnv(t)
+
+	rec := e.do("POST", "/v1/site-files", `{"name":"app.test","template":"proxy","proxy_url":"http://127.0.0.1:3000","rate_requests":30,"rate_per":"1m","security_headers":"basic","error_pages":{"404":"/nf.html"}}`, csrf, cookie)
+	if rec.Code != 200 {
+		t.Fatalf("add proxy site: %d %s", rec.Code, rec.Body)
+	}
+	rec = e.do("GET", "/v1/site-files", "", "", cookie)
+	body := rec.Body.String()
+	for _, want := range []string{`"templates":["static","php","wordpress","laravel","proxy"]`, `"php_backends":[]`, `"template":"proxy"`, `"proxy_url":"http://127.0.0.1:3000"`, `"editable":true`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %s in %s", want, body)
+		}
+	}
+	// A bad value is refused with its reason and nothing is written.
+	rec = e.do("POST", "/v1/site-files", `{"name":"bad.test","template":"proxy","proxy_url":"http://u:p@host"}`, csrf, cookie)
+	if rec.Code != 422 || !strings.Contains(rec.Body.String(), "proxy address") {
+		t.Errorf("bad proxy: %d %s", rec.Code, rec.Body)
+	}
+	// A PHP template with no such backend is refused by the whole-configuration check.
+	rec = e.do("POST", "/v1/site-files", `{"name":"php.test","template":"php","php_backend":"nope","root":"/srv/php"}`, csrf, cookie)
+	if rec.Code != 422 {
+		t.Errorf("unknown php backend: %d %s", rec.Code, rec.Body)
+	}
+}

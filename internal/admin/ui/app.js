@@ -155,10 +155,20 @@
   // ---- sites ----
 
   var defaultRoot = "";
+  var phpBackends = [];
+  var TEMPLATE_NAMES = { static: "Static files", php: "PHP", wordpress: "WordPress", laravel: "Laravel", proxy: "Reverse proxy" };
+  var TEMPLATE_NOTES = {
+    static: "Serves the files of the web directory.",
+    php: "Runs .php files and sends other URLs to index.php (a front controller).",
+    wordpress: "As PHP, and never runs PHP inside wp-content/uploads.",
+    laravel: "As PHP, serving the public folder inside the web directory.",
+    proxy: "Sends every request to another server (an app on a port). No web directory is needed."
+  };
 
   function loadSites() {
     return api("GET", "/v1/site-files").then(function (d) {
       defaultRoot = d.default_root || "";
+      phpBackends = d.php_backends || [];
       var hint = $("site-hint");
       hint.textContent = d.hint || ""; hint.hidden = !d.hint;
       var admin = role === "admin";
@@ -167,7 +177,7 @@
       body.replaceChildren();
       if (!d.entries || !d.entries.length) {
         var tr = el("tr"), td = el("td", "No sites made here yet.", "empty");
-        td.colSpan = 6; tr.appendChild(td); body.appendChild(tr);
+        td.colSpan = 7; tr.appendChild(td); body.appendChild(tr);
         return;
       }
       d.entries.forEach(function (s) {
@@ -175,11 +185,12 @@
         tr.appendChild(el("td", s.name));
         if (!s.editable) {
           var td = el("td", "Written by hand: it is not changed here.", "empty");
-          td.colSpan = 4; tr.appendChild(td);
+          td.colSpan = 5; tr.appendChild(td);
           tr.appendChild(el("td", "-"));
         } else {
+          tr.appendChild(el("td", TEMPLATE_NAMES[s.template || "static"] || s.template));
           tr.appendChild(el("td", (s.aliases || []).join(", ") || "-"));
-          tr.appendChild(el("td", s.root));
+          tr.appendChild(el("td", s.template === "proxy" ? s.proxy_url : s.root));
           tr.appendChild(el("td", (s.index || []).join(", ")));
           tr.appendChild(el("td", s.tls));
           var act = el("td"), box = el("div", null, "row-actions");
@@ -233,10 +244,75 @@
     $("f-index").value = site ? (site.index || []).join(", ") : "index.html";
     $("f-tls").value = site ? site.tls : "off";
     $("f-create").checked = !site;
-    $("f-root-wrap").hidden = !!site;
+    fillAdvanced(site || {});
     $("site-errors").hidden = true;
     $("site-form").hidden = false;
     $("f-name").focus();
+  }
+
+  function setSel(id, v) { $(id).value = v || ""; }
+
+  function fillAdvanced(s) {
+    setSel("f-template", s.template || "static");
+    var sel = $("f-php");
+    sel.replaceChildren();
+    var names = phpBackends.slice();
+    if (s.php_backend && names.indexOf(s.php_backend) < 0) names.push(s.php_backend);
+    names.forEach(function (n) { var o = el("option", n); o.value = n; sel.appendChild(o); });
+    if (!names.length) { var none = el("option", "(no php_backend in the configuration)"); none.value = ""; sel.appendChild(none); }
+    setSel("f-php", s.php_backend);
+    $("f-proxy").value = s.proxy_url || "";
+    $("f-rate").value = s.rate_requests || 0;
+    setSel("f-per", s.rate_per || "1s");
+    $("f-burst").value = s.rate_burst || 0;
+    setSel("f-compression", s.compression);
+    setSel("f-headers", s.security_headers);
+    setSel("f-symlinks", s.symlinks);
+    setSel("f-dotfiles", s.dotfiles);
+    $("f-htaccess").checked = !!s.htaccess;
+    var ep = s.error_pages || {};
+    $("f-e403").value = ep["403"] || ""; $("f-e404").value = ep["404"] || ""; $("f-e500").value = ep["500"] || "";
+    $("f-alog").value = s.access_log || ""; $("f-elog").value = s.error_log || "";
+    showTemplate();
+  }
+
+  // The fields a type of site needs: PHP types a backend, a proxy an address and no web directory.
+  function showTemplate() {
+    var t = $("f-template").value, isPHP = /^(php|wordpress|laravel)$/.test(t);
+    $("f-template-note").textContent = TEMPLATE_NOTES[t] || "";
+    $("f-files").hidden = t === "proxy";
+    $("f-root").required = t !== "proxy";
+    $("f-php-wrap").hidden = !isPHP;
+    $("f-proxy-wrap").hidden = t !== "proxy";
+    $("f-proxy").required = t === "proxy";
+    $("f-root-wrap").hidden = !!editing || t === "proxy";
+    if (!editing && isPHP && $("f-index").value === "index.html") $("f-index").value = "index.php, index.html";
+    if (!editing && !isPHP && $("f-index").value === "index.php, index.html") $("f-index").value = "index.html";
+  }
+  $("f-template").addEventListener("change", showTemplate);
+
+  function advancedBody() {
+    var ep = {};
+    [["403", "f-e403"], ["404", "f-e404"], ["500", "f-e500"]].forEach(function (p) {
+      var v = $(p[1]).value.trim(); if (v) ep[p[0]] = v;
+    });
+    var t = $("f-template").value;
+    return {
+      template: t,
+      php_backend: $("f-php-wrap").hidden ? "" : $("f-php").value,
+      proxy_url: t === "proxy" ? $("f-proxy").value.trim() : "",
+      rate_requests: parseInt($("f-rate").value, 10) || 0,
+      rate_per: $("f-per").value,
+      rate_burst: parseInt($("f-burst").value, 10) || 0,
+      compression: $("f-compression").value,
+      security_headers: $("f-headers").value,
+      symlinks: $("f-symlinks").value,
+      dotfiles: $("f-dotfiles").value,
+      htaccess: $("f-htaccess").checked,
+      error_pages: ep,
+      access_log: $("f-alog").value.trim(),
+      error_log: $("f-elog").value.trim()
+    };
   }
 
   function closeForm() { $("site-form").hidden = true; editing = null; }
@@ -268,10 +344,10 @@
   $("site-form").addEventListener("submit", function (ev) {
     ev.preventDefault();
     var btn = $("site-save");
-    var body = {
-      name: $("f-name").value.trim(), aliases: splitList($("f-aliases").value), root: $("f-root").value.trim(),
-      index: splitList($("f-index").value), tls: $("f-tls").value
-    };
+    var body = advancedBody();
+    body.name = $("f-name").value.trim(); body.aliases = splitList($("f-aliases").value);
+    body.root = $("f-template").value === "proxy" ? "" : $("f-root").value.trim();
+    body.index = splitList($("f-index").value); body.tls = $("f-tls").value;
     var req;
     if (editing) {
       delete body.name;
