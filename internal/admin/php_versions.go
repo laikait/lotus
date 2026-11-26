@@ -17,6 +17,9 @@ import (
 // PHPInstaller is what the PHP Versions page needs; *phpinstall.Installer is the real one, tests use a fake.
 type PHPInstaller interface {
 	Supported() bool
+	Kind() string // "zip" (Windows builds) or "packages" (Linux)
+	CanInstall() bool
+	ExtensionsEditable() bool
 	CheckRuntime() error
 	Releases(ctx context.Context) ([]phpinstall.Release, error)
 	List() ([]phpinstall.Installed, error)
@@ -53,15 +56,20 @@ func (s *Server) phpInstallerOK(w http.ResponseWriter) bool {
 
 // poolsUsing lists the php_backend names of the configuration whose program is inside the version's folder.
 func (s *Server) poolsUsing(v phpinstall.Installed) []string {
-	dir := strings.ToLower(filepath.ToSlash(v.Dir)) + "/"
 	var names []string
 	for name, cmd := range s.opts.Sites.PHPBackendCommands() {
-		if strings.HasPrefix(strings.ToLower(filepath.ToSlash(cmd)), dir) {
+		if commandUses(cmd, v) {
 			names = append(names, name)
 		}
 	}
 	sort.Strings(names)
 	return names
+}
+
+// commandUses says whether a pool's program is this version's php-cgi, or lies inside its folder.
+func commandUses(cmd string, v phpinstall.Installed) bool {
+	c := strings.ToLower(filepath.ToSlash(cmd))
+	return c == strings.ToLower(filepath.ToSlash(v.Exe)) || strings.HasPrefix(c, strings.ToLower(filepath.ToSlash(v.Dir))+"/")
 }
 
 type installedView struct {
@@ -74,6 +82,7 @@ type availableView struct {
 	Version   string `json:"version"`
 	Size      int64  `json:"size"`
 	Installed bool   `json:"installed"`
+	Found     bool   `json:"found"` // already on the system: "use" it instead of installing
 }
 
 func (s *Server) phpVersions(w http.ResponseWriter, r *http.Request, _ *session) {
@@ -81,7 +90,7 @@ func (s *Server) phpVersions(w http.ResponseWriter, r *http.Request, _ *session)
 		return
 	}
 	in := s.opts.PHPInstall
-	out := map[string]any{"supported": in.Supported(), "runtime_ok": true, "runtime_message": "", "feed_error": "", "job": s.currentJob()}
+	out := map[string]any{"kind": in.Kind(), "can_install": in.CanInstall(), "supported": in.Supported(), "runtime_ok": true, "runtime_message": "", "feed_error": "", "job": s.currentJob()}
 	if !in.Supported() {
 		out["installed"], out["available"] = []installedView{}, []availableView{}
 		writeJSON(w, http.StatusOK, out)
@@ -113,7 +122,7 @@ func (s *Server) phpVersions(w http.ResponseWriter, r *http.Request, _ *session)
 		out["feed_error"] = err.Error()
 	} else {
 		for _, x := range rel {
-			avail = append(avail, availableView{Branch: x.Branch, Version: x.Version, Size: x.Size, Installed: have[x.Version]})
+			avail = append(avail, availableView{Branch: x.Branch, Version: x.Version, Size: x.Size, Installed: have[x.Version], Found: x.Found != ""})
 		}
 	}
 	out["installed"], out["available"] = inst, avail
@@ -252,7 +261,7 @@ func (s *Server) phpIniGet(w http.ResponseWriter, r *http.Request, _ *session) {
 		s.phpFailure(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"settings": st.Settings, "enabled": st.Enabled, "available": st.Available, "setting_info": phpinstall.Settings})
+	writeJSON(w, http.StatusOK, map[string]any{"settings": st.Settings, "enabled": st.Enabled, "available": st.Available, "setting_info": phpinstall.Settings, "extensions_editable": s.opts.PHPInstall.ExtensionsEditable()})
 }
 
 type iniBody struct {
@@ -374,9 +383,8 @@ func (s *Server) phpLabels() map[string]string {
 		return out
 	}
 	for name, cmd := range s.opts.Sites.PHPBackendCommands() {
-		c := strings.ToLower(filepath.ToSlash(cmd))
 		for _, v := range list {
-			if strings.HasPrefix(c, strings.ToLower(filepath.ToSlash(v.Dir))+"/") {
+			if commandUses(cmd, v) {
 				out[name] = "PHP " + v.Version + " (" + name + ")"
 			}
 		}

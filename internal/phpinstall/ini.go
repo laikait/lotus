@@ -244,13 +244,8 @@ func (in *Installer) IniState(version string) (IniState, error) {
 	return st, nil
 }
 
-// ApplyIni changes settings and extensions of an installed version's php.ini. Nothing is written unless every value
-// is acceptable. The previous file is kept as php.ini.bak.
-func (in *Installer) ApplyIni(version string, settings map[string]string, extensions map[string]bool) error {
-	v, err := in.Get(version)
-	if err != nil {
-		return err
-	}
+// checkSettings validates settings against the fixed list.
+func checkSettings(settings map[string]string) (map[string]SettingInfo, error) {
 	byKey := map[string]SettingInfo{}
 	for _, s := range Settings {
 		byKey[s.Key] = s
@@ -258,22 +253,26 @@ func (in *Installer) ApplyIni(version string, settings map[string]string, extens
 	for k, val := range settings {
 		s, ok := byKey[k]
 		if !ok {
-			return &ValueError{Msg: fmt.Sprintf("%q is not a setting the panel changes", k)}
+			return nil, &ValueError{Msg: fmt.Sprintf("%q is not a setting the panel changes", k)}
 		}
 		if !s.pattern.MatchString(val) {
-			return &ValueError{Msg: fmt.Sprintf("%s: %q is not acceptable (%s)", s.Label, val, s.Hint)}
+			return nil, &ValueError{Msg: fmt.Sprintf("%s: %q is not acceptable (%s)", s.Label, val, s.Hint)}
 		}
 	}
-	have := map[string]bool{}
-	for _, n := range availableExtensions(v.Dir) {
-		have[n] = true
+	return byKey, nil
+}
+
+// applySettings changes settings in a php.ini and keeps the old file as .bak. Nothing is written if a value is refused.
+func applySettings(iniPath string, settings map[string]string) error {
+	return editIni(iniPath, settings, nil)
+}
+
+func editIni(iniPath string, settings map[string]string, extensions map[string]bool) error {
+	byKey, err := checkSettings(settings)
+	if err != nil {
+		return err
 	}
-	for n := range extensions {
-		if !extNameRe.MatchString(n) || !have[n] {
-			return &ValueError{Msg: fmt.Sprintf("this PHP has no extension %q", n)}
-		}
-	}
-	old, err := os.ReadFile(v.Ini)
+	old, err := os.ReadFile(iniPath)
 	if err != nil {
 		return err
 	}
@@ -294,8 +293,39 @@ func (in *Installer) ApplyIni(version string, settings map[string]string, extens
 	for _, n := range names {
 		t.setExtension(n, extensions[n])
 	}
-	if err := os.WriteFile(v.Ini+".bak", old, 0o644); err != nil {
+	if err := os.WriteFile(iniPath+".bak", old, 0o644); err != nil {
 		return err
 	}
-	return writeFileAtomic(v.Ini, t.bytes())
+	return writeFileAtomic(iniPath, t.bytes())
 }
+
+// ApplyIni changes settings and extensions of an installed version's php.ini. Nothing is written unless every value
+// is acceptable. The previous file is kept as php.ini.bak.
+func (in *Installer) ApplyIni(version string, settings map[string]string, extensions map[string]bool) error {
+	v, err := in.Get(version)
+	if err != nil {
+		return err
+	}
+	if _, err := checkSettings(settings); err != nil {
+		return err
+	}
+	have := map[string]bool{}
+	for _, n := range availableExtensions(v.Dir) {
+		have[n] = true
+	}
+	for n := range extensions {
+		if !extNameRe.MatchString(n) || !have[n] {
+			return &ValueError{Msg: fmt.Sprintf("this PHP has no extension %q", n)}
+		}
+	}
+	return editIni(v.Ini, settings, extensions)
+}
+
+// CanInstall says whether installs can run (always, for the zip installer).
+func (in *Installer) CanInstall() bool { return true }
+
+// Kind names the way versions come: "zip" (official builds).
+func (in *Installer) Kind() string { return "zip" }
+
+// ExtensionsEditable is true: extensions are DLLs switched in php.ini.
+func (in *Installer) ExtensionsEditable() bool { return true }

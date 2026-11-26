@@ -30,6 +30,7 @@ type Meta struct {
 	Source      string    `json:"source"`
 	SHA256      string    `json:"sha256"`
 	InstalledAt time.Time `json:"installed_at"`
+	Exe         string    `json:"exe,omitempty"` // Linux: the system's php-cgi this version uses
 }
 
 // Installed is a version found in the PHP home.

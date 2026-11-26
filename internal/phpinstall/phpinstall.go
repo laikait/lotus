@@ -58,6 +58,7 @@ type Release struct {
 	Path    string `json:"-"`       // file name under the base URL
 	SHA256  string `json:"-"`
 	Size    int64  `json:"size"` // bytes, from the feed's "37.82MB" (approximate)
+	Found   string `json:"-"`    // Linux: the php-cgi program already on the system (use it, no install)
 }
 
 // Installer works on one PHP home folder.

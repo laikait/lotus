@@ -29,8 +29,11 @@ func newFake(home string) *fakeInstaller {
 	return &fakeInstaller{home: home, supported: true, installed: map[string]bool{}, ini: map[string]string{"memory_limit": "128M"}, ext: map[string]bool{"curl": true, "mbstring": false}}
 }
 
-func (f *fakeInstaller) Supported() bool     { return f.supported }
-func (f *fakeInstaller) CheckRuntime() error { return f.runtime }
+func (f *fakeInstaller) Supported() bool          { return f.supported }
+func (f *fakeInstaller) Kind() string             { return "zip" }
+func (f *fakeInstaller) CanInstall() bool         { return true }
+func (f *fakeInstaller) ExtensionsEditable() bool { return true }
+func (f *fakeInstaller) CheckRuntime() error      { return f.runtime }
 func (f *fakeInstaller) Releases(context.Context) ([]phpinstall.Release, error) {
 	return []phpinstall.Release{{Branch: "8.4", Version: "8.4.28", Size: 40 << 20}, {Branch: "8.3", Version: "8.3.99", Size: 35 << 20}}, nil
 }

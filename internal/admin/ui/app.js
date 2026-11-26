@@ -539,6 +539,9 @@
       }
       rt.hidden = !(d.supported && !d.runtime_ok);
       $("pv-unsupported").hidden = d.supported;
+      var pkg = d.kind === "packages";
+      $("pv-avail-head").textContent = pkg ? "On this server, or from the package manager" : "Available from windows.php.net";
+      $("pv-note-zip").hidden = pkg; $("pv-note-pkg").hidden = !pkg;
       var feed = $("pv-feed");
       feed.textContent = d.feed_error ? "Could not read the list of versions: " + d.feed_error : "";
       feed.hidden = !d.feed_error;
@@ -559,7 +562,7 @@
           var rm = el("button", "Remove", "btn btn-danger");
           rm.type = "button"; rm.setAttribute("aria-label", "Remove PHP " + v.version);
           rm.addEventListener("click", function () {
-            if (!window.confirm("Remove PHP " + v.version + "? Its folder is deleted.")) return;
+            if (!window.confirm(pkg ? "Stop using PHP " + v.version + "? The system's package stays installed." : "Remove PHP " + v.version + "? Its folder is deleted.")) return;
             act_(rm, api("DELETE", "/v1/php-versions/" + encodeURIComponent(v.version)), "PHP " + v.version + " removed.", loadPHPVersions);
           });
           box.appendChild(mk); box.appendChild(rm);
@@ -572,8 +575,12 @@
         if (a.installed) cell = el("span", "Installed", "pill ok");
         else if (!admin || !d.runtime_ok) cell = el("span", "-");
         else {
-          cell = el("button", "Install", "btn");
-          cell.type = "button"; cell.setAttribute("aria-label", "Install PHP " + a.version);
+          cell = el("button", a.found ? "Use" : "Install", "btn");
+          cell.type = "button"; cell.setAttribute("aria-label", (a.found ? "Use PHP " : "Install PHP ") + a.version);
+          if (!a.found && !d.can_install) {
+            cell.disabled = true;
+            cell.title = "The LOTUS service does not run as root, so it can't install packages. Install the package yourself, then press Refresh.";
+          }
           cell.addEventListener("click", function () { startInstall(a.version, cell); });
         }
         return ["PHP " + a.branch, a.version, a.size ? Math.round(a.size / 1048576) + " MB" : "-", cell];
@@ -659,9 +666,11 @@
       });
       var exts = $("ini-exts");
       exts.replaceChildren();
+      $("ini-ext-note").hidden = d.extensions_editable !== false;
       (d.available || []).forEach(function (n) {
         var lab = el("label", null, "check"), cb = el("input");
         cb.type = "checkbox"; cb.checked = (d.enabled || []).indexOf(n) >= 0; cb.setAttribute("data-ext", n);
+        if (d.extensions_editable === false) cb.disabled = true;
         lab.appendChild(cb); lab.appendChild(document.createTextNode(" " + n)); exts.appendChild(lab);
       });
       $("ini-errors").hidden = true;
@@ -675,7 +684,7 @@
     ev.preventDefault();
     var settings = {}, extensions = {};
     $("ini-fields").querySelectorAll("[data-key]").forEach(function (i) { if (i.value !== "") settings[i.getAttribute("data-key")] = i.value; });
-    $("ini-exts").querySelectorAll("[data-ext]").forEach(function (i) { extensions[i.getAttribute("data-ext")] = i.checked; });
+    $("ini-exts").querySelectorAll("[data-ext]").forEach(function (i) { if (!i.disabled) extensions[i.getAttribute("data-ext")] = i.checked; });
     var btn = $("ini-save"); btn.disabled = true; $("ini-errors").hidden = true;
     api("PUT", "/v1/php-versions/" + encodeURIComponent(iniVersion) + "/ini", { settings: settings, extensions: extensions }).then(function (r) {
       toast("Saved." + ((r.restarted || []).length ? " Pool " + r.restarted.join(", ") + " is restarting." : ""));

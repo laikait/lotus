@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -65,7 +66,7 @@ func (a *app) openAdmin(cfg *model.Config) (io.Closer, error) {
 		a.log.Warn("the admin has no accounts: nobody can sign in", "users_file", users.Path, "fix", "run: lotus admin passwd NAME")
 	}
 	srv := admin.New(admin.Options{
-		Backend: a, Sites: &sitefile.Store{Config: a.path}, PHP: a.phpPools, PHPInstall: &phpinstall.Installer{Home: filepath.Join(filepath.Dir(a.path), "php")}, PHPRestart: a.srv.RestartPHPPool, Logs: a.logSources, Traffic: a.traffic, Users: users, SessionTTL: ad.SessionTTL, Allow: ad.Allow, Secure: secure, Log: a.log,
+		Backend: a, Sites: &sitefile.Store{Config: a.path}, PHP: a.phpPools, PHPInstall: phpManager(filepath.Join(filepath.Dir(a.path), "php")), PHPRestart: a.srv.RestartPHPPool, Logs: a.logSources, Traffic: a.traffic, Users: users, SessionTTL: ad.SessionTTL, Allow: ad.Allow, Secure: secure, Log: a.log,
 	})
 	go func() {
 		if err := srv.Serve(ln); err != nil {
@@ -305,4 +306,13 @@ func promptPassword(out io.Writer, prompt string) (string, error) {
 		return "", fmt.Errorf("no password given")
 	}
 	return strings.TrimRight(line, "\r\n"), nil
+}
+
+// phpManager is the PHP installer of this system: official zips on Windows, the system's packages on Linux (other
+// systems get the Linux one too, which reports that it is not supported there).
+func phpManager(home string) admin.PHPInstaller {
+	if runtime.GOOS == "windows" {
+		return &phpinstall.Installer{Home: home}
+	}
+	return &phpinstall.LinuxManager{Home: home}
 }

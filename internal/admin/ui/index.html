@@ -210,7 +210,7 @@
 
     <h2>PHP versions</h2>
     <div id="pv-runtime" class="error" role="alert" hidden></div>
-    <p id="pv-unsupported" class="notice" hidden>Installing PHP from the panel works on Windows. On Linux, install PHP with the system's package manager (for example <code>apt install php-cgi</code>), then add a pool that points to it below.</p>
+    <p id="pv-unsupported" class="notice" hidden>Installing PHP from the panel works on Windows and Linux. On this system, install PHP yourself, then add a pool that points to its <code>php-cgi</code> below.</p>
     <p id="pv-feed" class="hint" hidden></p>
     <table class="table">
       <thead><tr><th>Installed</th><th>Pools</th><th>Folder</th><th>Actions</th></tr></thead>
@@ -222,16 +222,17 @@
       <p id="pv-job-text" class="hint"></p>
     </div>
     <table class="table">
-      <thead><tr><th>Available from windows.php.net</th><th>Version</th><th>Size</th><th>Actions</th></tr></thead>
+      <thead><tr><th id="pv-avail-head">Available</th><th>Version</th><th>Size</th><th>Actions</th></tr></thead>
       <tbody id="pv-available"></tbody>
     </table>
     <label class="check"><input id="pv-mkpool" type="checkbox" checked> Make a pool when the install is done</label>
-    <p class="hint">Downloads the official build (NTS, x64) from windows.php.net, checks its checksum, and unpacks it into the <code>php</code> folder of the LOTUS installation. The pool gets a name such as <code>php83</code>; pick it in a site's PHP backend.</p>
+    <p class="hint"><span id="pv-note-zip">Windows: downloads the official build (NTS, x64) from windows.php.net, checks its checksum, and unpacks it into the <code>php</code> folder of the LOTUS installation.</span> <span id="pv-note-pkg" hidden>Linux: uses the <code>php-cgi</code> programs already installed (<strong>Use</strong>), or installs the distribution's packages with apt or dnf when the LOTUS service runs as root (<strong>Install</strong>); the panel keeps a <code>php.ini</code> copy of its own for each version. Removing a version only stops using it; the packages stay.</span> The pool gets a name such as <code>php83</code>; pick it in a site's PHP backend.</p>
 
     <form id="ini-form" class="card form" hidden>
       <h2 id="ini-title">Settings</h2>
       <div id="ini-fields" class="grid2"></div>
       <h3>Extensions</h3>
+      <p id="ini-ext-note" class="hint" hidden>Extensions are packages on Linux: install or remove them with the package manager (for example <code>apt install php8.3-gd</code>), then restart the pool. These are the modules loaded now.</p>
       <div id="ini-exts" class="grid2"></div>
       <div id="ini-errors" class="error" role="alert" hidden></div>
       <div class="actions">
