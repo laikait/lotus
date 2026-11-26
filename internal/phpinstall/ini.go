@@ -14,21 +14,65 @@ type SettingInfo struct {
 	Key     string `json:"key"`
 	Label   string `json:"label"`
 	Hint    string `json:"hint"`
+	Group   string `json:"group"`
+	Type    string `json:"type"` // text, switch (On or Off)
 	pattern *regexp.Regexp
 	quote   bool // the value is written in double quotes
 }
 
+var (
+	sizeRe   = regexp.MustCompile(`^[0-9]{1,6}[KMG]?$`)
+	numberRe = regexp.MustCompile(`^[0-9]{1,7}$`)
+	switchRe = regexp.MustCompile(`^(On|Off)$`)
+	// pathRe is a file or folder path: no quote, no semicolon, no line break, and no backslash at the end (it would
+	// escape the closing quote). An empty value clears the setting.
+	pathRe = regexp.MustCompile(`^([A-Za-z0-9_ ./:\\-]{0,259}[A-Za-z0-9_ ./:-])?$`)
+)
+
 // Settings are the only php.ini settings the panel reads and writes. Each has its own value pattern, because the
-// value is written into a file that PHP reads.
+// value is written into a file that PHP reads. Settings in the same Group are shown together.
 var Settings = []SettingInfo{
-	{Key: "memory_limit", Label: "Memory limit", Hint: "such as 256M, or -1 for no limit", pattern: regexp.MustCompile(`^(-1|[0-9]{1,6}[KMG]?)$`)},
-	{Key: "upload_max_filesize", Label: "Largest upload", Hint: "such as 64M", pattern: regexp.MustCompile(`^[0-9]{1,6}[KMG]?$`)},
-	{Key: "post_max_size", Label: "Largest form post", Hint: "such as 64M; keep it at least as big as the largest upload", pattern: regexp.MustCompile(`^[0-9]{1,6}[KMG]?$`)},
-	{Key: "max_execution_time", Label: "Longest run time (seconds)", Hint: "0 for no limit", pattern: regexp.MustCompile(`^[0-9]{1,5}$`)},
-	{Key: "max_input_vars", Label: "Most form fields", Hint: "such as 1000", pattern: regexp.MustCompile(`^[0-9]{1,6}$`)},
-	{Key: "date.timezone", Label: "Time zone", Hint: "such as UTC or Asia/Dhaka", pattern: regexp.MustCompile(`^[A-Za-z0-9_+/-]{1,64}$`), quote: true},
-	{Key: "display_errors", Label: "Show errors in the page", Hint: "On or Off; keep it Off on a live site", pattern: regexp.MustCompile(`^(On|Off)$`)},
-	{Key: "opcache.enable", Label: "Opcode cache (opcache)", Hint: "1 (on) or 0 (off)", pattern: regexp.MustCompile(`^[01]$`)},
+	{Group: "Limits", Key: "memory_limit", Label: "Memory limit", Hint: "such as 256M, or -1 for no limit", pattern: regexp.MustCompile(`^(-1|[0-9]{1,6}[KMG]?)$`)},
+	{Group: "Limits", Key: "max_execution_time", Label: "Longest run time (seconds)", Hint: "0 for no limit", pattern: regexp.MustCompile(`^[0-9]{1,5}$`)},
+	{Group: "Limits", Key: "max_input_time", Label: "Longest input time (seconds)", Hint: "time to read a request; -1 uses the run time", pattern: regexp.MustCompile(`^(-1|[0-9]{1,5})$`)},
+	{Group: "Limits", Key: "max_input_vars", Label: "Most form fields", Hint: "such as 1000", pattern: numberRe},
+	{Group: "Limits", Key: "realpath_cache_size", Label: "Path cache size", Hint: "such as 4096K; WordPress and Laravel run faster with 4M", pattern: sizeRe},
+	{Group: "Limits", Key: "realpath_cache_ttl", Label: "Path cache lifetime (seconds)", Hint: "such as 120", pattern: numberRe},
+
+	{Group: "Uploads", Key: "file_uploads", Label: "Allow file uploads", Hint: "On or Off", Type: "switch", pattern: switchRe},
+	{Group: "Uploads", Key: "upload_max_filesize", Label: "Largest upload", Hint: "such as 64M", pattern: sizeRe},
+	{Group: "Uploads", Key: "post_max_size", Label: "Largest form post", Hint: "such as 64M; keep it at least as big as the largest upload", pattern: sizeRe},
+	{Group: "Uploads", Key: "max_file_uploads", Label: "Most files in one upload", Hint: "such as 20", pattern: numberRe},
+	{Group: "Uploads", Key: "upload_tmp_dir", Label: "Upload temporary folder", Hint: "a folder PHP can write to; empty for the system folder", pattern: pathRe, quote: true},
+
+	{Group: "Errors and logs", Key: "display_errors", Label: "Show errors in the page", Hint: "keep it Off on a live site", Type: "switch", pattern: switchRe},
+	{Group: "Errors and logs", Key: "display_startup_errors", Label: "Show start-up errors", Hint: "keep it Off on a live site", Type: "switch", pattern: switchRe},
+	{Group: "Errors and logs", Key: "log_errors", Label: "Write errors to a log", Hint: "On or Off", Type: "switch", pattern: switchRe},
+	{Group: "Errors and logs", Key: "error_log", Label: "Error log file", Hint: "a file path; empty for the server's log", pattern: pathRe, quote: true},
+	{Group: "Errors and logs", Key: "error_reporting", Label: "Which errors to report", Hint: "such as E_ALL & ~E_DEPRECATED & ~E_STRICT", pattern: regexp.MustCompile(`^[A-Z_0-9 &|~^()!-]{1,150}$`)},
+
+	{Group: "Behaviour", Key: "date.timezone", Label: "Time zone", Hint: "such as UTC or Asia/Dhaka", pattern: regexp.MustCompile(`^[A-Za-z0-9_+/-]{1,64}$`), quote: true},
+	{Group: "Behaviour", Key: "default_charset", Label: "Default character set", Hint: "such as UTF-8", pattern: regexp.MustCompile(`^[A-Za-z0-9_.-]{1,40}$`), quote: true},
+	{Group: "Behaviour", Key: "short_open_tag", Label: "Short open tag (<?)", Hint: "keep it Off unless old code needs it", Type: "switch", pattern: switchRe},
+	{Group: "Behaviour", Key: "expose_php", Label: "Tell visitors PHP is used", Hint: "Off hides the PHP version", Type: "switch", pattern: switchRe},
+	{Group: "Behaviour", Key: "allow_url_fopen", Label: "Open web addresses as files", Hint: "On or Off; some plugins need On", Type: "switch", pattern: switchRe},
+	{Group: "Behaviour", Key: "allow_url_include", Label: "Include code from web addresses", Hint: "keep it Off", Type: "switch", pattern: switchRe},
+	{Group: "Behaviour", Key: "disable_functions", Label: "Functions switched off", Hint: "names separated by commas; empty for none", pattern: regexp.MustCompile(`^[A-Za-z0-9_,]{0,1000}$`)},
+	{Group: "Behaviour", Key: "curl.cainfo", Label: "CA certificate file for curl", Hint: "a cacert.pem path, so PHP can reach HTTPS sites", pattern: pathRe, quote: true},
+	{Group: "Behaviour", Key: "openssl.cafile", Label: "CA certificate file for OpenSSL", Hint: "a cacert.pem path", pattern: pathRe, quote: true},
+
+	{Group: "Sessions", Key: "session.save_path", Label: "Session folder", Hint: "a folder PHP can write to; empty for the system folder", pattern: pathRe, quote: true},
+	{Group: "Sessions", Key: "session.gc_maxlifetime", Label: "Session lifetime (seconds)", Hint: "such as 1440", pattern: numberRe},
+	{Group: "Sessions", Key: "session.cookie_httponly", Label: "Session cookie hidden from scripts", Hint: "On is safer", Type: "switch", pattern: switchRe},
+	{Group: "Sessions", Key: "session.cookie_secure", Label: "Session cookie only over HTTPS", Hint: "On only if the whole site uses HTTPS", Type: "switch", pattern: switchRe},
+	{Group: "Sessions", Key: "session.use_strict_mode", Label: "Refuse unknown session ids", Hint: "On is safer", Type: "switch", pattern: switchRe},
+
+	{Group: "Opcode cache", Key: "opcache.enable", Label: "Opcode cache (opcache)", Hint: "On or Off", Type: "switch", pattern: switchRe},
+	{Group: "Opcode cache", Key: "opcache.memory_consumption", Label: "Cache memory (MB)", Hint: "such as 128", pattern: numberRe},
+	{Group: "Opcode cache", Key: "opcache.interned_strings_buffer", Label: "Strings memory (MB)", Hint: "such as 8", pattern: numberRe},
+	{Group: "Opcode cache", Key: "opcache.max_accelerated_files", Label: "Most cached files", Hint: "such as 10000", pattern: numberRe},
+	{Group: "Opcode cache", Key: "opcache.validate_timestamps", Label: "Check files for changes", Hint: "Off is faster, but code changes need a PHP restart", Type: "switch", pattern: switchRe},
+	{Group: "Opcode cache", Key: "opcache.revalidate_freq", Label: "Check files every (seconds)", Hint: "such as 2", pattern: numberRe},
 }
 
 // defaultExtensions are enabled in a new php.ini when the build has them.

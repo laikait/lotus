@@ -315,14 +315,14 @@ func TestSettingsAndExtensionsAreEditedInPlace(t *testing.T) {
 	before, _ := os.ReadFile(v.Ini)
 
 	err := in.ApplyIni("8.3.99",
-		map[string]string{"memory_limit": "512M", "date.timezone": "Asia/Dhaka", "opcache.enable": "1", "max_input_vars": "5000"},
+		map[string]string{"memory_limit": "512M", "date.timezone": "Asia/Dhaka", "opcache.enable": "On", "max_input_vars": "5000", "error_log": "C:\\logs\\php.log", "disable_functions": "exec,shell_exec"},
 		map[string]bool{"curl": false, "mbstring": true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	after, _ := os.ReadFile(v.Ini)
 	text := string(after)
-	for _, want := range []string{"memory_limit = 512M\r\n", `date.timezone = "Asia/Dhaka"`, "\r\nopcache.enable = 1\r\n", "max_input_vars = 5000", "\r\n;extension=curl\r\n", "\r\nextension=mbstring\r\n", "upload_max_filesize = 2M", ";opcache.enable_cli=0"} {
+	for _, want := range []string{"memory_limit = 512M\r\n", `date.timezone = "Asia/Dhaka"`, "\r\nopcache.enable = On\r\n", "max_input_vars = 5000", "error_log = \"C:\\logs\\php.log\"\r\n", "disable_functions = exec,shell_exec\r\n", "\r\n;extension=curl\r\n", "\r\nextension=mbstring\r\n", "upload_max_filesize = 2M", ";opcache.enable_cli=0"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q in:\n%s", want, text)
 		}
@@ -356,6 +356,12 @@ func TestBadSettingsWriteNothing(t *testing.T) {
 		{s: map[string]string{"date.timezone": `UTC"`}},
 		{s: map[string]string{"display_errors": "maybe"}},
 		{s: map[string]string{"opcache.enable": "2"}},
+		{s: map[string]string{"error_log": "C:\\logs\\"}}, // a trailing backslash would escape the closing quote
+		{s: map[string]string{"error_log": "a\"b"}},
+		{s: map[string]string{"upload_tmp_dir": "/tmp;x"}},
+		{s: map[string]string{"disable_functions": "exec; auto_prepend_file=/x"}},
+		{s: map[string]string{"error_reporting": "E_ALL\nx=1"}},
+		{s: map[string]string{"memory_limit": ""}},
 		{s: map[string]string{"auto_prepend_file": "/evil.php"}},
 		{s: map[string]string{"extension_dir": "/evil"}},
 		{e: map[string]bool{"gd": true}}, // no such dll in this build

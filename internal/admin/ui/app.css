@@ -96,3 +96,13 @@ a.btn { display: inline-block; text-decoration: none; }
 .card.form .hint:first-child { margin-top: 0; }
 .grid2 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 .toolbar + .card, .toolbar + .table { margin-top: 0; }
+
+/* php.ini settings: groups, two boxes per row, the hint under the box so the boxes line up. */
+.grid2.two { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 20px; }
+.ini-group { margin: 22px 0 0; font-size: 15px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.ini-group:first-child { margin-top: 8px; }
+.field { display: flex; flex-direction: column; }
+.field label { font-weight: 600; margin-bottom: 4px; }
+.field input, .field select { width: 100%; box-sizing: border-box; }
+.field .field-hint { font-size: 12px; margin-top: 4px; }
+@media (max-width: 700px) { .grid2.two { grid-template-columns: minmax(0, 1fr); } }

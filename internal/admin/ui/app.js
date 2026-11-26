@@ -659,23 +659,33 @@
       var d = r[0];
       var fields = $("ini-fields");
       fields.replaceChildren();
+      var group = "", grid = null, current = d.settings || {};
       (d.setting_info || []).forEach(function (s) {
-        var wrap = el("div"), lab = el("label", s.label + " "), input;
-        lab.appendChild(el("span", "(" + s.hint + ")", "muted"));
-        if (s.key === "display_errors") {
+        if (s.group !== group || !grid) {
+          group = s.group;
+          fields.appendChild(el("h3", group, "ini-group"));
+          grid = el("div", null, "grid2 two");
+          fields.appendChild(grid);
+        }
+        var wrap = el("div", null, "field"), lab = el("label", s.label), input;
+        var raw = current[s.key], has = raw !== undefined;
+        if (s.type === "switch") {
+          // php.ini spells a switch many ways (1, on, true, yes); show them as On or Off.
+          var val = has ? (/^(1|on|true|yes)$/i.test(raw) ? "On" : "Off") : "";
           input = el("select");
-          ["On", "Off"].forEach(function (v) { var o = el("option", v); o.value = v; input.appendChild(o); });
-        } else if (s.key === "opcache.enable") {
-          input = el("select");
-          [["1", "On"], ["0", "Off"]].forEach(function (v) { var o = el("option", v[1]); o.value = v[0]; input.appendChild(o); });
+          (has ? [] : [["", "Not set (PHP default)"]]).concat([["On", "On"], ["Off", "Off"]]).forEach(function (v) { var o = el("option", v[1]); o.value = v[0]; input.appendChild(o); });
+          input.value = val;
+          input.setAttribute("data-orig", val);
         } else {
-          input = el("input"); input.type = "text"; input.maxLength = 64; input.spellcheck = false;
+          input = el("input"); input.type = "text"; input.maxLength = 1000; input.spellcheck = false;
+          input.value = has ? raw : "";
+          input.setAttribute("data-orig", input.value);
         }
         input.id = "ini-" + s.key.replace(/[^a-z0-9]/g, "-"); input.setAttribute("data-key", s.key);
         lab.htmlFor = input.id;
-        input.value = (d.settings || {})[s.key] || "";
         input.disabled = !admin;
-        wrap.appendChild(lab); wrap.appendChild(input); fields.appendChild(wrap);
+        wrap.appendChild(lab); wrap.appendChild(input); wrap.appendChild(el("span", s.hint, "muted field-hint"));
+        grid.appendChild(wrap);
       });
       var exts = $("ini-exts");
       exts.replaceChildren();
@@ -698,6 +708,7 @@
     btn.disabled = true; $("ini-errors").hidden = true;
     api("PUT", "/v1/php-versions/" + encodeURIComponent(iniVersion) + "/ini", { settings: settings, extensions: extensions }).then(function (r) {
       toast("Saved." + ((r.restarted || []).length ? " Pool " + r.restarted.join(", ") + " is restarting." : ""));
+      return loadPhpSettings(iniVersion);
     }).catch(function (e) {
       if (e.status === 401) { signedOut(); return; }
       var box = $("ini-errors"); box.textContent = e.message; box.hidden = false;
@@ -707,7 +718,8 @@
   $("ini-form").addEventListener("submit", function (ev) {
     ev.preventDefault();
     var settings = {};
-    $("ini-fields").querySelectorAll("[data-key]").forEach(function (i) { if (i.value !== "") settings[i.getAttribute("data-key")] = i.value; });
+    $("ini-fields").querySelectorAll("[data-key]").forEach(function (i) { if (i.value !== i.getAttribute("data-orig")) settings[i.getAttribute("data-key")] = i.value; });
+    if (!Object.keys(settings).length) { toast("Nothing changed."); return; }
     saveIni(settings, {}, $("ini-save"));
   });
 
