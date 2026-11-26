@@ -207,6 +207,41 @@
       <span class="spacer"></span>
       <button id="php-refresh" class="btn btn-quiet" type="button" title="Refresh" aria-label="Refresh the PHP figures">Refresh</button>
     </div>
+
+    <h2>PHP versions</h2>
+    <div id="pv-runtime" class="error" role="alert" hidden></div>
+    <p id="pv-unsupported" class="notice" hidden>Installing PHP from the panel works on Windows. On Linux, install PHP with the system's package manager (for example <code>apt install php-cgi</code>), then add a pool that points to it below.</p>
+    <p id="pv-feed" class="hint" hidden></p>
+    <table class="table">
+      <thead><tr><th>Installed</th><th>Pools</th><th>Folder</th><th>Actions</th></tr></thead>
+      <tbody id="pv-installed"></tbody>
+    </table>
+    <div id="pv-job" class="card form" hidden>
+      <strong id="pv-job-title"></strong>
+      <progress id="pv-progress" max="100" value="0"></progress>
+      <p id="pv-job-text" class="hint"></p>
+    </div>
+    <table class="table">
+      <thead><tr><th>Available from windows.php.net</th><th>Version</th><th>Size</th><th>Actions</th></tr></thead>
+      <tbody id="pv-available"></tbody>
+    </table>
+    <label class="check"><input id="pv-mkpool" type="checkbox" checked> Make a pool when the install is done</label>
+    <p class="hint">Downloads the official build (NTS, x64) from windows.php.net, checks its checksum, and unpacks it into the <code>php</code> folder of the LOTUS installation. The pool gets a name such as <code>php83</code>; pick it in a site's PHP backend.</p>
+
+    <form id="ini-form" class="card form" hidden>
+      <h2 id="ini-title">Settings</h2>
+      <div id="ini-fields" class="grid2"></div>
+      <h3>Extensions</h3>
+      <div id="ini-exts" class="grid2"></div>
+      <div id="ini-errors" class="error" role="alert" hidden></div>
+      <div class="actions">
+        <button id="ini-save" class="btn" type="submit">Save</button>
+        <button id="ini-cancel" class="btn btn-quiet" type="button">Cancel</button>
+      </div>
+      <p class="hint">Saving replaces the PHP processes of the pools that use this version, one by one, so they read the new settings.</p>
+    </form>
+
+    <h2>Running pools</h2>
     <table class="table">
       <thead><tr><th>Pool</th><th>Command</th><th>Processes</th><th>Running</th><th>Restarts</th><th>Actions</th></tr></thead>
       <tbody id="php-rows"></tbody>
@@ -231,7 +266,7 @@
       <input id="pl-name" type="text" required maxlength="64" value="app" spellcheck="false" autocapitalize="off">
       <label for="pl-command">php-cgi program</label>
       <input id="pl-command" type="text" required maxlength="300" spellcheck="false" placeholder="C:/xampp/php/php-cgi.exe">
-      <div class="actions">
+      <div class="actions" id="pl-fills">
         <button id="pl-xampp" class="btn btn-quiet" type="button">XAMPP on Windows</button>
         <button id="pl-path" class="btn btn-quiet" type="button">php-cgi from PATH</button>
       </div>

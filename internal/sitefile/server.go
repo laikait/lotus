@@ -283,3 +283,18 @@ func (s *Store) ListenerNames() []string {
 	}
 	return names
 }
+
+// PHPBackendCommands maps each php_backend of the configuration files that LOTUS starts itself to its program path.
+func (s *Store) PHPBackendCommands() map[string]string {
+	out := map[string]string{}
+	res, _ := config.Check(s.Config, loader.Options{})
+	if res == nil || res.Config == nil {
+		return out
+	}
+	for _, b := range res.Config.PHPBackends {
+		if b.Command != "" {
+			out[b.Name] = b.Command
+		}
+	}
+	return out
+}

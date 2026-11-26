@@ -14,6 +14,19 @@ Both show raw data that can hold addresses, URLs and secrets, so every route nee
 - **Know what this allows:** someone who can save a configuration here can change what the server serves, reads and runs (for example a `php_backend` `command` runs a program as the service account). Admin accounts should be people who could already administer the machine. This is why the editor is for the `admin` role only, the sign-in is rate limited, and every save, refusal and undo is logged with the account and address.
 - A change to the `admin { }` block itself is not applied by a reload; restart the service. Saving a mistake in it is still refused by the check.
 
+## PHP versions (PHP page, Windows)
+
+The panel can get PHP itself, so a machine needs no XAMPP: **Install** downloads an official build, **Settings** edits `php.ini`, **Make pool** creates the pool, **Remove** deletes a version (`internal/phpinstall`, `internal/admin/php_versions.go`).
+
+- **Where it comes from.** The list is `releases.json` of windows.php.net (the newest version of each branch: 7.4 to the newest, NTS x64 builds, which php-cgi needs). Only `https://windows.php.net/` and, where it redirects its files, `https://downloads.php.net/` are contacted; a redirect anywhere else is refused. The version to install must be one the list offers.
+- **How it installs.** Download (at most 150 MB) to a temporary file, check its SHA-256 against the list, unpack into `<version>.part` (every name is checked: no `..`, absolute path, drive letter, backslash or link; file count and size capped), check that `php-cgi.exe` is there and starts (`-v`), write `php.ini` from `php.ini-production` with an absolute `extension_dir` and the common extensions on, write `lotus-php.json`, rename to `<version>`. Any failure removes what was made. One install runs at a time; the page polls a job (`/v1/php-jobs/{id}`) while it runs, since a download takes a minute.
+- **Where.** The `php` folder next to `main.conf` (Windows installer: `C:\Program Files\Lotus\php\8.3.37\`). The folder is fixed; no request names a path. `Remove` deletes only a folder that holds `lotus-php.json`, and is refused while a pool's program is inside it.
+- **Visual C++ runtime.** PHP needs `vcruntime140.dll` and `vcruntime140_1.dll`. The panel looks for them first and, if they are missing, shows the message and the Microsoft download link instead of installing anything; the start check after unpacking catches other failures.
+- **Settings and extensions.** Only these `php.ini` settings are editable: memory_limit, upload_max_filesize, post_max_size, max_execution_time, max_input_vars, date.timezone, display_errors, opcache.enable; each value has its own pattern (a value with a newline or `;` is refused). Extensions are the `ext\php_*.dll` files the build has (opcache has its own setting). Editing rewrites only the line concerned (documentation lines in the file are left alone), keeps `php.ini.bak`, and then replaces the processes of the pools that use that version so they read it.
+- **Pools and sites.** *Make pool* adds a pool named `php83` (`php83-37` if that name is taken) to the server settings file, 4 processes, `max_requests 500`, with the version's `php.ini`. The site form's PHP backend list shows `PHP 8.3.37 (php83)`, which is how a site picks its PHP version.
+- **What this trusts.** The checksum comes from the same HTTPS site as the file: it protects against a damaged or swapped download, not against a compromised windows.php.net. The downloaded PHP then runs as the service account, like any pool. Everything needs the admin role; every install, removal and settings change is logged with the account and address.
+- Linux is not done yet: the page says to install PHP with the package manager and add a pool by path.
+
 ## PHP pools and the HTTPS wizard
 
 Both write one managed file, `sites.d/00-lotus-server.conf` (the `00` loads it first), made the same way as a site file: a marker line, a `# spec: {JSON}` line and text that must equal what the program renders from the JSON. A hand-edited server file is shown read-only and left alone. It is not listed on the Sites page; the Configuration editor can open it. Every save is checked as a whole configuration, written through a temporary file, loaded, and put back if refused, like a site change.
@@ -122,6 +135,13 @@ The password is asked twice without echo; `--password-stdin` and `--password-fil
 | `DELETE /v1/site-files/{name}` | admin | `{ok, generation}`; the web directory is not touched |
 | `POST /v1/certs/renew` `{domain}` | admin | `{ok}` after the CA has issued the certificate (up to a minute); 404 for a name without an automatic certificate, 422 when the current one is under a day old |
 | `GET /v1/traffic` | any | `{time_ms, uptime_seconds, connections, connection_limit, rejected, dropped, classes, sites: [{name, requests, class[], bytes, rate_limited, latency_seconds}], unrouted}`: running totals since the start |
+| `GET /v1/php-versions` | any | `{supported, runtime_ok, runtime_message, feed_error, installed: [{version, dir, exe, ini, installed_at, pools}], available: [{branch, version, size, installed}], job}` |
+| `POST /v1/php-versions` `{version}` | admin | `202 {job}`; 422 for a bad version, a missing runtime or a system without support; 409 while another install runs |
+| `GET /v1/php-jobs/{id}` | any | `{id, version, state: running|done|failed, percent, message}` |
+| `DELETE /v1/php-versions/{version}` | admin | `{ok}`; 409 while a pool uses it, 404 if not installed |
+| `GET /v1/php-versions/{version}/ini` | any | `{settings, enabled, available, setting_info}` |
+| `PUT /v1/php-versions/{version}/ini` `{settings, extensions}` | admin | `{ok, restarted}`; 422 for a refused value or unknown extension |
+| `POST /v1/php-versions/{version}/pool` `{name?, processes?}` | admin | makes a pool for the version (as `PUT /v1/php-pools`); 409 if the name is taken |
 | `GET /v1/php-pools` | any | `{pools: [{name, command, processes, max_requests, php_ini, timeout}], editable, can_restart}`: the pools of the server file |
 | `PUT /v1/php-pools/{name}` `{command, processes, max_requests, php_ini, timeout}` | admin | add or replace; `{ok, generation}`; 422 for a bad value or an invalid configuration; 409 if the file was changed by hand |
 | `DELETE /v1/php-pools/{name}` | admin | `{ok, generation}`; 404 if it is not in the server file; 422 if a site uses it |

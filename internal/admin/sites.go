@@ -31,6 +31,7 @@ func (s *Server) listSiteFiles(w http.ResponseWriter, r *http.Request, _ *sessio
 		"templates":    sitefile.Templates,
 		"php_backends": s.opts.Sites.PHPBackendNames(),
 		"listeners":    s.opts.Sites.ListenerNames(),
+		"php_labels":   s.phpLabels(),
 		"hint":         s.opts.Sites.IncludeHint(),
 	})
 }

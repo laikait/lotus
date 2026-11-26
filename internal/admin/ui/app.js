@@ -156,6 +156,7 @@
 
   var defaultRoot = "";
   var phpBackends = [];
+  var phpLabels = {};
   var listenerNames = [];
   var TEMPLATE_NAMES = { static: "Static files", php: "PHP", wordpress: "WordPress", laravel: "Laravel", proxy: "Reverse proxy" };
   var TEMPLATE_NOTES = {
@@ -170,6 +171,7 @@
     return api("GET", "/v1/site-files").then(function (d) {
       defaultRoot = d.default_root || "";
       phpBackends = d.php_backends || [];
+      phpLabels = d.php_labels || {};
       listenerNames = d.listeners || [];
       var hint = $("site-hint");
       hint.textContent = d.hint || ""; hint.hidden = !d.hint;
@@ -260,7 +262,7 @@
     sel.replaceChildren();
     var names = phpBackends.slice();
     if (s.php_backend && names.indexOf(s.php_backend) < 0) names.push(s.php_backend);
-    names.forEach(function (n) { var o = el("option", n); o.value = n; sel.appendChild(o); });
+    names.forEach(function (n) { var o = el("option", phpLabels[n] || n); o.value = n; sel.appendChild(o); });
     if (!names.length) { var none = el("option", "(no php_backend in the configuration)"); none.value = ""; sel.appendChild(none); }
     setSel("f-php", s.php_backend);
     $("f-proxy").value = s.proxy_url || "";
@@ -518,9 +520,175 @@
 
   var poolEditing = null;
   var poolList = [];
+  var phpInstalled = [];
+  var jobTimer = null;
+  var jobMakePool = false;
+
+  // ---- php versions ----
+
+  function loadPHPVersions() {
+    var admin = role === "admin";
+    return api("GET", "/v1/php-versions").then(function (d) {
+      var rt = $("pv-runtime");
+      rt.replaceChildren();
+      if (d.supported && !d.runtime_ok) {
+        rt.appendChild(el("div", d.runtime_message));
+        var a = el("a", "Download the Visual C++ Redistributable (x64)");
+        a.href = "https://aka.ms/vs/17/release/vc_redist.x64.exe"; a.rel = "noopener noreferrer"; a.target = "_blank";
+        rt.appendChild(a);
+      }
+      rt.hidden = !(d.supported && !d.runtime_ok);
+      $("pv-unsupported").hidden = d.supported;
+      var feed = $("pv-feed");
+      feed.textContent = d.feed_error ? "Could not read the list of versions: " + d.feed_error : "";
+      feed.hidden = !d.feed_error;
+
+      phpInstalled = d.installed || [];
+      fillRows("pv-installed", phpInstalled.map(function (v) {
+        var box = el("div", null, "row-actions");
+        var settings = el("button", "Settings", "btn btn-quiet");
+        settings.type = "button"; settings.setAttribute("aria-label", "Settings and extensions of PHP " + v.version);
+        settings.addEventListener("click", function () { openIni(v.version); });
+        box.appendChild(settings);
+        if (admin) {
+          var mk = el("button", "Make pool", "btn btn-quiet");
+          mk.type = "button"; mk.setAttribute("aria-label", "Make a pool for PHP " + v.version);
+          mk.addEventListener("click", function () {
+            act_(mk, api("POST", "/v1/php-versions/" + encodeURIComponent(v.version) + "/pool", {}), "Pool made.", loadPHP);
+          });
+          var rm = el("button", "Remove", "btn btn-danger");
+          rm.type = "button"; rm.setAttribute("aria-label", "Remove PHP " + v.version);
+          rm.addEventListener("click", function () {
+            if (!window.confirm("Remove PHP " + v.version + "? Its folder is deleted.")) return;
+            act_(rm, api("DELETE", "/v1/php-versions/" + encodeURIComponent(v.version)), "PHP " + v.version + " removed.", loadPHPVersions);
+          });
+          box.appendChild(mk); box.appendChild(rm);
+        }
+        return ["PHP " + v.version, (v.pools || []).join(", ") || "-", v.dir, box];
+      }), 4, d.supported ? "No PHP installed here yet. Install one below." : "-");
+
+      fillRows("pv-available", (d.available || []).map(function (a) {
+        var cell;
+        if (a.installed) cell = el("span", "Installed", "pill ok");
+        else if (!admin || !d.runtime_ok) cell = el("span", "-");
+        else {
+          cell = el("button", "Install", "btn");
+          cell.type = "button"; cell.setAttribute("aria-label", "Install PHP " + a.version);
+          cell.addEventListener("click", function () { startInstall(a.version, cell); });
+        }
+        return ["PHP " + a.branch, a.version, a.size ? Math.round(a.size / 1048576) + " MB" : "-", cell];
+      }), 4, d.supported ? "No list of versions." : "-");
+      $("pv-mkpool").parentNode.hidden = !d.supported || !admin;
+
+      var fills = $("pl-fills");
+      fills.querySelectorAll("[data-version]").forEach(function (b) { b.remove(); });
+      phpInstalled.forEach(function (v) {
+        var b = el("button", "PHP " + v.version, "btn btn-quiet");
+        b.type = "button"; b.setAttribute("data-version", v.version);
+        b.addEventListener("click", function () { $("pl-command").value = v.exe.replace(/\\/g, "/"); $("pl-ini").value = v.ini.replace(/\\/g, "/"); });
+        fills.appendChild(b);
+      });
+      if (d.job && d.job.state === "running") watchJob(d.job.id, d.job.version);
+    }).catch(failed);
+  }
+
+  function startInstall(version, btn) {
+    jobMakePool = $("pv-mkpool").checked;
+    btn.disabled = true;
+    api("POST", "/v1/php-versions", { version: version }).then(function (r) {
+      watchJob(r.job, version);
+    }).catch(function (e) {
+      if (e.status === 401) { signedOut(); return; }
+      toast(e.message, "bad");
+    }).then(function () { btn.disabled = false; });
+  }
+
+  // Polls the install job every second until it ends, and shows the progress.
+  function watchJob(id, version) {
+    if (jobTimer) clearInterval(jobTimer);
+    $("pv-job").hidden = false;
+    $("pv-job-title").textContent = "Installing PHP " + version;
+    var tick = function () {
+      api("GET", "/v1/php-jobs/" + encodeURIComponent(id)).then(function (j) {
+        $("pv-progress").value = j.percent; $("pv-job-text").textContent = j.message;
+        if (j.state === "running") return;
+        clearInterval(jobTimer); jobTimer = null;
+        if (j.state === "done") {
+          toast("PHP " + j.version + " is installed.");
+          $("pv-job").hidden = true;
+          var after = jobMakePool ? api("POST", "/v1/php-versions/" + encodeURIComponent(j.version) + "/pool", {}).then(function () { toast("Pool made."); }, function (e) { toast(e.message, "bad"); }) : Promise.resolve();
+          after.then(function () { jobMakePool = false; return loadPHP(); });
+        } else {
+          $("pv-job-title").textContent = "The install of PHP " + j.version + " failed";
+          $("pv-progress").value = 0;
+        }
+      }).catch(function (e) {
+        clearInterval(jobTimer); jobTimer = null;
+        if (e.status === 401) { signedOut(); return; }
+        $("pv-job-text").textContent = e.message;
+      });
+    };
+    tick();
+    jobTimer = setInterval(tick, 1000);
+  }
+
+  var iniVersion = null;
+
+  function openIni(version) {
+    api("GET", "/v1/php-versions/" + encodeURIComponent(version) + "/ini").then(function (d) {
+      iniVersion = version;
+      $("ini-title").textContent = "PHP " + version + ": settings";
+      var fields = $("ini-fields");
+      fields.replaceChildren();
+      (d.setting_info || []).forEach(function (s) {
+        var wrap = el("div"), lab = el("label", s.label + " "), input;
+        lab.appendChild(el("span", "(" + s.hint + ")", "muted"));
+        if (s.key === "display_errors") {
+          input = el("select");
+          ["On", "Off"].forEach(function (v) { var o = el("option", v); o.value = v; input.appendChild(o); });
+        } else if (s.key === "opcache.enable") {
+          input = el("select");
+          [["1", "On"], ["0", "Off"]].forEach(function (v) { var o = el("option", v[1]); o.value = v[0]; input.appendChild(o); });
+        } else {
+          input = el("input"); input.type = "text"; input.maxLength = 64; input.spellcheck = false;
+        }
+        input.id = "ini-" + s.key.replace(/[^a-z0-9]/g, "-"); input.setAttribute("data-key", s.key);
+        lab.htmlFor = input.id;
+        input.value = (d.settings || {})[s.key] || "";
+        wrap.appendChild(lab); wrap.appendChild(input); fields.appendChild(wrap);
+      });
+      var exts = $("ini-exts");
+      exts.replaceChildren();
+      (d.available || []).forEach(function (n) {
+        var lab = el("label", null, "check"), cb = el("input");
+        cb.type = "checkbox"; cb.checked = (d.enabled || []).indexOf(n) >= 0; cb.setAttribute("data-ext", n);
+        lab.appendChild(cb); lab.appendChild(document.createTextNode(" " + n)); exts.appendChild(lab);
+      });
+      $("ini-errors").hidden = true;
+      $("ini-form").hidden = false;
+      $("ini-form").scrollIntoView();
+    }).catch(failed);
+  }
+
+  $("ini-cancel").addEventListener("click", function () { $("ini-form").hidden = true; iniVersion = null; });
+  $("ini-form").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var settings = {}, extensions = {};
+    $("ini-fields").querySelectorAll("[data-key]").forEach(function (i) { if (i.value !== "") settings[i.getAttribute("data-key")] = i.value; });
+    $("ini-exts").querySelectorAll("[data-ext]").forEach(function (i) { extensions[i.getAttribute("data-ext")] = i.checked; });
+    var btn = $("ini-save"); btn.disabled = true; $("ini-errors").hidden = true;
+    api("PUT", "/v1/php-versions/" + encodeURIComponent(iniVersion) + "/ini", { settings: settings, extensions: extensions }).then(function (r) {
+      toast("Saved." + ((r.restarted || []).length ? " Pool " + r.restarted.join(", ") + " is restarting." : ""));
+      $("ini-form").hidden = true; iniVersion = null;
+    }).catch(function (e) {
+      if (e.status === 401) { signedOut(); return; }
+      var box = $("ini-errors"); box.textContent = e.message; box.hidden = false;
+    }).then(function () { btn.disabled = false; });
+  });
 
   function loadPHP() {
     var admin = role === "admin";
+    loadPHPVersions();
     $("pool-add").hidden = !admin;
     return Promise.all([api("GET", "/v1/php"), api("GET", "/v1/php-pools")]).then(function (r) {
       var pools = r[0] || [], set = r[1], canRestart = set.can_restart && admin;

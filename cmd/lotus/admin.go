@@ -18,6 +18,7 @@ import (
 	"github.com/laikait/lotus/internal/config"
 	"github.com/laikait/lotus/internal/config/loader"
 	"github.com/laikait/lotus/internal/config/model"
+	"github.com/laikait/lotus/internal/phpinstall"
 	"github.com/laikait/lotus/internal/server"
 	"github.com/laikait/lotus/internal/sitefile"
 )
@@ -64,7 +65,7 @@ func (a *app) openAdmin(cfg *model.Config) (io.Closer, error) {
 		a.log.Warn("the admin has no accounts: nobody can sign in", "users_file", users.Path, "fix", "run: lotus admin passwd NAME")
 	}
 	srv := admin.New(admin.Options{
-		Backend: a, Sites: &sitefile.Store{Config: a.path}, PHP: a.phpPools, PHPRestart: a.srv.RestartPHPPool, Logs: a.logSources, Traffic: a.traffic, Users: users, SessionTTL: ad.SessionTTL, Allow: ad.Allow, Secure: secure, Log: a.log,
+		Backend: a, Sites: &sitefile.Store{Config: a.path}, PHP: a.phpPools, PHPInstall: &phpinstall.Installer{Home: filepath.Join(filepath.Dir(a.path), "php")}, PHPRestart: a.srv.RestartPHPPool, Logs: a.logSources, Traffic: a.traffic, Users: users, SessionTTL: ad.SessionTTL, Allow: ad.Allow, Secure: secure, Log: a.log,
 	})
 	go func() {
 		if err := srv.Serve(ln); err != nil {

@@ -36,6 +36,7 @@ type Options struct {
 	Backend    control.Backend
 	Sites      *sitefile.Store    // the sites.d folder; nil: no site pages
 	PHP        func() []PHPPool   // the managed php-cgi pools; nil: none
+	PHPInstall PHPInstaller       // installs and configures PHP versions; nil: no such page
 	PHPRestart func(string) bool  // replace the processes of the pool with this name; false: no such pool; nil: not offered
 	Traffic    func() Traffic     // running totals for the live traffic page; nil: none
 	Logs       func() []LogSource // the log files that can be shown; nil: none
@@ -64,6 +65,8 @@ type Server struct {
 	http *http.Server
 
 	userMu   sync.Mutex // one change of the users file at a time
+	jobMu    sync.Mutex // guards jobs
+	jobs     map[string]*installJob
 	mu       sync.Mutex
 	sessions map[string]*session
 	fails    map[string]*failures
@@ -131,6 +134,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/cache/purge", s.auth(RoleAdmin, s.cachePurge))
 	mux.HandleFunc("GET /v1/traffic", s.auth(RoleViewer, s.traffic))
 	mux.HandleFunc("GET /v1/php", s.auth(RoleViewer, s.phpStatus))
+	mux.HandleFunc("GET /v1/php-versions", s.auth(RoleViewer, s.phpVersions))
+	mux.HandleFunc("POST /v1/php-versions", s.auth(RoleAdmin, s.phpInstall))
+	mux.HandleFunc("GET /v1/php-jobs/{id}", s.auth(RoleViewer, s.phpJob))
+	mux.HandleFunc("DELETE /v1/php-versions/{version}", s.auth(RoleAdmin, s.phpRemove))
+	mux.HandleFunc("GET /v1/php-versions/{version}/ini", s.auth(RoleViewer, s.phpIniGet))
+	mux.HandleFunc("PUT /v1/php-versions/{version}/ini", s.auth(RoleAdmin, s.phpIniPut))
+	mux.HandleFunc("POST /v1/php-versions/{version}/pool", s.auth(RoleAdmin, s.phpMakePool))
 	mux.HandleFunc("POST /v1/php/{name}/restart", s.auth(RoleAdmin, s.phpPoolRestart))
 	mux.HandleFunc("GET /v1/users", s.auth(RoleAdmin, s.userList))
 	mux.HandleFunc("POST /v1/users", s.auth(RoleAdmin, s.userAdd))
