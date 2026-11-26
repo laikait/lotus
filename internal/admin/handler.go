@@ -139,6 +139,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/php-jobs/{id}", s.auth(RoleViewer, s.phpJob))
 	mux.HandleFunc("DELETE /v1/php-versions/{version}", s.auth(RoleAdmin, s.phpRemove))
 	mux.HandleFunc("GET /v1/php-versions/{version}/ini", s.auth(RoleViewer, s.phpIniGet))
+	mux.HandleFunc("GET /v1/php-versions/{version}/ioncube", s.auth(RoleViewer, s.phpIonCubeGet))
+	mux.HandleFunc("POST /v1/php-versions/{version}/ioncube", s.auth(RoleAdmin, s.phpIonCubePost))
 	mux.HandleFunc("PUT /v1/php-versions/{version}/ini", s.auth(RoleAdmin, s.phpIniPut))
 	mux.HandleFunc("POST /v1/php-versions/{version}/pool", s.auth(RoleAdmin, s.phpMakePool))
 	mux.HandleFunc("POST /v1/php/{name}/restart", s.auth(RoleAdmin, s.phpPoolRestart))

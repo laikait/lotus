@@ -45,14 +45,17 @@
   // ---- views ----
 
   function showView(name) {
-    view = ["sites", "cache", "php", "server", "logs", "config", "traffic", "users"].indexOf(name) >= 0 ? name : "dashboard";
+    var parts = String(name).split("/"), arg = parts[1] || "";
+    name = parts[0];
+    view = ["sites", "cache", "php", "phpsettings", "server", "logs", "config", "traffic", "users"].indexOf(name) >= 0 ? name : "dashboard";
     if ((view === "logs" || view === "config" || view === "users") && role !== "admin") view = "dashboard"; // the raw files and logs are for admins
     document.querySelectorAll("[data-page]").forEach(function (p) { p.hidden = p.getAttribute("data-page") !== view; });
     document.querySelectorAll("#nav a").forEach(function (a) {
-      if (a.getAttribute("data-view") === view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+      var mine = a.getAttribute("data-view") === view || (view === "phpsettings" && a.getAttribute("data-view") === "php");
+      if (mine) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     });
-    var loaders = { traffic: loadTraffic, sites: loadSites, cache: loadCache, php: loadPHP, server: loadServer, logs: loadLogs, config: loadConfig, users: loadUsers };
-    return (loaders[view] || loadDashboard)();
+    var loaders = { traffic: loadTraffic, sites: loadSites, cache: loadCache, php: loadPHP, server: loadServer, logs: loadLogs, config: loadConfig, users: loadUsers, phpsettings: loadPhpSettings };
+    return (loaders[view] || loadDashboard)(arg);
   }
 
   window.addEventListener("hashchange", function () { if (csrf) showView(location.hash.slice(1)); });
@@ -551,7 +554,7 @@
         var box = el("div", null, "row-actions");
         var settings = el("button", "Settings", "btn btn-quiet");
         settings.type = "button"; settings.setAttribute("aria-label", "Settings and extensions of PHP " + v.version);
-        settings.addEventListener("click", function () { openIni(v.version); });
+        settings.addEventListener("click", function () { location.hash = "#phpsettings/" + encodeURIComponent(v.version); });
         box.appendChild(settings);
         if (admin) {
           var mk = el("button", "Make pool", "btn btn-quiet");
@@ -595,7 +598,7 @@
         b.addEventListener("click", function () { $("pl-command").value = v.exe.replace(/\\/g, "/"); $("pl-ini").value = v.ini.replace(/\\/g, "/"); });
         fills.appendChild(b);
       });
-      if (d.job && d.job.state === "running") watchJob(d.job.id, d.job.version);
+      if (d.job && d.job.state === "running") watchJob(d.job.id, "pv", afterInstall);
     }).catch(failed);
   }
 
@@ -603,48 +606,57 @@
     jobMakePool = $("pv-mkpool").checked;
     btn.disabled = true;
     api("POST", "/v1/php-versions", { version: version }).then(function (r) {
-      watchJob(r.job, version);
+      watchJob(r.job, "pv", afterInstall);
     }).catch(function (e) {
       if (e.status === 401) { signedOut(); return; }
       toast(e.message, "bad");
     }).then(function () { btn.disabled = false; });
   }
 
-  // Polls the install job every second until it ends, and shows the progress.
-  function watchJob(id, version) {
+  // After an install: make the pool if it was asked for, then show the pools.
+  function afterInstall(j) {
+    var wants = jobMakePool && j.label.indexOf("Installing PHP") === 0;
+    var after = wants
+      ? api("POST", "/v1/php-versions/" + encodeURIComponent(j.version) + "/pool", {}).then(function () { toast("Pool made."); }, function (e) { toast(e.message, "bad"); })
+      : Promise.resolve();
+    return after.then(function () { jobMakePool = false; return loadPHP(); });
+  }
+
+  // Polls a background job every second until it ends, and shows its progress in the box with this id prefix.
+  function watchJob(id, prefix, onDone) {
     if (jobTimer) clearInterval(jobTimer);
-    $("pv-job").hidden = false;
-    $("pv-job-title").textContent = "Installing PHP " + version;
+    var box = $(prefix + "-job");
+    box.hidden = false;
     var tick = function () {
       api("GET", "/v1/php-jobs/" + encodeURIComponent(id)).then(function (j) {
-        $("pv-progress").value = j.percent; $("pv-job-text").textContent = j.message;
+        $(prefix + "-job-title").textContent = j.state === "failed" ? j.label + ": failed" : j.label;
+        $(prefix + "-progress").value = j.state === "failed" ? 0 : j.percent;
+        $(prefix + "-job-text").textContent = j.message;
         if (j.state === "running") return;
         clearInterval(jobTimer); jobTimer = null;
-        if (j.state === "done") {
-          toast("PHP " + j.version + " is installed.");
-          $("pv-job").hidden = true;
-          var after = jobMakePool ? api("POST", "/v1/php-versions/" + encodeURIComponent(j.version) + "/pool", {}).then(function () { toast("Pool made."); }, function (e) { toast(e.message, "bad"); }) : Promise.resolve();
-          after.then(function () { jobMakePool = false; return loadPHP(); });
-        } else {
-          $("pv-job-title").textContent = "The install of PHP " + j.version + " failed";
-          $("pv-progress").value = 0;
-        }
+        if (j.state === "done") { toast(j.message + "."); box.hidden = true; return onDone(j); }
       }).catch(function (e) {
         clearInterval(jobTimer); jobTimer = null;
         if (e.status === 401) { signedOut(); return; }
-        $("pv-job-text").textContent = e.message;
+        $(prefix + "-job-text").textContent = e.message;
       });
     };
     tick();
     jobTimer = setInterval(tick, 1000);
   }
 
-  var iniVersion = null;
+  // ---- php settings page (#phpsettings/8.3.37) ----
 
-  function openIni(version) {
-    api("GET", "/v1/php-versions/" + encodeURIComponent(version) + "/ini").then(function (d) {
-      iniVersion = version;
-      $("ini-title").textContent = "PHP " + version + ": settings";
+  var iniVersion = null;
+  var iniExtsEditable = true;
+
+  function loadPhpSettings(version) {
+    if (!version) { location.hash = "#php"; return Promise.resolve(); }
+    iniVersion = version;
+    $("ini-title").textContent = "PHP " + version + ": settings";
+    var admin = role === "admin", base = "/v1/php-versions/" + encodeURIComponent(version);
+    return Promise.all([api("GET", base + "/ini"), api("GET", base + "/ioncube")]).then(function (r) {
+      var d = r[0];
       var fields = $("ini-fields");
       fields.replaceChildren();
       (d.setting_info || []).forEach(function (s) {
@@ -662,38 +674,76 @@
         input.id = "ini-" + s.key.replace(/[^a-z0-9]/g, "-"); input.setAttribute("data-key", s.key);
         lab.htmlFor = input.id;
         input.value = (d.settings || {})[s.key] || "";
+        input.disabled = !admin;
         wrap.appendChild(lab); wrap.appendChild(input); fields.appendChild(wrap);
       });
       var exts = $("ini-exts");
       exts.replaceChildren();
-      $("ini-ext-note").hidden = d.extensions_editable !== false;
+      iniExtsEditable = d.extensions_editable !== false;
+      $("ini-ext-note").hidden = iniExtsEditable;
       (d.available || []).forEach(function (n) {
         var lab = el("label", null, "check"), cb = el("input");
         cb.type = "checkbox"; cb.checked = (d.enabled || []).indexOf(n) >= 0; cb.setAttribute("data-ext", n);
-        if (d.extensions_editable === false) cb.disabled = true;
+        cb.disabled = !admin || !iniExtsEditable;
         lab.appendChild(cb); lab.appendChild(document.createTextNode(" " + n)); exts.appendChild(lab);
       });
+      $("ini-save").hidden = !admin;
+      $("ini-ext-save").hidden = !admin || !iniExtsEditable;
       $("ini-errors").hidden = true;
-      $("ini-form").hidden = false;
-      $("ini-form").scrollIntoView();
+      renderIon(r[1]);
     }).catch(failed);
   }
 
-  $("ini-cancel").addEventListener("click", function () { $("ini-form").hidden = true; iniVersion = null; });
-  $("ini-form").addEventListener("submit", function (ev) {
-    ev.preventDefault();
-    var settings = {}, extensions = {};
-    $("ini-fields").querySelectorAll("[data-key]").forEach(function (i) { if (i.value !== "") settings[i.getAttribute("data-key")] = i.value; });
-    $("ini-exts").querySelectorAll("[data-ext]").forEach(function (i) { if (!i.disabled) extensions[i.getAttribute("data-ext")] = i.checked; });
-    var btn = $("ini-save"); btn.disabled = true; $("ini-errors").hidden = true;
+  function saveIni(settings, extensions, btn) {
+    btn.disabled = true; $("ini-errors").hidden = true;
     api("PUT", "/v1/php-versions/" + encodeURIComponent(iniVersion) + "/ini", { settings: settings, extensions: extensions }).then(function (r) {
       toast("Saved." + ((r.restarted || []).length ? " Pool " + r.restarted.join(", ") + " is restarting." : ""));
-      $("ini-form").hidden = true; iniVersion = null;
     }).catch(function (e) {
       if (e.status === 401) { signedOut(); return; }
       var box = $("ini-errors"); box.textContent = e.message; box.hidden = false;
     }).then(function () { btn.disabled = false; });
+  }
+
+  $("ini-form").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var settings = {};
+    $("ini-fields").querySelectorAll("[data-key]").forEach(function (i) { if (i.value !== "") settings[i.getAttribute("data-key")] = i.value; });
+    saveIni(settings, {}, $("ini-save"));
   });
+
+  $("ini-ext-save").addEventListener("click", function () {
+    var extensions = {};
+    $("ini-exts").querySelectorAll("[data-ext]").forEach(function (i) { if (!i.disabled) extensions[i.getAttribute("data-ext")] = i.checked; });
+    saveIni({}, extensions, $("ini-ext-save"));
+  });
+
+  // ionCube Loader card
+  function renderIon(st) {
+    var admin = role === "admin";
+    $("ic-state").textContent = !st.available ? st.message : st.enabled ? "Enabled: PHP loads the ionCube Loader." : st.downloaded ? "Downloaded, but not enabled." : "Not installed.";
+    $("ic-install").hidden = !(admin && st.available && !st.downloaded);
+    $("ic-enable").hidden = !(admin && st.available && st.downloaded && !st.enabled);
+    $("ic-disable").hidden = !(admin && st.available && st.enabled);
+  }
+
+  function refreshIon() {
+    return api("GET", "/v1/php-versions/" + encodeURIComponent(iniVersion) + "/ioncube").then(renderIon).catch(failed);
+  }
+
+  function ionAction(action, btn) {
+    btn.disabled = true;
+    api("POST", "/v1/php-versions/" + encodeURIComponent(iniVersion) + "/ioncube", { action: action }).then(function (r) {
+      if (r.job) { watchJob(r.job, "ic", refreshIon); return; }
+      toast("ionCube Loader " + (action === "enable" ? "enabled." : "disabled.") + ((r.restarted || []).length ? " Pool " + r.restarted.join(", ") + " is restarting." : ""));
+      return refreshIon();
+    }).catch(function (e) {
+      if (e.status === 401) { signedOut(); return; }
+      toast(e.message, "bad");
+    }).then(function () { btn.disabled = false; });
+  }
+  $("ic-install").addEventListener("click", function () { ionAction("install", $("ic-install")); });
+  $("ic-enable").addEventListener("click", function () { ionAction("enable", $("ic-enable")); });
+  $("ic-disable").addEventListener("click", function () { ionAction("disable", $("ic-disable")); });
 
   function loadPHP() {
     var admin = role === "admin";

@@ -23,6 +23,8 @@ type fakeInstaller struct {
 	ini       map[string]string
 	ext       map[string]bool
 	removed   []string
+	ionFile   bool
+	ionOn     bool
 }
 
 func newFake(home string) *fakeInstaller {
@@ -249,5 +251,87 @@ func TestDefaultPoolNames(t *testing.T) {
 	}
 	if got := defaultPoolName("8.3.37", map[string]bool{"php83": true}); got != "php83-37" {
 		t.Errorf("got %q", got)
+	}
+}
+
+func (f *fakeInstaller) IonCube(v string) (phpinstall.IonCubeState, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return phpinstall.IonCubeState{Available: true, Downloaded: f.ionFile, Enabled: f.ionOn}, nil
+}
+func (f *fakeInstaller) InstallIonCube(ctx context.Context, v string, p phpinstall.Progress) error {
+	p(30, "Downloading")
+	if f.failWith != nil {
+		return f.failWith
+	}
+	f.mu.Lock()
+	f.ionFile, f.ionOn = true, true
+	f.mu.Unlock()
+	return nil
+}
+func (f *fakeInstaller) SetIonCube(v string, on bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if on && !f.ionFile {
+		return errors.New("the ionCube Loader is not downloaded yet")
+	}
+	f.ionOn = on
+	return nil
+}
+
+func TestIonCubeThroughTheAPI(t *testing.T) {
+	e, dir, cookie, csrf := siteEnv(t)
+	fake := newFake(filepath.Join(dir, "php"))
+	fake.installed["8.3.99"] = true
+	e.srv.opts.PHPInstall = fake
+	restarted := []string{}
+	e.srv.opts.PHPRestart = func(n string) bool { restarted = append(restarted, n); return true }
+	e.do("POST", "/v1/php-versions/8.3.99/pool", `{}`, csrf, cookie)
+
+	if rec := e.do("GET", "/v1/php-versions/8.3.99/ioncube", "", "", cookie); !strings.Contains(rec.Body.String(), `"available":true`) || !strings.Contains(rec.Body.String(), `"enabled":false`) {
+		t.Fatalf("state: %s", rec.Body)
+	}
+	// Turning it on before the download is refused with the reason.
+	if rec := e.do("POST", "/v1/php-versions/8.3.99/ioncube", `{"action":"enable"}`, csrf, cookie); rec.Code != 422 || !strings.Contains(rec.Body.String(), "not downloaded") {
+		t.Errorf("enable first: %d %s", rec.Code, rec.Body)
+	}
+	// Install is a job, like a PHP install, and restarts the pools that use the version.
+	rec := e.do("POST", "/v1/php-versions/8.3.99/ioncube", `{"action":"install"}`, csrf, cookie)
+	if rec.Code != 202 {
+		t.Fatalf("install: %d %s", rec.Code, rec.Body)
+	}
+	id := between(rec.Body.String(), `"job":"`, `"`)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		rec = e.do("GET", "/v1/php-jobs/"+id, "", "", cookie)
+		if strings.Contains(rec.Body.String(), `"state":"done"`) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("never finished: %s", rec.Body)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !strings.Contains(rec.Body.String(), "Installing the ionCube Loader for PHP 8.3.99") || len(restarted) != 1 {
+		t.Errorf("job: %s restarted=%v", rec.Body, restarted)
+	}
+	if rec = e.do("GET", "/v1/php-versions/8.3.99/ioncube", "", "", cookie); !strings.Contains(rec.Body.String(), `"enabled":true`) {
+		t.Errorf("state after: %s", rec.Body)
+	}
+	if rec = e.do("POST", "/v1/php-versions/8.3.99/ioncube", `{"action":"disable"}`, csrf, cookie); rec.Code != 200 || !strings.Contains(rec.Body.String(), "php83") {
+		t.Errorf("disable: %d %s", rec.Code, rec.Body)
+	}
+	if rec = e.do("POST", "/v1/php-versions/8.3.99/ioncube", `{"action":"explode"}`, csrf, cookie); rec.Code != 422 {
+		t.Errorf("bad action: %d", rec.Code)
+	}
+	if rec = e.do("POST", "/v1/php-versions/9.9.9/ioncube", `{"action":"install"}`, csrf, cookie); rec.Code != 404 {
+		t.Errorf("unknown version: %d", rec.Code)
+	}
+	vcookie, vcsrf := e.signIn("vic", "another long secret")
+	if rec = e.do("GET", "/v1/php-versions/8.3.99/ioncube", "", "", vcookie); rec.Code != 200 {
+		t.Errorf("viewer read: %d", rec.Code)
+	}
+	if rec = e.do("POST", "/v1/php-versions/8.3.99/ioncube", `{"action":"enable"}`, vcsrf, vcookie); rec.Code != 403 {
+		t.Errorf("viewer change: %d", rec.Code)
 	}
 }

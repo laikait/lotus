@@ -28,6 +28,9 @@ type PHPInstaller interface {
 	Remove(version string) error
 	IniState(version string) (phpinstall.IniState, error)
 	ApplyIni(version string, settings map[string]string, extensions map[string]bool) error
+	IonCube(version string) (phpinstall.IonCubeState, error)
+	InstallIonCube(ctx context.Context, version string, progress phpinstall.Progress) error
+	SetIonCube(version string, on bool) error
 }
 
 const (
@@ -39,6 +42,7 @@ const (
 type installJob struct {
 	ID       string    `json:"id"`
 	Version  string    `json:"version"`
+	Label    string    `json:"label"`
 	State    string    `json:"state"` // running, done, failed
 	Percent  int       `json:"percent"`
 	Message  string    `json:"message"`
@@ -171,6 +175,14 @@ func (s *Server) phpInstall(w http.ResponseWriter, r *http.Request, sess *sessio
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+	version := body.Version
+	s.startJob(w, r, sess, version, "Installing PHP "+version, "PHP "+version+" is installed", func(ctx context.Context, p phpinstall.Progress) error {
+		return in.Install(ctx, version, p)
+	})
+}
+
+// startJob runs a long operation in the background as the one install job, and answers 202 with the job's id.
+func (s *Server) startJob(w http.ResponseWriter, r *http.Request, sess *session, version, label, doneText string, run func(context.Context, phpinstall.Progress) error) {
 	s.jobMu.Lock()
 	for _, j := range s.jobs {
 		if j.State == "running" {
@@ -182,19 +194,19 @@ func (s *Server) phpInstall(w http.ResponseWriter, r *http.Request, sess *sessio
 	if s.jobs == nil {
 		s.jobs = map[string]*installJob{}
 	}
-	job := &installJob{ID: token()[:16], Version: body.Version, State: "running", Percent: 0, Message: "Starting", Started: s.opts.Now()}
+	job := &installJob{ID: token()[:16], Version: version, Label: label, State: "running", Percent: 0, Message: "Starting", Started: s.opts.Now()}
 	s.jobs[job.ID] = job
 	s.jobMu.Unlock()
 
-	s.log.Info("php install started", "version", body.Version, "user", sess.user, "ip", remote(r))
-	go s.runInstall(job, sess.user)
+	s.log.Info("php job started", "job", label, "user", sess.user, "ip", remote(r))
+	go s.runJob(job, sess.user, doneText, run)
 	writeJSON(w, http.StatusAccepted, map[string]any{"job": job.ID})
 }
 
-func (s *Server) runInstall(job *installJob, user string) {
+func (s *Server) runJob(job *installJob, user, doneText string, run func(context.Context, phpinstall.Progress) error) {
 	ctx, cancel := context.WithTimeout(context.Background(), installTimeout)
 	defer cancel()
-	err := s.opts.PHPInstall.Install(ctx, job.Version, func(pct int, msg string) {
+	err := run(ctx, func(pct int, msg string) {
 		s.jobMu.Lock()
 		job.Percent, job.Message = pct, msg
 		s.jobMu.Unlock()
@@ -204,14 +216,14 @@ func (s *Server) runInstall(job *installJob, user string) {
 	if err != nil {
 		job.State, job.Message = "failed", err.Error()
 	} else {
-		job.State, job.Percent, job.Message = "done", 100, "PHP "+job.Version+" is installed"
+		job.State, job.Percent, job.Message = "done", 100, doneText
 	}
 	s.jobMu.Unlock()
 	if err != nil {
-		s.log.Warn("php install failed", "version", job.Version, "user", user, "error", err)
+		s.log.Warn("php job failed", "job", job.Label, "user", user, "error", err)
 		return
 	}
-	s.log.Info("php installed", "version", job.Version, "user", user)
+	s.log.Info("php job done", "job", job.Label, "user", user)
 }
 
 func (s *Server) phpJob(w http.ResponseWriter, r *http.Request, _ *session) {
@@ -390,4 +402,72 @@ func (s *Server) phpLabels() map[string]string {
 		}
 	}
 	return out
+}
+
+// ---- ionCube Loader ----
+
+func (s *Server) phpIonCubeGet(w http.ResponseWriter, r *http.Request, _ *session) {
+	if !s.phpInstallerOK(w) {
+		return
+	}
+	st, err := s.opts.PHPInstall.IonCube(r.PathValue("version"))
+	if err != nil {
+		s.phpFailure(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
+}
+
+type ionBody struct {
+	Action string `json:"action"` // install, enable, disable
+}
+
+func (s *Server) phpIonCubePost(w http.ResponseWriter, r *http.Request, sess *session) {
+	if !s.phpInstallerOK(w) {
+		return
+	}
+	version := r.PathValue("version")
+	var body ionBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	in := s.opts.PHPInstall
+	v, err := in.Get(version)
+	if err != nil {
+		s.phpFailure(w, err)
+		return
+	}
+	switch body.Action {
+	case "install":
+		s.startJob(w, r, sess, version, "Installing the ionCube Loader for PHP "+version, "The ionCube Loader is enabled for PHP "+version, func(ctx context.Context, p phpinstall.Progress) error {
+			if err := in.InstallIonCube(ctx, version, p); err != nil {
+				return err
+			}
+			s.recycle(v)
+			return nil
+		})
+	case "enable", "disable":
+		if err := in.SetIonCube(version, body.Action == "enable"); err != nil {
+			writeError(w, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+		restarted := s.recycle(v)
+		s.log.Info("ioncube changed", "version", version, "action", body.Action, "pools_restarted", len(restarted), "user", sess.user, "ip", remote(r))
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "restarted": restarted})
+	default:
+		writeError(w, http.StatusUnprocessableEntity, "the action must be install, enable or disable")
+	}
+}
+
+// recycle replaces the processes of the pools that use a version, so they read the new php.ini.
+func (s *Server) recycle(v phpinstall.Installed) []string {
+	restarted := []string{}
+	if s.opts.PHPRestart != nil {
+		for _, name := range s.poolsUsing(v) {
+			if s.opts.PHPRestart(name) {
+				restarted = append(restarted, name)
+			}
+		}
+	}
+	return restarted
 }

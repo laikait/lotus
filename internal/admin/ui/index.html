@@ -167,6 +167,49 @@
     <p class="hint">Counted since the server started; a reload does not reset them. Rates are worked out in this page from the last two readings. The 4xx column includes requests no site answered.</p>
   </section>
 
+  <section id="phpsettingspage" data-page="phpsettings" hidden>
+    <div class="toolbar">
+      <h1 id="ini-title">PHP settings</h1>
+      <span class="spacer"></span>
+      <a class="btn btn-quiet" href="#php">Back to PHP</a>
+    </div>
+
+    <form id="ini-form" class="card form">
+      <h2>Settings</h2>
+      <div id="ini-fields" class="grid2"></div>
+      <div id="ini-errors" class="error" role="alert" hidden></div>
+      <div class="actions">
+        <button id="ini-save" class="btn" type="submit">Save</button>
+      </div>
+      <p class="hint">Saving replaces the PHP processes of the pools that use this version, one by one, so they read the new settings.</p>
+    </form>
+
+    <div class="card form">
+      <h2>Extensions</h2>
+      <p id="ini-ext-note" class="hint" hidden>Extensions are packages on Linux: install or remove them with the package manager (for example <code>apt install php8.3-gd</code>), then restart the pool. These are the modules loaded now.</p>
+      <div id="ini-exts" class="grid2"></div>
+      <div class="actions">
+        <button id="ini-ext-save" class="btn" type="button">Save extensions</button>
+      </div>
+    </div>
+
+    <div class="card form" id="ic-card">
+      <h2>ionCube Loader</h2>
+      <p id="ic-state"></p>
+      <div id="ic-job" class="job" hidden>
+        <strong id="ic-job-title"></strong>
+        <progress id="ic-progress" max="100" value="0"></progress>
+        <p id="ic-job-text" class="hint"></p>
+      </div>
+      <div class="actions">
+        <button id="ic-install" class="btn" type="button">Download and enable</button>
+        <button id="ic-enable" class="btn" type="button">Enable</button>
+        <button id="ic-disable" class="btn btn-danger" type="button">Disable</button>
+      </div>
+      <p class="hint">Runs PHP files that are encoded with ionCube. The loader is a separate download from ionCube Ltd (<code>downloads.ioncube.com</code>, HTTPS only). ionCube publishes no checksum for it, so the panel starts PHP with the loader before keeping the change, and puts <code>php.ini</code> back if PHP does not start with it. Pools that use this version restart after a change.</p>
+    </div>
+  </section>
+
   <section id="cachepage" data-page="cache" hidden>
     <div class="toolbar">
       <h1>Cache</h1>
@@ -216,7 +259,7 @@
       <thead><tr><th>Installed</th><th>Pools</th><th>Folder</th><th>Actions</th></tr></thead>
       <tbody id="pv-installed"></tbody>
     </table>
-    <div id="pv-job" class="card form" hidden>
+    <div id="pv-job" class="card job" hidden>
       <strong id="pv-job-title"></strong>
       <progress id="pv-progress" max="100" value="0"></progress>
       <p id="pv-job-text" class="hint"></p>
@@ -228,19 +271,6 @@
     <label class="check"><input id="pv-mkpool" type="checkbox" checked> Make a pool when the install is done</label>
     <p class="hint"><span id="pv-note-zip">Windows: downloads the official build (NTS, x64) from windows.php.net, checks its checksum, and unpacks it into the <code>php</code> folder of the LOTUS installation.</span> <span id="pv-note-pkg" hidden>Linux: uses the <code>php-cgi</code> programs already installed (<strong>Use</strong>), or installs the distribution's packages with apt or dnf when the LOTUS service runs as root (<strong>Install</strong>); the panel keeps a <code>php.ini</code> copy of its own for each version. Removing a version only stops using it; the packages stay.</span> The pool gets a name such as <code>php83</code>; pick it in a site's PHP backend.</p>
 
-    <form id="ini-form" class="card form" hidden>
-      <h2 id="ini-title">Settings</h2>
-      <div id="ini-fields" class="grid2"></div>
-      <h3>Extensions</h3>
-      <p id="ini-ext-note" class="hint" hidden>Extensions are packages on Linux: install or remove them with the package manager (for example <code>apt install php8.3-gd</code>), then restart the pool. These are the modules loaded now.</p>
-      <div id="ini-exts" class="grid2"></div>
-      <div id="ini-errors" class="error" role="alert" hidden></div>
-      <div class="actions">
-        <button id="ini-save" class="btn" type="submit">Save</button>
-        <button id="ini-cancel" class="btn btn-quiet" type="button">Cancel</button>
-      </div>
-      <p class="hint">Saving replaces the PHP processes of the pools that use this version, one by one, so they read the new settings.</p>
-    </form>
 
     <h2>Running pools</h2>
     <table class="table">

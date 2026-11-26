@@ -13,7 +13,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 syste
 .sub { color: var(--muted); }
 .spacer { flex: 1; }
 .who { color: var(--muted); }
-main { max-width: 1100px; margin: 0 auto; padding: 20px; }
+main { max-width: 1100px; margin: 0 auto; padding: 20px 20px 56px; }
 h1 { font-size: 1.4rem; margin: 0 0 12px; }
 h2 { font-size: 1.05rem; margin: 28px 0 8px; }
 .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
@@ -50,13 +50,14 @@ code { background: var(--bg); padding: 1px 5px; border-radius: 4px; }
 .nav a[aria-current="page"] { background: var(--bg); color: var(--accent); font-weight: 600; }
 .toast { position: fixed; right: 20px; bottom: 20px; z-index: 10; max-width: 420px; background: var(--card); box-shadow: 0 4px 18px rgba(0,0,0,.2); }
 .notice { background: var(--card); border: 1px solid var(--warn); color: var(--warn); border-radius: 8px; padding: 10px 14px; }
-.form { margin-top: 20px; max-width: 640px; }
+.form { margin-top: 20px; }
 .form h2 { margin-top: 0; }
 select { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); font: inherit; }
 .check { display: flex; align-items: center; gap: 8px; font-weight: 400; }
 .check input { width: auto; }
 .muted { color: var(--muted); font-weight: 400; font-size: .85rem; }
-.actions { display: flex; gap: 10px; align-items: center; margin-top: 6px; }
+.actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 16px; }
+.actions .btn, .table .btn { margin: 0; }
 .btn-danger { border-color: var(--bad); color: var(--bad); background: transparent; }
 .row-actions { display: flex; gap: 6px; }
 .row-actions .btn { margin: 0; padding: 3px 10px; }
@@ -83,3 +84,15 @@ select { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-r
 .advanced summary { cursor: pointer; font-weight: 600; }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 4px 14px; margin-top: 8px; }
 #f-template-note { margin-top: 4px; }
+
+/* One width for every page, and buttons that line up. */
+a.btn { display: inline-block; text-decoration: none; }
+.table td { vertical-align: middle; }
+.table td .btn { vertical-align: middle; }
+.table + .table, .table + .check, .job + .table { margin-top: 20px; }
+.job { margin: 16px 0 24px; width: 100%; }
+.job progress { display: block; width: 100%; height: 14px; margin: 10px 0 4px; }
+.card.form { margin-top: 20px; }
+.card.form .hint:first-child { margin-top: 0; }
+.grid2 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.toolbar + .card, .toolbar + .table { margin-top: 0; }

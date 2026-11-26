@@ -69,6 +69,11 @@ type Installer struct {
 
 	// Runtime checks that the system can run PHP (the Visual C++ runtime). Nil: RuntimeCheck.
 	Runtime func() error
+	// IonCubeBase is where ionCube's packs are (IonCubeBase when empty); IonSmoke starts PHP with a php.ini to see that
+	// the loader works (nil: run php-cgi -c INI -v). Tests set both.
+	IonCubeBase string
+	IonSmoke    func(exe, ini string) (string, error)
+
 	// Smoke runs a freshly unpacked php-cgi to see that it starts. Nil: run it with -v.
 	Smoke func(exe string) error
 

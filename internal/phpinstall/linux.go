@@ -30,6 +30,10 @@ type LinuxManager struct {
 	Root func() bool
 	// Which finds a program in PATH. Nil: exec.LookPath.
 	Which func(name string) (string, error)
+	// IonCubeBase and IonSmoke: see Installer.
+	IonCubeBase string
+	IonSmoke    func(exe, ini string) (string, error)
+
 	// SearchDirs are the places php-cgi programs are looked for; nil: the usual ones. Tests set them.
 	SearchGlobs []string
 
