@@ -4,7 +4,7 @@
 ; What it does:
 ;   - installs lotus.exe and the examples under C:\Program Files\Lotus
 ;   - creates the configuration C:\Program Files\Lotus\main.conf and the web
-;     directory C:\www with a sample page, but never replaces them on an upgrade
+;     directory C:\www\public_html with a sample page, but never replaces them on an upgrade
 ;     and never deletes them on uninstall
 ;   - registers the "LOTUS" Windows service (start at boot) and starts it
 ;   - adds Start Menu entries: edit the configuration, start / stop / restart
@@ -57,8 +57,8 @@ Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\configs\examples\*"; DestDir: "{app}\examples"; Flags: ignoreversion recursesubdirs
 Source: "main.conf"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall
-; The web directory is C:\www; it is never replaced and never deleted.
-Source: "index.html"; DestDir: "C:\www"; Flags: onlyifdoesntexist uninsneveruninstall
+; The web directory is C:\www\public_html (new sites go in C:\www\<site>); it is never replaced and never deleted.
+Source: "index.html"; DestDir: "C:\www\public_html"; Flags: onlyifdoesntexist uninsneveruninstall
 
 [Icons]
 Name: "{group}\Edit LOTUS configuration"; Filename: "{win}\notepad.exe"; Parameters: """{app}\main.conf"""

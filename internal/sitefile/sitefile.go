@@ -107,12 +107,13 @@ func (s *Store) Dir() string { return filepath.Join(filepath.Dir(s.Config), "sit
 // File is where the site called name is kept.
 func (s *Store) File(name string) string { return filepath.Join(s.Dir(), name+".conf") }
 
-// DefaultRoot is the web directory a new site gets when none is given.
+// DefaultRoot is the web directory a new site gets when none is given: C:/www/<name> on Windows, /var/www/<name>
+// elsewhere. (The default site is in the public_html folder next to them.)
 func DefaultRoot(name string) string {
 	if runtime.GOOS == "windows" {
 		return "C:/www/" + name
 	}
-	return "/var/www/public_html/" + name
+	return "/var/www/" + name
 }
 
 // IncludeHint is a note for a main configuration that does not read the folder yet, or "".

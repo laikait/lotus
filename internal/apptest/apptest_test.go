@@ -1,4 +1,4 @@
-// Package apptest runs real PHP applications (WordPress, Laravel) behind the real LOTUS binary, to check that the
+// Package apptest runs real PHP applications (WordPress, Laravel, Symfony, Joomla, Drupal) behind the real LOTUS binary, to check that the
 // site templates of the web admin work for them: installing, pretty URLs, uploads, the admin area, static files.
 //
 // These tests download the applications and need PHP and a MySQL server, so they are off unless told:

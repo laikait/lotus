@@ -56,7 +56,7 @@ Like the real-time statistics of other servers' admin panels. The page reads `GE
 
 ## New site: the web directory
 
-For a new site the Web directory box is filled from the name as you type it: the default base plus the name, `C:/www/newsite.com` on Windows (`/var/www/public_html/newsite.com` on Linux). The box follows the name until you change it yourself; an existing site shows its own directory. "Create the web directory with a sample page" is on by default.
+For a new site the Web directory box is filled from the name as you type it: the default base plus the name, `C:/www/newsite.com` on Windows (`/var/www/newsite.com` on Linux). The box follows the name until you change it yourself; an existing site shows its own directory. "Create the web directory with a sample page" is on by default.
 
 ## Cache, PHP and Server pages
 

@@ -244,7 +244,7 @@
     $("f-name").value = site ? site.name : "";
     $("f-name").readOnly = !!site;
     $("f-aliases").value = site ? (site.aliases || []).join(", ") : "";
-    // A new site starts with the web directory made from its name (C:/www/<name>); the box follows the name until
+    // A new site starts with the web directory made from its name (C:/www/<name>, /var/www/<name> on Linux); the box follows the name until
     // the person types in the box themselves. An existing site shows the directory it has.
     if (site) {
       $("f-root").value = site.root;

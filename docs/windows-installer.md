@@ -38,7 +38,7 @@ It asks for administrator rights, then:
 |---|---|
 | The program, `LICENSE`, `README.md`, the examples | `C:\Program Files\Lotus` |
 | The configuration (made only if it does not exist) | `C:\Program Files\Lotus\main.conf` |
-| The web directory with a sample page (made only if it does not exist) | `C:\www` |
+| The web directory with a sample page (made only if it does not exist) | `C:\www\public_html` |
 | The log | `C:\Program Files\Lotus\logs\lotus.log` |
 | Optional: `C:\Program Files\Lotus` added to the system `PATH` | ticked by default |
 | The web admin account (a page of the wizard; leave the password empty to skip) | `C:\Program Files\Lotus\admin-users.txt`, readable by SYSTEM and Administrators only |
