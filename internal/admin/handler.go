@@ -36,6 +36,7 @@ type Options struct {
 	Backend    control.Backend
 	Sites      *sitefile.Store    // the sites.d folder; nil: no site pages
 	PHP        func() []PHPPool   // the managed php-cgi pools; nil: none
+	PHPRestart func(string) bool  // replace the processes of the pool with this name; false: no such pool; nil: not offered
 	Traffic    func() Traffic     // running totals for the live traffic page; nil: none
 	Logs       func() []LogSource // the log files that can be shown; nil: none
 	Users      Users
@@ -130,6 +131,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/cache/purge", s.auth(RoleAdmin, s.cachePurge))
 	mux.HandleFunc("GET /v1/traffic", s.auth(RoleViewer, s.traffic))
 	mux.HandleFunc("GET /v1/php", s.auth(RoleViewer, s.phpStatus))
+	mux.HandleFunc("POST /v1/php/{name}/restart", s.auth(RoleAdmin, s.phpPoolRestart))
 	mux.HandleFunc("GET /v1/users", s.auth(RoleAdmin, s.userList))
 	mux.HandleFunc("POST /v1/users", s.auth(RoleAdmin, s.userAdd))
 	mux.HandleFunc("PUT /v1/users/{name}", s.auth(RoleAdmin, s.userChange))
@@ -145,6 +147,12 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("PUT /v1/config/file", s.auth(RoleAdmin, s.configSave))
 		mux.HandleFunc("GET /v1/config/history", s.auth(RoleAdmin, s.configHistory))
 		mux.HandleFunc("GET /v1/config/version", s.auth(RoleAdmin, s.configVersion))
+		mux.HandleFunc("GET /v1/php-pools", s.auth(RoleViewer, s.phpPoolList))
+		mux.HandleFunc("PUT /v1/php-pools/{name}", s.auth(RoleAdmin, s.phpPoolSave))
+		mux.HandleFunc("DELETE /v1/php-pools/{name}", s.auth(RoleAdmin, s.phpPoolDelete))
+		mux.HandleFunc("GET /v1/https", s.auth(RoleAdmin, s.httpsStatus))
+		mux.HandleFunc("PUT /v1/https", s.auth(RoleAdmin, s.httpsSave))
+		mux.HandleFunc("DELETE /v1/https", s.auth(RoleAdmin, s.httpsDelete))
 		mux.HandleFunc("GET /v1/site-files", s.auth(RoleViewer, s.listSiteFiles))
 		mux.HandleFunc("POST /v1/site-files", s.auth(RoleAdmin, s.addSite))
 		mux.HandleFunc("PUT /v1/site-files/{name}", s.auth(RoleAdmin, s.updateSite))

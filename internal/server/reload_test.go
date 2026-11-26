@@ -381,3 +381,11 @@ func tryGet(url, host string) (status int, body string, err error) {
 	b, err := io.ReadAll(resp.Body)
 	return resp.StatusCode, string(b), err
 }
+
+// The web admin recognises a change that needs a restart by this phrase (internal/admin/server_settings.go).
+func TestRestartRequiredMessageKeepsTheAdminsPhrase(t *testing.T) {
+	msg := (&RestartRequiredError{Items: []string{"x"}}).Error()
+	if !strings.Contains(msg, "need a restart") {
+		t.Errorf("the message %q no longer says \"need a restart\"; update restartPhrase in internal/admin", msg)
+	}
+}

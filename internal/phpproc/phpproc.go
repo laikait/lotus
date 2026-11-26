@@ -103,6 +103,7 @@ type worker struct {
 	inFree   bool // it has an entry in Pool.free
 	served   int  // requests given to the current process
 	retiring bool // the current process is being replaced on purpose
+	recycle  bool // replace the process as soon as the request it serves is done (RecycleAll)
 	client   *fastcgi.Client
 	cmd      *exec.Cmd
 
@@ -184,6 +185,26 @@ func (p *Pool) Alive() int {
 	return n
 }
 
+// RecycleAll replaces every process, one by one as each becomes idle: an idle process is stopped at once and
+// started again, a busy one finishes its request first. Requests wait for a free process meanwhile (the pool's
+// timeout). It is how the admin's "restart pool" works, and it is safe to call while requests run.
+func (p *Pool) RecycleAll() {
+	for _, w := range p.workers {
+		w.mu.Lock()
+		switch {
+		case !w.alive || w.retiring:
+		case w.busy:
+			w.recycle = true
+		default:
+			w.retiring = true
+			if w.cmd != nil && w.cmd.Process != nil {
+				_ = w.cmd.Process.Kill()
+			}
+		}
+		w.mu.Unlock()
+	}
+}
+
 // Restarts reports how many times a process was started again after exiting.
 func (p *Pool) Restarts() int64 { return p.restarts.Load() }
 
@@ -254,8 +275,8 @@ func (p *Pool) take(ctx context.Context, timeout <-chan time.Time) (*worker, *fa
 func (p *Pool) release(w *worker) {
 	w.mu.Lock()
 	w.busy = false
-	if max := p.spec.MaxRequests; max > 0 && w.served >= max && w.alive && !w.retiring {
-		// Its quota is used up: replace it now, while it is idle.
+	if max := p.spec.MaxRequests; (w.recycle || (max > 0 && w.served >= max)) && w.alive && !w.retiring {
+		// Its quota is used up, or RecycleAll asked for it: replace it now, while it is idle.
 		w.retiring = true
 		if w.cmd != nil && w.cmd.Process != nil {
 			_ = w.cmd.Process.Kill()
@@ -445,7 +466,7 @@ func (w *worker) start() (exited <-chan error, started time.Time, err error) {
 	old := w.client
 	w.client = client
 	w.alive = true
-	w.served, w.retiring = 0, false
+	w.served, w.retiring, w.recycle = 0, false, false
 	offer := !w.busy && !w.inFree
 	if offer {
 		w.inFree = true

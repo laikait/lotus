@@ -30,6 +30,7 @@ func (s *Server) listSiteFiles(w http.ResponseWriter, r *http.Request, _ *sessio
 		"default_root": sitefile.DefaultRoot("NAME"),
 		"templates":    sitefile.Templates,
 		"php_backends": s.opts.Sites.PHPBackendNames(),
+		"listeners":    s.opts.Sites.ListenerNames(),
 		"hint":         s.opts.Sites.IncludeHint(),
 	})
 }
@@ -105,7 +106,7 @@ func (s *Server) siteFailure(w http.ResponseWriter, r *http.Request, sess *sessi
 			msg, rest = "Automatic TLS needs an ACME block in main.conf. Choose Off for plain HTTP, or add the block (see docs/architecture/admin.md).", without
 		}
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"ok": false, "message": msg, "diagnostics": diagnostics(rest)})
-	case errors.Is(err, sitefile.ErrExists), errors.Is(err, sitefile.ErrNotEditable):
+	case errors.Is(err, sitefile.ErrExists), errors.Is(err, sitefile.ErrNotEditable), errors.Is(err, sitefile.ErrServerFileByHand):
 		writeError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, sitefile.ErrNotFound):
 		writeError(w, http.StatusNotFound, err.Error())

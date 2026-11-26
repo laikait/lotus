@@ -60,6 +60,9 @@ func (s *Store) Files() ([]File, error) {
 		return nil, err
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].File < entries[j].File })
+	if st, err := os.Stat(s.File(ServerFile)); err == nil { // the server settings file is not a site, but it can be edited
+		out = append(out, File{Name: "sites.d/" + ServerFile + ".conf", Size: st.Size()})
+	}
 	for _, e := range entries {
 		base := filepath.Base(e.File)
 		if !siteFileRe.MatchString(base) {

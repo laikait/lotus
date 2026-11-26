@@ -128,6 +128,8 @@
             <select id="f-symlinks"><option value="">Server default</option><option value="owner_match">Same owner only</option><option value="follow">Follow</option><option value="deny">Refuse</option></select></div>
           <div><label for="f-dotfiles">Files starting with a dot</label>
             <select id="f-dotfiles"><option value="">Server default (refused)</option><option value="deny">Refuse</option><option value="allow">Allow</option></select></div>
+          <div><label for="f-listeners">Listeners <span class="muted">(names, separate with commas; empty = all)</span></label>
+            <input id="f-listeners" type="text" maxlength="500" spellcheck="false" autocapitalize="off" placeholder="http"></div>
           <div><label class="check"><input id="f-htaccess" type="checkbox"> Read .htaccess files</label></div>
           <div><label for="f-e403">Page for 403</label><input id="f-e403" type="text" maxlength="200" placeholder="/403.html" spellcheck="false"></div>
           <div><label for="f-e404">Page for 404</label><input id="f-e404" type="text" maxlength="200" placeholder="/404.html" spellcheck="false"></div>
@@ -206,10 +208,49 @@
       <button id="php-refresh" class="btn btn-quiet" type="button" title="Refresh" aria-label="Refresh the PHP figures">Refresh</button>
     </div>
     <table class="table">
-      <thead><tr><th>Pool</th><th>Command</th><th>Processes</th><th>Running</th><th>Restarts</th></tr></thead>
+      <thead><tr><th>Pool</th><th>Command</th><th>Processes</th><th>Running</th><th>Restarts</th><th>Actions</th></tr></thead>
       <tbody id="php-rows"></tbody>
     </table>
-    <p class="hint">Only pools that LOTUS starts itself (a <code>php_backend</code> with <code>command</code>) are listed. A <code>fastcgi_pass</code> backend runs outside LOTUS.</p>
+    <p class="hint">Running pools that LOTUS starts itself (a <code>php_backend</code> with <code>command</code>). A <code>fastcgi_pass</code> backend runs outside LOTUS. <strong>Restart</strong> replaces the processes one by one; a request that is running finishes first.</p>
+
+    <div class="toolbar">
+      <h2>Pools made here</h2>
+      <span class="spacer"></span>
+      <button id="pool-add" class="btn" type="button">Add pool</button>
+    </div>
+    <p id="pool-note" class="notice" hidden></p>
+    <table class="table">
+      <thead><tr><th>Name</th><th>php-cgi program</th><th>Processes</th><th>Replace after</th><th>Timeout</th><th>Actions</th></tr></thead>
+      <tbody id="pool-rows"></tbody>
+    </table>
+    <p class="hint">These are kept in <code>sites.d/00-lotus-server.conf</code>. Pools written in <code>main.conf</code> are changed in the Configuration editor.</p>
+
+    <form id="pool-form" class="card form" hidden>
+      <h2 id="pool-form-title">Add a pool</h2>
+      <label for="pl-name">Name <span class="muted">(sites pick it by this name)</span></label>
+      <input id="pl-name" type="text" required maxlength="64" value="app" spellcheck="false" autocapitalize="off">
+      <label for="pl-command">php-cgi program</label>
+      <input id="pl-command" type="text" required maxlength="300" spellcheck="false" placeholder="C:/xampp/php/php-cgi.exe">
+      <div class="actions">
+        <button id="pl-xampp" class="btn btn-quiet" type="button">XAMPP on Windows</button>
+        <button id="pl-path" class="btn btn-quiet" type="button">php-cgi from PATH</button>
+      </div>
+      <div class="grid2">
+        <div><label for="pl-processes">Processes <span class="muted">(requests at once)</span></label>
+          <input id="pl-processes" type="number" min="1" max="64" value="4"></div>
+        <div><label for="pl-max">Replace a process after <span class="muted">(requests; 0 = never)</span></label>
+          <input id="pl-max" type="number" min="0" max="1000000" value="500"></div>
+        <div><label for="pl-timeout">Timeout <span class="muted">(seconds)</span></label>
+          <input id="pl-timeout" type="number" min="1" max="600" value="60"></div>
+        <div><label for="pl-ini">php.ini <span class="muted">(optional, full path)</span></label>
+          <input id="pl-ini" type="text" maxlength="300" spellcheck="false"></div>
+      </div>
+      <div id="pool-errors" class="error" role="alert" hidden></div>
+      <div class="actions">
+        <button id="pool-save" class="btn" type="submit">Save and reload</button>
+        <button id="pool-cancel" class="btn btn-quiet" type="button">Cancel</button>
+      </div>
+    </form>
   </section>
 
   <section id="logspage" data-page="logs" hidden>
@@ -303,6 +344,25 @@
       <h2>Configuration</h2>
       <p>Load <code>main.conf</code> and the site files again without stopping the server. Nothing changes if the files have a mistake.</p>
       <button id="server-reload" class="btn" type="button">Reload configuration</button>
+    </div>
+    <div class="card form" id="https-card" data-admin>
+      <h2>HTTPS</h2>
+      <p id="https-state"></p>
+      <form id="https-form" autocomplete="off">
+        <label for="h-email">Contact e-mail <span class="muted">(the certificate authority sends expiry warnings here)</span></label>
+        <input id="h-email" type="email" required maxlength="254" spellcheck="false" autocapitalize="off">
+        <label for="h-https">HTTPS address</label>
+        <input id="h-https" type="text" required maxlength="100" value="0.0.0.0:443" spellcheck="false">
+        <label class="check"><input id="h-http-on" type="checkbox" checked> Also listen on plain HTTP, port 80 <span class="muted">(needed for the HTTP-01 check)</span></label>
+        <label class="check"><input id="h-staging" type="checkbox" checked> Use the test certificate authority first <span class="muted">(browsers don't trust its certificates; untick for real ones)</span></label>
+        <div id="https-errors" class="error" role="alert" hidden></div>
+        <div class="actions">
+          <button id="https-save" class="btn" type="submit">Save</button>
+          <button id="https-remove" class="btn btn-danger" type="button" hidden>Remove HTTPS setup</button>
+        </div>
+      </form>
+      <div id="https-after" class="notice" hidden></div>
+      <p class="hint">Also needed: the domain's DNS points to this server, ports 80 and 443 are open in the firewall, and each site's TLS is set to Automatic on the Sites page. Listeners cannot change while the server runs, so after saving, restart the LOTUS service.</p>
     </div>
     <div class="card form">
       <h2>Logs</h2>

@@ -55,6 +55,7 @@ type Spec struct {
 	ErrorPages      map[string]string `json:"error_pages,omitempty"` // "404" -> "/404.html"
 	AccessLog       string            `json:"access_log,omitempty"`
 	ErrorLog        string            `json:"error_log,omitempty"`
+	Listeners       []string          `json:"listeners,omitempty"` // names of the listeners the site answers on; empty: all
 }
 
 // Entry is a site file found in the folder.
@@ -158,6 +159,9 @@ func nonEmpty(in []string) []string {
 
 // Validate checks a normalized spec. The checks are strict because the values are written into a file.
 func Validate(sp Spec) error {
+	if sp.Name == ServerFile {
+		return fmt.Errorf("the name %q is reserved for the server settings file", sp.Name)
+	}
 	if len(sp.Name) > 253 || !nameRe.MatchString(sp.Name) {
 		return fmt.Errorf("%q is not a host name (lower-case letters, digits, dots and dashes)", sp.Name)
 	}
@@ -318,6 +322,9 @@ func (s *Store) List() ([]Entry, error) {
 	sort.Strings(files)
 	out := make([]Entry, 0, len(files))
 	for _, f := range files {
+		if filepath.Base(f) == ServerFile+".conf" {
+			continue // the server settings file is not a site
+		}
 		data, err := os.ReadFile(f)
 		if err != nil {
 			return nil, err
@@ -381,7 +388,7 @@ func (s *Store) Update(name string, sp Spec) (Spec, error) {
 // Remove deletes the site file. The web directory is not touched.
 func (s *Store) Remove(name string) error {
 	name = strings.ToLower(strings.TrimSpace(name))
-	if !nameRe.MatchString(name) {
+	if !nameRe.MatchString(name) || name == ServerFile {
 		return ErrNotFound
 	}
 	s.mu.Lock()

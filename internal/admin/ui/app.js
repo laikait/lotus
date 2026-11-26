@@ -156,6 +156,7 @@
 
   var defaultRoot = "";
   var phpBackends = [];
+  var listenerNames = [];
   var TEMPLATE_NAMES = { static: "Static files", php: "PHP", wordpress: "WordPress", laravel: "Laravel", proxy: "Reverse proxy" };
   var TEMPLATE_NOTES = {
     static: "Serves the files of the web directory.",
@@ -169,6 +170,7 @@
     return api("GET", "/v1/site-files").then(function (d) {
       defaultRoot = d.default_root || "";
       phpBackends = d.php_backends || [];
+      listenerNames = d.listeners || [];
       var hint = $("site-hint");
       hint.textContent = d.hint || ""; hint.hidden = !d.hint;
       var admin = role === "admin";
@@ -270,6 +272,8 @@
     setSel("f-symlinks", s.symlinks);
     setSel("f-dotfiles", s.dotfiles);
     $("f-htaccess").checked = !!s.htaccess;
+    $("f-listeners").value = (s.listeners || []).join(", ");
+    $("f-listeners").placeholder = listenerNames.join(", ");
     var ep = s.error_pages || {};
     $("f-e403").value = ep["403"] || ""; $("f-e404").value = ep["404"] || ""; $("f-e500").value = ep["500"] || "";
     $("f-alog").value = s.access_log || ""; $("f-elog").value = s.error_log || "";
@@ -309,6 +313,7 @@
       symlinks: $("f-symlinks").value,
       dotfiles: $("f-dotfiles").value,
       htaccess: $("f-htaccess").checked,
+      listeners: splitList($("f-listeners").value),
       error_pages: ep,
       access_log: $("f-alog").value.trim(),
       error_log: $("f-elog").value.trim()
@@ -511,15 +516,104 @@
 
   // ---- php ----
 
+  var poolEditing = null;
+  var poolList = [];
+
   function loadPHP() {
-    return api("GET", "/v1/php").then(function (pools) {
-      fillRows("php-rows", (pools || []).map(function (p) {
+    var admin = role === "admin";
+    $("pool-add").hidden = !admin;
+    return Promise.all([api("GET", "/v1/php"), api("GET", "/v1/php-pools")]).then(function (r) {
+      var pools = r[0] || [], set = r[1], canRestart = set.can_restart && admin;
+      fillRows("php-rows", pools.map(function (p) {
         var state = p.alive === p.processes ? el("span", p.alive + " of " + p.processes, "pill ok") : el("span", p.alive + " of " + p.processes, "pill warn");
-        return [p.name, p.command, p.processes, state, p.restarts];
-      }), 5, "No managed PHP pools.");
+        var act = el("div", null, "row-actions");
+        if (canRestart) {
+          var b = el("button", "Restart", "btn btn-quiet");
+          b.type = "button"; b.setAttribute("aria-label", "Restart the pool " + p.name);
+          b.addEventListener("click", function () {
+            act_(b, api("POST", "/v1/php/" + encodeURIComponent(p.name) + "/restart"), "Pool " + p.name + " is restarting.", loadPHP);
+          });
+          act.appendChild(b);
+        }
+        return [p.name, p.command, p.processes, state, p.restarts, act];
+      }), 6, "No managed PHP pools are running.");
+
+      poolList = set.pools || [];
+      var note = $("pool-note");
+      note.textContent = set.editable ? "" : "The file sites.d/00-lotus-server.conf was changed by hand, so pools can't be changed here.";
+      note.hidden = set.editable;
+      $("pool-add").disabled = !set.editable;
+      fillRows("pool-rows", poolList.map(function (p) {
+        var box = el("div", null, "row-actions");
+        if (admin && set.editable) {
+          var edit = el("button", "Edit", "btn btn-quiet");
+          edit.type = "button"; edit.setAttribute("aria-label", "Edit the pool " + p.name);
+          edit.addEventListener("click", function () { openPoolForm(p); });
+          var del = el("button", "Delete", "btn btn-danger");
+          del.type = "button"; del.setAttribute("aria-label", "Delete the pool " + p.name);
+          del.addEventListener("click", function () { deletePool(p.name); });
+          box.appendChild(edit); box.appendChild(del);
+        }
+        return [p.name, p.command, p.processes, p.max_requests ? p.max_requests + " requests" : "never", p.timeout + " s", box];
+      }), 6, "No pools made here yet.");
     }).catch(failed);
   }
   $("php-refresh").addEventListener("click", function () { loadPHP(); });
+
+  // Runs a request on a button, shows a toast, and calls then() when it worked.
+  function act_(btn, request, okText, then) {
+    btn.disabled = true;
+    request.then(function () { toast(okText); if (then) return then(); })
+      .catch(function (e) { if (e.status === 401) { signedOut(); return; } toast(e.message, "bad"); })
+      .then(function () { btn.disabled = false; });
+  }
+
+  function openPoolForm(p) {
+    poolEditing = p ? p.name : null;
+    $("pool-form-title").textContent = p ? "Edit the pool " + p.name : "Add a pool";
+    $("pl-name").value = p ? p.name : "app"; $("pl-name").readOnly = !!p;
+    $("pl-command").value = p ? p.command : "";
+    $("pl-processes").value = p ? p.processes : 4;
+    $("pl-max").value = p ? (p.max_requests || 0) : 500;
+    $("pl-timeout").value = p ? p.timeout : 60;
+    $("pl-ini").value = p ? (p.php_ini || "") : "";
+    $("pool-errors").hidden = true;
+    $("pool-form").hidden = false;
+    $("pl-command").focus();
+  }
+  $("pool-add").addEventListener("click", function () { openPoolForm(null); });
+  $("pool-cancel").addEventListener("click", function () { $("pool-form").hidden = true; poolEditing = null; });
+  $("pl-xampp").addEventListener("click", function () { $("pl-command").value = "C:/xampp/php/php-cgi.exe"; });
+  $("pl-path").addEventListener("click", function () { $("pl-command").value = "php-cgi"; });
+
+  $("pool-form").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var btn = $("pool-save"), name = $("pl-name").value.trim();
+    var body = {
+      command: $("pl-command").value.trim(), processes: parseInt($("pl-processes").value, 10) || 0,
+      max_requests: parseInt($("pl-max").value, 10) || 0, timeout: parseInt($("pl-timeout").value, 10) || 0, php_ini: $("pl-ini").value.trim()
+    };
+    btn.disabled = true; $("pool-errors").hidden = true;
+    api("PUT", "/v1/php-pools/" + encodeURIComponent(name), body).then(function () {
+      toast("Pool saved and loaded.");
+      $("pool-form").hidden = true; poolEditing = null;
+      return loadPHP();
+    }).catch(function (e) {
+      if (e.status === 401) { signedOut(); return; }
+      var box = $("pool-errors"); box.replaceChildren();
+      box.appendChild(el("div", e.message));
+      var list = e.data && e.data.diagnostics;
+      if (Array.isArray(list)) list.slice(0, 6).forEach(function (d) { box.appendChild(el("div", (d.where ? d.where + ": " : "") + d.message)); });
+      box.hidden = false;
+    }).then(function () { btn.disabled = false; });
+  });
+
+  function deletePool(name) {
+    if (!window.confirm("Delete the pool " + name + "? Sites that use it must be changed first.")) return;
+    api("DELETE", "/v1/php-pools/" + encodeURIComponent(name))
+      .then(function () { toast("Pool " + name + " deleted."); return loadPHP(); })
+      .catch(function (e) { if (e.status === 401) { signedOut(); return; } toast(e.message, "bad"); });
+  }
 
   // ---- logs ----
 
@@ -762,8 +856,56 @@
   function loadServer() {
     var admin = role === "admin";
     ["server-reload", "server-logs"].forEach(function (id) { $(id).disabled = !admin; });
-    return Promise.resolve();
+    $("https-card").hidden = !admin;
+    if (!admin) return Promise.resolve();
+    return api("GET", "/v1/https").then(function (d) {
+      var state = $("https-state"), s = d.spec;
+      $("https-after").hidden = true;
+      var listeners = (d.listeners || []).map(function (l) { return l.name + " " + l.address + (l.https ? " (HTTPS)" : ""); }).join(", ") || "none";
+      if (s) {
+        state.textContent = "Set up here: certificates are requested automatically (" + (s.staging ? "test authority" : "real authority") + "). Listeners in the files: " + listeners + ".";
+        $("h-email").value = s.email; $("h-https").value = s.https;
+        $("h-http-on").checked = !!s.http; $("h-staging").checked = !!s.staging;
+      } else if (d.acme) {
+        state.textContent = "Automatic certificates are already set up in main.conf (contact " + d.acme_email + "). Listeners: " + listeners + ". Use the Configuration editor to change them.";
+      } else {
+        state.textContent = "Not set up. Listeners in the files: " + listeners + ".";
+      }
+      var blocked = !d.editable || (!s && d.acme);
+      ["h-email", "h-https", "h-http-on", "h-staging", "https-save"].forEach(function (id) { $(id).disabled = blocked; });
+      $("https-remove").hidden = !s;
+      if (!d.editable) state.textContent += " The file sites.d/00-lotus-server.conf was changed by hand, so it can't be changed here.";
+    }).catch(failed);
   }
+
+  $("https-form").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var btn = $("https-save");
+    var body = { email: $("h-email").value.trim(), https: $("h-https").value.trim(), http: $("h-http-on").checked ? "0.0.0.0:80" : "", staging: $("h-staging").checked };
+    btn.disabled = true; $("https-errors").hidden = true; $("https-after").hidden = true;
+    api("PUT", "/v1/https", body).then(function (r) {
+      if (r.restart_required) showHTTPSAfter("Saved. The listeners change only when the service restarts: restart LOTUS (Windows: Start Menu, Restart LOTUS, or Restart-Service LOTUS in an Administrator shell; Linux: systemctl restart lotus). The admin page is unavailable for a moment.");
+      else showHTTPSAfter("Saved and loaded.");
+      return loadServer();
+    }).catch(function (e) {
+      if (e.status === 401) { signedOut(); return; }
+      var box = $("https-errors"); box.replaceChildren();
+      box.appendChild(el("div", e.message));
+      var list = e.data && e.data.diagnostics;
+      if (Array.isArray(list)) list.slice(0, 6).forEach(function (d) { box.appendChild(el("div", (d.where ? d.where + ": " : "") + d.message)); });
+      box.hidden = false;
+    }).then(function () { btn.disabled = false; });
+  });
+
+  $("https-remove").addEventListener("click", function () {
+    if (!window.confirm("Remove the HTTPS setup made here? The listeners go away after the next restart.")) return;
+    api("DELETE", "/v1/https").then(function (r) {
+      showHTTPSAfter(r.restart_required ? "Removed. Restart the LOTUS service to close the listeners." : "Removed.");
+      return loadServer();
+    }).catch(function (e) { if (e.status === 401) { signedOut(); return; } toast(e.message, "bad"); });
+  });
+
+  function showHTTPSAfter(text) { var n = $("https-after"); n.textContent = text; n.hidden = false; }
 
   function act(btn, request, okText) {
     btn.disabled = true;

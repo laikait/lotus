@@ -14,6 +14,15 @@ Both show raw data that can hold addresses, URLs and secrets, so every route nee
 - **Know what this allows:** someone who can save a configuration here can change what the server serves, reads and runs (for example a `php_backend` `command` runs a program as the service account). Admin accounts should be people who could already administer the machine. This is why the editor is for the `admin` role only, the sign-in is rate limited, and every save, refusal and undo is logged with the account and address.
 - A change to the `admin { }` block itself is not applied by a reload; restart the service. Saving a mistake in it is still refused by the check.
 
+## PHP pools and the HTTPS wizard
+
+Both write one managed file, `sites.d/00-lotus-server.conf` (the `00` loads it first), made the same way as a site file: a marker line, a `# spec: {JSON}` line and text that must equal what the program renders from the JSON. A hand-edited server file is shown read-only and left alone. It is not listed on the Sites page; the Configuration editor can open it. Every save is checked as a whole configuration, written through a temporary file, loaded, and put back if refused, like a site change.
+
+- **PHP pools (PHP page).** Add, edit and delete a `php_backend` that LOTUS starts php-cgi processes for: name, program (a full path such as `C:/xampp/php/php-cgi.exe`, or a bare name found in PATH), processes (1 to 64), replace a process after N requests (0 = never), timeout (1 to 600 s), optional php.ini path. A pool a site uses can't be deleted (the whole-configuration check says which site). Pools written in `main.conf` are listed with their live state but changed in the Configuration editor. **Restart** (`POST /v1/php/{name}/restart`) replaces every process of a running pool: an idle process is stopped and started again at once, a busy one finishes its request first (`phpproc.Pool.RecycleAll`); requests wait for a free process meanwhile, up to the pool timeout. A changed pool is replaced by the reload itself.
+- **HTTPS wizard (Server page).** Contact e-mail, HTTPS address (default `0.0.0.0:443`), an optional plain-HTTP listener on `0.0.0.0:80` (for the HTTP-01 check) and "use the test certificate authority first". It writes the listeners `lotus-https` / `lotus-http` and `tls { acme { email, ca } }`. **Listeners and ACME settings cannot change while the server runs**, so the reload says "need a restart": the wizard then keeps the file and tells the person to restart the service (the admin has no restart; see Server). Any other refusal puts the file back. Remove undoes it the same way. Not offered when `main.conf` already has an ACME block.
+- **A site with TLS off is attached to every listener by default**, and the configuration refuses a TLS-off site on an HTTPS listener. So before (or after) the wizard, limit such a site to the plain listener (Sites > Advanced > Listeners, for example `http`), or set its TLS to Automatic. The refusal names the site.
+- The wizard cannot check DNS or the firewall; the page lists what is still needed (DNS pointing here, ports 80 and 443 open, TLS Automatic on the sites).
+
 ## Earlier versions (Configuration page, admin role)
 
 Every change made through the Sites page or the Configuration editor keeps the text the file had before it, in `history/<file>/YYYYMMDD-HHMMSS-<account>.conf` next to the main configuration file (a site file `sites.d/x.conf` is kept in `history/sites.d__x.conf/`). The folder is outside `sites.d`, so no include reads a version as configuration. The newest 20 per file are kept; an unchanged text is not kept twice; a change that is refused or undone keeps nothing. The page lists them (time, account, size) and **Load into editor** puts one in the editor; the normal Check and Save and reload then apply, so a restored version is checked as a whole like any edit. Names and ids are checked against fixed patterns, so no other path can be asked for. Changes made with the `lotus site` command or by hand are not recorded. History is a convenience for undoing mistakes, not an audit log (the audit lines are in the server log).
@@ -33,7 +42,7 @@ For a new site the Web directory box is filled from the name as you type it: the
 ## Cache, PHP and Server pages
 
 - **Cache:** a row per zone (entries, size against the budget, hits, misses, stale, evicted, purged) and a purge form: one path, everything under a path, or the whole zone, optionally for one host. Purging the whole zone asks for a confirmation. The work is done by the same functions as `lotus cache purge`.
-- **PHP:** read-only. For each php-cgi pool that LOTUS starts itself (`php_backend` with `command`): the command, the wanted number of processes, how many run now, and how often one was restarted. A `fastcgi_pass` backend is outside LOTUS and not listed.
+- **PHP:** for each php-cgi pool that LOTUS starts itself (`php_backend` with `command`): the command, the wanted number of processes, how many run now, and how often one was restarted, with a Restart button; pools can be added, edited and deleted (see "PHP pools and the HTTPS wizard"). A `fastcgi_pass` backend is outside LOTUS and not listed.
 - **Server:** Reload configuration and Reopen log files. There is deliberately no Stop or Restart: the admin is part of the server, so a stop would end the page that asked for it and could not be undone from there. Stop and start the service from the operating system (Windows: the Start Menu entries or `Stop-Service LOTUS`; Linux: `systemctl`), or `lotus stop` from a shell.
 
 ## Sites
@@ -113,6 +122,13 @@ The password is asked twice without echo; `--password-stdin` and `--password-fil
 | `DELETE /v1/site-files/{name}` | admin | `{ok, generation}`; the web directory is not touched |
 | `POST /v1/certs/renew` `{domain}` | admin | `{ok}` after the CA has issued the certificate (up to a minute); 404 for a name without an automatic certificate, 422 when the current one is under a day old |
 | `GET /v1/traffic` | any | `{time_ms, uptime_seconds, connections, connection_limit, rejected, dropped, classes, sites: [{name, requests, class[], bytes, rate_limited, latency_seconds}], unrouted}`: running totals since the start |
+| `GET /v1/php-pools` | any | `{pools: [{name, command, processes, max_requests, php_ini, timeout}], editable, can_restart}`: the pools of the server file |
+| `PUT /v1/php-pools/{name}` `{command, processes, max_requests, php_ini, timeout}` | admin | add or replace; `{ok, generation}`; 422 for a bad value or an invalid configuration; 409 if the file was changed by hand |
+| `DELETE /v1/php-pools/{name}` | admin | `{ok, generation}`; 404 if it is not in the server file; 422 if a site uses it |
+| `POST /v1/php/{name}/restart` | admin | `{ok}`; 404 if no such pool runs |
+| `GET /v1/https` | admin | `{spec, editable, listeners, acme, acme_email, files_valid, staging_ca}` |
+| `PUT /v1/https` `{email, https, http, staging}` | admin | `{ok, generation}` or `{ok, restart_required, message}`; 422 as above |
+| `DELETE /v1/https` | admin | as above; 404 if the wizard has not set it up |
 | `GET /v1/users` | admin | `[{name, role, self}]` (never a hash) |
 | `POST /v1/users` `{name, role, password}` | admin | `{ok}`; 422 for a bad name, role or short password, 409 if the name exists |
 | `PUT /v1/users/{name}` `{role?, password?, current_password?}` | admin | `{ok, sessions_ended}`; 422 for the last-admin and own-role rules, 403 for a wrong current password |

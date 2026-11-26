@@ -136,6 +136,21 @@ func (s *Server) PHPPools() []PHPPoolInfo {
 	return out
 }
 
+// RestartPHPPool replaces the processes of the managed pool with this backend name, gently (see phpproc.Pool.RecycleAll).
+// It returns false if no pool of that name runs.
+func (s *Server) RestartPHPPool(name string) bool {
+	s.poolMu.Lock()
+	defer s.poolMu.Unlock()
+	found := false
+	for _, sp := range s.pools {
+		if sp.name == name {
+			sp.pool.RecycleAll()
+			found = true
+		}
+	}
+	return found
+}
+
 // managedPool returns the process pool for a backend with `command`, starting
 // it if no generation uses one with the same settings yet. The closer gives the
 // generation's hold on it back; the last one stops the processes.

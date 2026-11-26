@@ -65,6 +65,7 @@ func normalizeSettings(sp *Spec) {
 	if sp.RateBurst < 0 {
 		sp.RateBurst = 0
 	}
+	sp.Listeners = nonEmpty(sp.Listeners)
 	sp.AccessLog = strings.ReplaceAll(strings.TrimSpace(sp.AccessLog), `\`, "/")
 	sp.ErrorLog = strings.ReplaceAll(strings.TrimSpace(sp.ErrorLog), `\`, "/")
 	for k, v := range sp.ErrorPages {
@@ -119,6 +120,14 @@ func validateSettings(sp Spec) error {
 	if !oneOf(sp.Dotfiles, "", "deny", "allow") {
 		return errors.New(`dotfiles must be "", "deny" or "allow"`)
 	}
+	if len(sp.Listeners) > 20 {
+		return errors.New("at most 20 listeners")
+	}
+	for _, l := range sp.Listeners {
+		if !backendRe.MatchString(l) {
+			return fmt.Errorf("listener %q: use letters, digits, _ and - only", l)
+		}
+	}
 	if len(sp.ErrorPages) > 10 {
 		return errors.New("at most 10 error pages")
 	}
@@ -169,6 +178,9 @@ func render(sp Spec) string {
 		fmt.Fprintf(&b, "    index %s\n", quoteList(sp.Index))
 	}
 	fmt.Fprintf(&b, "    tls %s\n", sp.TLS)
+	if len(sp.Listeners) > 0 {
+		fmt.Fprintf(&b, "    listeners %s\n", quoteList(sp.Listeners))
+	}
 	if sp.Symlinks != "" {
 		fmt.Fprintf(&b, "    symlinks %s\n", sp.Symlinks)
 	}

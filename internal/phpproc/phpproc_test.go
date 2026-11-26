@@ -347,3 +347,40 @@ func must(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+
+func TestRecycleAllReplacesEveryProcess(t *testing.T) {
+	p := startPool(t, spec(3))
+	before := map[string]bool{}
+	for i := 0; i < 30 && len(before) < 3; i++ {
+		a, err := call(context.Background(), p, "/slow", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		before[a.body] = true
+	}
+	// One request is running while the pool is recycled: it must finish.
+	done := make(chan error, 1)
+	go func() { _, err := call(context.Background(), p, "/slow", ""); done <- err }()
+	time.Sleep(50 * time.Millisecond)
+	p.RecycleAll()
+	if err := <-done; err != nil {
+		t.Errorf("the request that was running during the recycle failed: %v", err)
+	}
+	// After the replacement every process has a new id, and requests keep working.
+	deadline := time.Now().Add(15 * time.Second)
+	for p.Alive() < 3 || p.Restarts() < 3 {
+		if time.Now().After(deadline) {
+			t.Fatalf("pool not back: alive=%d restarts=%d", p.Alive(), p.Restarts())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	for i := 0; i < 12; i++ {
+		a, err := call(context.Background(), p, "/pid", "")
+		if err != nil {
+			t.Fatalf("request after the recycle: %v", err)
+		}
+		if before[a.body] {
+			t.Errorf("process %s survived the recycle", a.body)
+		}
+	}
+}
