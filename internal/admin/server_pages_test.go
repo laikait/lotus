@@ -78,3 +78,24 @@ func TestPHPStatus(t *testing.T) {
 		t.Errorf("pools: %s", rec.Body)
 	}
 }
+
+func TestTrafficIsReadableByAnyoneSignedIn(t *testing.T) {
+	e := newEnv(t)
+	if rec := e.do("GET", "/v1/traffic", "", ""); rec.Code != 401 {
+		t.Errorf("without a session: %d", rec.Code)
+	}
+	cookie, _ := e.signIn("vic", "another long secret")
+	if rec := e.do("GET", "/v1/traffic", "", "", cookie); rec.Code != 404 {
+		t.Errorf("no traffic source: %d", rec.Code)
+	}
+	e.srv.opts.Traffic = func() Traffic {
+		return Traffic{TimeMS: 1000, Classes: []string{"1xx", "2xx"}, Sites: []SiteTraffic{{Name: "a.test", Requests: 7, Class: []uint64{0, 7}}}}
+	}
+	rec := e.do("GET", "/v1/traffic", "", "", cookie)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"requests":7`) || !strings.Contains(rec.Body.String(), `"time_ms":1000`) {
+		t.Errorf("traffic: %d %s", rec.Code, rec.Body)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q", got)
+	}
+}

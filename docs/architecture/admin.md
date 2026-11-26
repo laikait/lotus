@@ -14,6 +14,14 @@ Both show raw data that can hold addresses, URLs and secrets, so every route nee
 - **Know what this allows:** someone who can save a configuration here can change what the server serves, reads and runs (for example a `php_backend` `command` runs a program as the service account). Admin accounts should be people who could already administer the machine. This is why the editor is for the `admin` role only, the sign-in is rate limited, and every save, refusal and undo is logged with the account and address.
 - A change to the `admin { }` block itself is not applied by a reload; restart the service. Saving a mistake in it is still refused by the check.
 
+## Traffic (live statistics, any signed-in account)
+
+Like the real-time statistics of other servers' admin panels. The page reads `GET /v1/traffic` every 3 seconds while it is open and the browser tab is visible (nothing is polled otherwise) and keeps the last 60 readings (3 minutes) in the browser. The server sends totals only, read from the atomic counters the metrics already keep (`Server.Traffic`, `internal/server/traffic.go`), so nothing is added to the request path; the page works out the rates from two readings. It shows requests per second, data sent per second, open connections against the limit, the share of errors, refused connections and dropped requests, three sparklines (requests, data, errors; drawn as inline SVG, no chart library) and a table by site (requests/s, data/s, 2xx, 3xx, 4xx, 5xx, average time, rate limited). Totals count from the start of the server; a reload does not reset them. Requests that no site answered are shown as "(no site matched)".
+
+## New site: the web directory
+
+For a new site the Web directory box is filled from the name as you type it: the default base plus the name, `C:/www/newsite.com` on Windows (`/var/www/public_html/newsite.com` on Linux). The box follows the name until you change it yourself; an existing site shows its own directory. "Create the web directory with a sample page" is on by default.
+
 ## Cache, PHP and Server pages
 
 - **Cache:** a row per zone (entries, size against the budget, hits, misses, stale, evicted, purged) and a purge form: one path, everything under a path, or the whole zone, optionally for one host. Purging the whole zone asks for a confirmation. The work is done by the same functions as `lotus cache purge`.
@@ -82,6 +90,7 @@ The password is asked twice without echo; `--password-stdin` and `--password-fil
 | `PUT /v1/site-files/{name}` `{aliases, root, index, tls}` | admin | as above; 404 if missing, 409 if the file was changed by hand |
 | `DELETE /v1/site-files/{name}` | admin | `{ok, generation}`; the web directory is not touched |
 | `POST /v1/certs/renew` `{domain}` | admin | `{ok}` after the CA has issued the certificate (up to a minute); 404 for a name without an automatic certificate, 422 when the current one is under a day old |
+| `GET /v1/traffic` | any | `{time_ms, uptime_seconds, connections, connection_limit, rejected, dropped, classes, sites: [{name, requests, class[], bytes, rate_limited, latency_seconds}], unrouted}`: running totals since the start |
 | `GET /v1/cache` | any | the cache zones, as `lotus.cache.status` |
 | `POST /v1/cache/purge` `{zone, host, path, prefix, all}` | admin | `{ok, purged}`; 422 unless exactly one of path, prefix, all; 404 for an unknown zone |
 | `GET /v1/php` | any | `[{name, command, processes, alive, restarts}]` |

@@ -36,6 +36,7 @@ type Options struct {
 	Backend    control.Backend
 	Sites      *sitefile.Store    // the sites.d folder; nil: no site pages
 	PHP        func() []PHPPool   // the managed php-cgi pools; nil: none
+	Traffic    func() Traffic     // running totals for the live traffic page; nil: none
 	Logs       func() []LogSource // the log files that can be shown; nil: none
 	Users      Users
 	SessionTTL time.Duration
@@ -126,6 +127,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/certs/renew", s.auth(RoleAdmin, s.certRenew))
 	mux.HandleFunc("GET /v1/cache", s.auth(RoleViewer, s.cacheStatus))
 	mux.HandleFunc("POST /v1/cache/purge", s.auth(RoleAdmin, s.cachePurge))
+	mux.HandleFunc("GET /v1/traffic", s.auth(RoleViewer, s.traffic))
 	mux.HandleFunc("GET /v1/php", s.auth(RoleViewer, s.phpStatus))
 	mux.HandleFunc("POST /v1/logs/reopen", s.auth(RoleAdmin, s.reopenLogs))
 	// Logs and the raw configuration files can hold addresses, URLs and secrets: admin role only, even to read.

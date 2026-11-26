@@ -45,13 +45,13 @@
   // ---- views ----
 
   function showView(name) {
-    view = ["sites", "cache", "php", "server", "logs", "config"].indexOf(name) >= 0 ? name : "dashboard";
+    view = ["sites", "cache", "php", "server", "logs", "config", "traffic"].indexOf(name) >= 0 ? name : "dashboard";
     if ((view === "logs" || view === "config") && role !== "admin") view = "dashboard"; // the raw files and logs are for admins
     document.querySelectorAll("[data-page]").forEach(function (p) { p.hidden = p.getAttribute("data-page") !== view; });
     document.querySelectorAll("#nav a").forEach(function (a) {
       if (a.getAttribute("data-view") === view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     });
-    var loaders = { sites: loadSites, cache: loadCache, php: loadPHP, server: loadServer, logs: loadLogs, config: loadConfig };
+    var loaders = { traffic: loadTraffic, sites: loadSites, cache: loadCache, php: loadPHP, server: loadServer, logs: loadLogs, config: loadConfig };
     return (loaders[view] || loadDashboard)();
   }
 
@@ -220,8 +220,16 @@
     $("f-name").value = site ? site.name : "";
     $("f-name").readOnly = !!site;
     $("f-aliases").value = site ? (site.aliases || []).join(", ") : "";
-    $("f-root").value = site ? site.root : defaultRoot;
-    $("f-root").placeholder = defaultRoot;
+    // A new site starts with the web directory made from its name (C:/www/<name>); the box follows the name until
+    // the person types in the box themselves. An existing site shows the directory it has.
+    if (site) {
+      $("f-root").value = site.root;
+      $("f-root").removeAttribute("data-auto");
+    } else {
+      $("f-root").value = autoRoot("");
+      $("f-root").setAttribute("data-auto", $("f-root").value);
+    }
+    $("f-root").placeholder = autoRoot("example.com");
     $("f-index").value = site ? (site.index || []).join(", ") : "index.html";
     $("f-tls").value = site ? site.tls : "off";
     $("f-create").checked = !site;
@@ -240,12 +248,19 @@
   $("site-add").addEventListener("click", function () { openForm(null); });
   $("site-cancel").addEventListener("click", closeForm);
 
-  // Typing a new name fills the default web directory, until the person changes that field.
+  // The web directory of a new site: the default base (the part of default_root before NAME, C:/www on Windows)
+  // plus the site name as the folder. Only letters, digits, dot and dash are kept, as the server requires of a name.
+  function autoRoot(name) {
+    var base = (defaultRoot || "C:/www/NAME").replace(/NAME$/, "").replace(/\/+$/, "");
+    return base + "/" + name.trim().toLowerCase().replace(/[^a-z0-9.-]/g, "");
+  }
+
+  // Typing a new name rebuilds the web directory, until the person changes that field.
   $("f-name").addEventListener("input", function () {
-    if (editing || !defaultRoot) return;
+    if (editing) return;
     var root = $("f-root");
     if (root.value === "" || root.value === root.getAttribute("data-auto")) {
-      var v = defaultRoot.replace("NAME", $("f-name").value.trim().toLowerCase() || "NAME");
+      var v = autoRoot($("f-name").value);
       root.value = v; root.setAttribute("data-auto", v);
     }
   });
@@ -281,6 +296,107 @@
     api("DELETE", "/v1/site-files/" + encodeURIComponent(name))
       .then(function () { toast("Site " + name + " deleted."); return loadSites(); })
       .catch(failed);
+  }
+
+  // ---- live traffic ----
+
+  var trafficTimer = null;
+  var samples = [];      // the last readings: {t: seconds, total, bytes, errors, sites: {name: {requests, bytes}}, raw}
+  var MAX_SAMPLES = 60;  // 3 minutes at one reading every 3 seconds
+  var SVGNS = "http://www.w3.org/2000/svg";
+
+  function rate(a, b, key) { var dt = b.t - a.t; return dt > 0 ? Math.max(0, (b[key] - a[key]) / dt) : 0; }
+
+  function fmtRate(n) { return n >= 100 ? Math.round(n).toString() : n.toFixed(n >= 10 ? 1 : 2); }
+
+  function drawChart(id, values, format) {
+    var svg = $(id);
+    svg.replaceChildren();
+    if (values.length < 2) return;
+    var max = Math.max.apply(null, values.concat([0.0001])), w = 300, h = 70, pts = [];
+    values.forEach(function (v, i) { pts.push((i * w / (MAX_SAMPLES - 1)).toFixed(1) + "," + (h - 4 - (v / max) * (h - 10)).toFixed(1)); });
+    var last = pts[pts.length - 1].split(",")[0];
+    var area = document.createElementNS(SVGNS, "polygon");
+    area.setAttribute("class", "area"); area.setAttribute("points", "0," + h + " " + pts.join(" ") + " " + last + "," + h);
+    var line = document.createElementNS(SVGNS, "polyline");
+    line.setAttribute("class", "line"); line.setAttribute("points", pts.join(" "));
+    svg.appendChild(area); svg.appendChild(line);
+    var cap = svg.parentNode.querySelector("figcaption .now");
+    if (!cap) { cap = el("span", "", "now"); svg.parentNode.querySelector("figcaption").appendChild(cap); }
+    cap.textContent = "  " + format(values[values.length - 1]) + " now, peak " + format(max);
+  }
+
+  function renderTraffic() {
+    if (samples.length < 1) return;
+    var cur = samples[samples.length - 1], prev = samples[samples.length - 2] || cur;
+    var reqRates = [], byteRates = [], errRates = [];
+    for (var i = 1; i < samples.length; i++) {
+      reqRates.push(rate(samples[i - 1], samples[i], "total"));
+      byteRates.push(rate(samples[i - 1], samples[i], "bytes"));
+      errRates.push(rate(samples[i - 1], samples[i], "errors"));
+    }
+    drawChart("chart-req", reqRates, function (v) { return fmtRate(v) + "/s"; });
+    drawChart("chart-bytes", byteRates, function (v) { return bytes(v) + "/s"; });
+    drawChart("chart-err", errRates, function (v) { return fmtRate(v) + "/s"; });
+
+    var raw = cur.raw;
+    var errShare = cur.total > 0 ? (cur.errors / cur.total * 100) : 0;
+    $("traffic-cards").replaceChildren(
+      stat("Requests per second", fmtRate(rate(prev, cur, "total"))),
+      stat("Data sent per second", bytes(rate(prev, cur, "bytes")) + "/s"),
+      stat("Open connections", raw.connections + " of " + raw.connection_limit),
+      stat("Errors since start", errShare.toFixed(1) + "% of " + cur.total),
+      stat("Refused connections", raw.rejected),
+      stat("Dropped requests", raw.dropped)
+    );
+
+    var rows = [];
+    var all = (raw.sites || []).concat([raw.unrouted]);
+    all.forEach(function (s) {
+      if (s.name === "" && s.requests === 0) return;
+      var name = s.name === "" ? "(no site matched)" : s.name;
+      var p = prev.sites[s.name] || { requests: s.requests, bytes: s.bytes };
+      var dt = cur.t - prev.t;
+      var rps = dt > 0 ? Math.max(0, (s.requests - p.requests) / dt) : 0;
+      var bps = dt > 0 ? Math.max(0, (s.bytes - p.bytes) / dt) : 0;
+      var avg = s.requests > 0 ? (s.latency_seconds / s.requests * 1000).toFixed(1) + " ms" : "-";
+      var c = s.class || [];
+      rows.push([name, fmtRate(rps), bytes(bps) + "/s", c[1] || 0, c[2] || 0, c[3] || 0, c[4] || 0, avg, s.rate_limited || 0]);
+    });
+    fillRows("traffic-rows", rows, 9, "No sites yet.");
+    document.querySelectorAll("#traffic-rows td:not(:first-child)").forEach(function (td) { td.classList.add("num"); });
+  }
+
+  function readTraffic() {
+    return api("GET", "/v1/traffic").then(function (d) {
+      var errors = 0, total = 0, byteSum = 0, map = {};
+      (d.sites || []).concat([d.unrouted]).forEach(function (s) {
+        var c = s.class || [];
+        total += s.requests; byteSum += s.bytes; errors += (c[3] || 0) + (c[4] || 0);
+        map[s.name] = { requests: s.requests, bytes: s.bytes };
+      });
+      samples.push({ t: d.time_ms / 1000, total: total, bytes: byteSum, errors: errors, sites: map, raw: d });
+      if (samples.length > MAX_SAMPLES) samples.shift();
+      $("traffic-state").textContent = "Updating every 3 seconds";
+      renderTraffic();
+    }).catch(function (e) {
+      if (e.status === 401) { stopTraffic(); signedOut(); return; }
+      $("traffic-state").textContent = "Could not read the figures: " + e.message;
+    });
+  }
+
+  function stopTraffic() { if (trafficTimer) { clearInterval(trafficTimer); trafficTimer = null; } }
+
+  function loadTraffic() {
+    stopTraffic();
+    samples = [];
+    var first = readTraffic();
+    // Poll only while this page is open and the browser tab is visible.
+    trafficTimer = setInterval(function () {
+      if (view !== "traffic" || !csrf) { stopTraffic(); return; }
+      if (!document.hidden) readTraffic();
+    }, 3000);
+    return first;
   }
 
   // ---- cache ----

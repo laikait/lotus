@@ -70,3 +70,11 @@ select { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-r
 .editor { width: 100%; min-height: 46vh; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 4; resize: vertical; }
 .editor:focus-visible, .logview:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .success { color: var(--ok); }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin: 14px 0 6px; }
+.chart { margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.chart figcaption { color: var(--muted); font-size: .85rem; margin-bottom: 6px; }
+.chart svg { width: 100%; height: 70px; display: block; }
+.chart .line { fill: none; stroke: var(--accent); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.chart .area { fill: var(--accent); opacity: .12; stroke: none; }
+.chart .now { font-weight: 600; color: var(--ink); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }

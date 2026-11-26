@@ -18,6 +18,7 @@ import (
 	"github.com/laikait/lotus/internal/config"
 	"github.com/laikait/lotus/internal/config/loader"
 	"github.com/laikait/lotus/internal/config/model"
+	"github.com/laikait/lotus/internal/server"
 	"github.com/laikait/lotus/internal/sitefile"
 )
 
@@ -63,7 +64,7 @@ func (a *app) openAdmin(cfg *model.Config) (io.Closer, error) {
 		a.log.Warn("the admin has no accounts: nobody can sign in", "users_file", users.Path, "fix", "run: lotus admin passwd NAME")
 	}
 	srv := admin.New(admin.Options{
-		Backend: a, Sites: &sitefile.Store{Config: a.path}, PHP: a.phpPools, Logs: a.logSources, Users: users, SessionTTL: ad.SessionTTL, Allow: ad.Allow, Secure: secure, Log: a.log,
+		Backend: a, Sites: &sitefile.Store{Config: a.path}, PHP: a.phpPools, Logs: a.logSources, Traffic: a.traffic, Users: users, SessionTTL: ad.SessionTTL, Allow: ad.Allow, Secure: secure, Log: a.log,
 	})
 	go func() {
 		if err := srv.Serve(ln); err != nil {
@@ -94,6 +95,26 @@ func (a *app) logSources() []admin.LogSource {
 		if t := s.Logs.Error; !t.Off && t.Path != "" {
 			out = append(out, admin.LogSource{ID: "site." + s.Name + ".error", Name: s.Name + " error log", Path: t.Path})
 		}
+	}
+	return out
+}
+
+// traffic reads the running totals of the server for the live traffic page.
+func (a *app) traffic() admin.Traffic {
+	snap := a.srv.Traffic()
+	conv := func(s server.SiteTraffic) admin.SiteTraffic {
+		return admin.SiteTraffic{
+			Name: s.Name, Requests: s.Requests, Class: append([]uint64(nil), s.Class[:]...), Bytes: s.Bytes,
+			RateLimited: s.RateLimited, LatencySeconds: s.LatencySum.Seconds(),
+		}
+	}
+	out := admin.Traffic{
+		TimeMS: snap.At.UnixMilli(), UptimeSeconds: snap.Uptime.Seconds(), Connections: snap.Connections,
+		ConnectionLimit: snap.ConnectionLimit, Rejected: snap.Rejected, Dropped: snap.Dropped,
+		Classes: server.ClassNames(), Sites: make([]admin.SiteTraffic, 0, len(snap.Sites)), Unrouted: conv(snap.Unrouted),
+	}
+	for _, s := range snap.Sites {
+		out.Sites = append(out.Sites, conv(s))
 	}
 	return out
 }

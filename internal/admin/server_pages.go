@@ -15,6 +15,37 @@ type PHPPool struct {
 	Restarts  int64  `json:"restarts"`
 }
 
+// SiteTraffic is one site's running totals since the server started.
+type SiteTraffic struct {
+	Name           string   `json:"name"`
+	Requests       uint64   `json:"requests"`
+	Class          []uint64 `json:"class"` // by Traffic.Classes
+	Bytes          uint64   `json:"bytes"`
+	RateLimited    uint64   `json:"rate_limited"`
+	LatencySeconds float64  `json:"latency_seconds"` // total time spent answering
+}
+
+// Traffic is what the live traffic page polls: totals only, so the page works out rates from two samples.
+type Traffic struct {
+	TimeMS          int64         `json:"time_ms"` // when the figures were read, Unix milliseconds
+	UptimeSeconds   float64       `json:"uptime_seconds"`
+	Connections     int           `json:"connections"`
+	ConnectionLimit int           `json:"connection_limit"`
+	Rejected        uint64        `json:"rejected"`
+	Dropped         uint64        `json:"dropped"`
+	Classes         []string      `json:"classes"`
+	Sites           []SiteTraffic `json:"sites"`
+	Unrouted        SiteTraffic   `json:"unrouted"`
+}
+
+func (s *Server) traffic(w http.ResponseWriter, r *http.Request, _ *session) {
+	if s.opts.Traffic == nil {
+		writeError(w, http.StatusNotFound, "traffic figures are not available")
+		return
+	}
+	writeJSON(w, http.StatusOK, s.opts.Traffic())
+}
+
 // httpStatusOf maps a control error to an HTTP status.
 func httpStatusOf(e *control.Error) int {
 	switch e.Code {

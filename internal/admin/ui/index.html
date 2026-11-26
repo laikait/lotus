@@ -13,6 +13,7 @@
   <nav id="nav" class="nav" hidden aria-label="Main">
     <a href="#dashboard" data-view="dashboard">Dashboard</a>
     <a href="#sites" data-view="sites">Sites</a>
+    <a href="#traffic" data-view="traffic">Traffic</a>
     <a href="#cache" data-view="cache">Cache</a>
     <a href="#php" data-view="php">PHP</a>
     <a href="#logs" data-view="logs" data-admin>Logs</a>
@@ -97,6 +98,26 @@
         <button id="site-cancel" class="btn btn-quiet" type="button">Cancel</button>
       </div>
     </form>
+  </section>
+
+  <section id="trafficpage" data-page="traffic" hidden>
+    <div class="toolbar">
+      <h1>Traffic</h1>
+      <span class="spacer"></span>
+      <span id="traffic-state" class="muted">Updating every 3 seconds</span>
+    </div>
+    <div id="traffic-cards" class="cards"></div>
+    <div class="charts">
+      <figure class="chart"><figcaption>Requests per second</figcaption><svg id="chart-req" viewBox="0 0 300 70" preserveAspectRatio="none" role="img" aria-label="Requests per second over the last three minutes"></svg></figure>
+      <figure class="chart"><figcaption>Data sent per second</figcaption><svg id="chart-bytes" viewBox="0 0 300 70" preserveAspectRatio="none" role="img" aria-label="Data sent per second over the last three minutes"></svg></figure>
+      <figure class="chart"><figcaption>Errors per second (4xx and 5xx)</figcaption><svg id="chart-err" viewBox="0 0 300 70" preserveAspectRatio="none" role="img" aria-label="Errors per second over the last three minutes"></svg></figure>
+    </div>
+    <h2>By site</h2>
+    <table class="table">
+      <thead><tr><th>Site</th><th>Requests/s</th><th>Sent/s</th><th>2xx</th><th>3xx</th><th>4xx</th><th>5xx</th><th>Avg time</th><th>Rate limited</th></tr></thead>
+      <tbody id="traffic-rows"></tbody>
+    </table>
+    <p class="hint">Counted since the server started; a reload does not reset them. Rates are worked out in this page from the last two readings. The 4xx column includes requests no site answered.</p>
   </section>
 
   <section id="cachepage" data-page="cache" hidden>
