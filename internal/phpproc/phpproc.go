@@ -205,6 +205,34 @@ func (p *Pool) RecycleAll() {
 	}
 }
 
+// WaitReplaced waits until RecycleAll has finished: every process is running again and none is waiting to be
+// replaced. It gives up after max and says whether it finished (a process busy with a long request is the usual reason
+// it does not).
+func (p *Pool) WaitReplaced(max time.Duration) bool {
+	deadline := time.Now().Add(max)
+	for {
+		done := true
+		for _, w := range p.workers {
+			w.mu.Lock()
+			if !w.alive || w.retiring || w.recycle {
+				done = false
+			}
+			w.mu.Unlock()
+		}
+		if done {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		select {
+		case <-time.After(20 * time.Millisecond):
+		case <-p.closing:
+			return false
+		}
+	}
+}
+
 // Restarts reports how many times a process was started again after exiting.
 func (p *Pool) Restarts() int64 { return p.restarts.Load() }
 

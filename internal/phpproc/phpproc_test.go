@@ -367,12 +367,11 @@ func TestRecycleAllReplacesEveryProcess(t *testing.T) {
 		t.Errorf("the request that was running during the recycle failed: %v", err)
 	}
 	// After the replacement every process has a new id, and requests keep working.
-	deadline := time.Now().Add(15 * time.Second)
-	for p.Alive() < 3 || p.Restarts() < 3 {
-		if time.Now().After(deadline) {
-			t.Fatalf("pool not back: alive=%d restarts=%d", p.Alive(), p.Restarts())
-		}
-		time.Sleep(20 * time.Millisecond)
+	if !p.WaitReplaced(15 * time.Second) {
+		t.Fatalf("pool not back: alive=%d restarts=%d", p.Alive(), p.Restarts())
+	}
+	if p.Alive() != 3 || p.Restarts() < 3 {
+		t.Fatalf("WaitReplaced returned early: alive=%d restarts=%d", p.Alive(), p.Restarts())
 	}
 	for i := 0; i < 12; i++ {
 		a, err := call(context.Background(), p, "/pid", "")

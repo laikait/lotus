@@ -136,19 +136,26 @@ func (s *Server) PHPPools() []PHPPoolInfo {
 	return out
 }
 
-// RestartPHPPool replaces the processes of the managed pool with this backend name, gently (see phpproc.Pool.RecycleAll).
-// It returns false if no pool of that name runs.
+// restartWait is how long RestartPHPPool waits for the new processes. A process busy with a long request is replaced
+// when that request ends, which can be later.
+const restartWait = 10 * time.Second
+
+// RestartPHPPool replaces the processes of the managed pool with this backend name, gently (see phpproc.Pool.RecycleAll),
+// and waits until they run again (up to restartWait). It returns false if no pool of that name runs.
 func (s *Server) RestartPHPPool(name string) bool {
 	s.poolMu.Lock()
-	defer s.poolMu.Unlock()
-	found := false
+	var recycled []*phpproc.Pool
 	for _, sp := range s.pools {
 		if sp.name == name {
 			sp.pool.RecycleAll()
-			found = true
+			recycled = append(recycled, sp.pool)
 		}
 	}
-	return found
+	s.poolMu.Unlock()
+	for _, p := range recycled { // the lock is not held while waiting: reloads must not be blocked by this
+		p.WaitReplaced(restartWait)
+	}
+	return len(recycled) > 0
 }
 
 // managedPool returns the process pool for a backend with `command`, starting

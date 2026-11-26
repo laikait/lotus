@@ -14,7 +14,7 @@ import (
 
 // Templates are the kinds of site the admin can make. Each one produces its routes from the structured fields of
 // the Spec, never from typed text.
-var Templates = []string{"static", "php", "wordpress", "laravel", "proxy"}
+var Templates = []string{"static", "php", "wordpress", "laravel", "symfony", "lphp", "drupal", "joomla", "proxy"}
 
 // SpecPrefix starts the second line of a site file: the Spec as JSON. A file is editable only when its whole text is
 // exactly what Render makes from that Spec.
@@ -27,7 +27,26 @@ var (
 	errorURLRe = regexp.MustCompile(`^/[A-Za-z0-9._/-]{0,200}$`)
 )
 
-func isPHP(t string) bool { return t == "php" || t == "wordpress" || t == "laravel" }
+func isPHP(t string) bool {
+	return oneOf(t, "php", "wordpress", "laravel", "symfony", "lphp", "drupal", "joomla")
+}
+
+// hasPublicDir is true for frameworks that keep code outside the folder the web serves: the site root is the
+// project folder, and the web directory is its public folder.
+func hasPublicDir(t string) bool { return oneOf(t, "laravel", "symfony", "lphp") }
+
+// uploadsDir is the folder that holds files people upload; PHP never runs inside it.
+func uploadsDir(t string) string {
+	switch t {
+	case "wordpress":
+		return "/wp-content/uploads/"
+	case "drupal":
+		return "/sites/default/files/"
+	case "joomla":
+		return "/images/"
+	}
+	return "/uploads/"
+}
 
 func oneOf(v string, allowed ...string) bool {
 	for _, a := range allowed {
@@ -151,7 +170,7 @@ func validateSettings(sp Spec) error {
 
 // DocRoot is the folder the site serves files from: the web directory, or its public folder for Laravel.
 func DocRoot(sp Spec) string {
-	if sp.Template == "laravel" {
+	if hasPublicDir(sp.Template) {
 		return strings.TrimRight(sp.Root, "/") + "/public"
 	}
 	return sp.Root
@@ -230,12 +249,8 @@ func render(sp Spec) string {
 	}
 	switch {
 	case isPHP(sp.Template):
-		uploads := "/uploads/"
-		if sp.Template == "wordpress" {
-			uploads = "/wp-content/uploads/"
-		}
 		fmt.Fprintf(&b, "\n    route ~ '\\.php(/|$)' {\n        php %q\n    }\n", sp.PHPBackend)
-		fmt.Fprintf(&b, "\n    route ^~ %q {\n        php_deny true\n    }\n", uploads)
+		fmt.Fprintf(&b, "\n    route ^~ %q {\n        php_deny true\n    }\n", uploadsDir(sp.Template))
 		b.WriteString("\n    route \"/\" {\n        try_files [ \"{uri}\", \"{uri}/\", \"/index.php?{query}\" ]\n    }\n")
 	case sp.Template == "proxy":
 		fmt.Fprintf(&b, "\n    route \"/\" {\n        proxy %q\n    }\n", UpstreamName(sp.Name))

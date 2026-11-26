@@ -25,11 +25,20 @@ func (s *Server) listSiteFiles(w http.ResponseWriter, r *http.Request, _ *sessio
 		writeError(w, http.StatusInternalServerError, "could not read the sites folder")
 		return
 	}
+	backends := s.opts.Sites.PHPBackendNames()
+	def := ""
+	if sp, _, err := s.opts.Sites.Server(); err == nil {
+		def = sp.DefaultPool()
+	}
+	if def == "" && len(backends) > 0 {
+		def = backends[0]
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
+		"default_php":  def,
 		"entries":      list,
 		"default_root": sitefile.DefaultRoot("NAME"),
 		"templates":    sitefile.Templates,
-		"php_backends": s.opts.Sites.PHPBackendNames(),
+		"php_backends": backends,
 		"listeners":    s.opts.Sites.ListenerNames(),
 		"php_labels":   s.phpLabels(),
 		"hint":         s.opts.Sites.IncludeHint(),

@@ -160,13 +160,18 @@
   var defaultRoot = "";
   var phpBackends = [];
   var phpLabels = {};
+  var defaultPHP = "";
   var listenerNames = [];
-  var TEMPLATE_NAMES = { static: "Static files", php: "PHP", wordpress: "WordPress", laravel: "Laravel", proxy: "Reverse proxy" };
+  var TEMPLATE_NAMES = { static: "Static files", php: "PHP", wordpress: "WordPress", laravel: "Laravel", symfony: "Symfony", lphp: "LPHP", drupal: "Drupal", joomla: "Joomla", proxy: "Reverse proxy" };
   var TEMPLATE_NOTES = {
     static: "Serves the files of the web directory.",
     php: "Runs .php files and sends other URLs to index.php (a front controller).",
     wordpress: "As PHP, and never runs PHP inside wp-content/uploads.",
     laravel: "As PHP, serving the public folder inside the web directory.",
+    symfony: "As PHP, serving the public folder inside the project directory.",
+    lphp: "As PHP, serving the public folder inside the project directory.",
+    drupal: "As PHP, and never runs PHP inside sites/default/files. The web directory holds Drupal's index.php.",
+    joomla: "As PHP, and never runs PHP inside images. The web directory holds Joomla's index.php.",
     proxy: "Sends every request to another server (an app on a port). No web directory is needed."
   };
 
@@ -175,6 +180,7 @@
       defaultRoot = d.default_root || "";
       phpBackends = d.php_backends || [];
       phpLabels = d.php_labels || {};
+      defaultPHP = d.default_php || "";
       listenerNames = d.listeners || [];
       var hint = $("site-hint");
       hint.textContent = d.hint || ""; hint.hidden = !d.hint;
@@ -265,9 +271,9 @@
     sel.replaceChildren();
     var names = phpBackends.slice();
     if (s.php_backend && names.indexOf(s.php_backend) < 0) names.push(s.php_backend);
-    names.forEach(function (n) { var o = el("option", phpLabels[n] || n); o.value = n; sel.appendChild(o); });
+    names.forEach(function (n) { var o = el("option", (phpLabels[n] || n) + (n === defaultPHP ? " - default" : "")); o.value = n; sel.appendChild(o); });
     if (!names.length) { var none = el("option", "(no php_backend in the configuration)"); none.value = ""; sel.appendChild(none); }
-    setSel("f-php", s.php_backend);
+    setSel("f-php", s.php_backend || defaultPHP);
     $("f-proxy").value = s.proxy_url || "";
     $("f-rate").value = s.rate_requests || 0;
     setSel("f-per", s.rate_per || "1s");
@@ -287,7 +293,7 @@
 
   // The fields a type of site needs: PHP types a backend, a proxy an address and no web directory.
   function showTemplate() {
-    var t = $("f-template").value, isPHP = /^(php|wordpress|laravel)$/.test(t);
+    var t = $("f-template").value, isPHP = /^(php|wordpress|laravel|symfony|lphp|drupal|joomla)$/.test(t);
     $("f-template-note").textContent = TEMPLATE_NOTES[t] || "";
     $("f-files").hidden = t === "proxy";
     $("f-root").required = t !== "proxy";
@@ -550,6 +556,7 @@
       feed.hidden = !d.feed_error;
 
       phpInstalled = d.installed || [];
+      var defPool = d.default_pool || "";
       fillRows("pv-installed", phpInstalled.map(function (v) {
         var box = el("div", null, "row-actions");
         var settings = el("button", "Settings", "btn btn-quiet");
@@ -568,9 +575,23 @@
             if (!window.confirm(pkg ? "Stop using PHP " + v.version + "? The system's package stays installed." : "Remove PHP " + v.version + "? Its folder is deleted.")) return;
             act_(rm, api("DELETE", "/v1/php-versions/" + encodeURIComponent(v.version)), "PHP " + v.version + " removed.", loadPHPVersions);
           });
+          var first = (v.pools || [])[0];
+          if (first && (v.pools || []).indexOf(defPool) < 0) {
+            var df = el("button", "Make default", "btn btn-quiet");
+            df.type = "button"; df.setAttribute("aria-label", "Make PHP " + v.version + " the default");
+            df.addEventListener("click", function () { setDefaultPool(df, first); });
+            box.appendChild(df);
+          }
           box.appendChild(mk); box.appendChild(rm);
         }
-        return ["PHP " + v.version, (v.pools || []).join(", ") || "-", v.dir, box];
+        var poolCell = el("span", null);
+        (v.pools || []).forEach(function (n, i) {
+          if (i) poolCell.appendChild(document.createTextNode(", "));
+          poolCell.appendChild(document.createTextNode(n));
+          if (n === defPool) { poolCell.appendChild(document.createTextNode(" ")); poolCell.appendChild(el("span", "default", "pill ok")); }
+        });
+        if (!(v.pools || []).length) poolCell.textContent = "-";
+        return ["PHP " + v.version, poolCell, v.dir, box];
       }), 4, d.supported ? "No PHP installed here yet. Install one below." : "-");
 
       fillRows("pv-available", (d.available || []).map(function (a) {
@@ -707,7 +728,7 @@
   function saveIni(settings, extensions, btn) {
     btn.disabled = true; $("ini-errors").hidden = true;
     api("PUT", "/v1/php-versions/" + encodeURIComponent(iniVersion) + "/ini", { settings: settings, extensions: extensions }).then(function (r) {
-      toast("Saved." + ((r.restarted || []).length ? " Pool " + r.restarted.join(", ") + " is restarting." : ""));
+      toast("Saved." + ((r.restarted || []).length ? " Pool " + r.restarted.join(", ") + " restarted." : ""));
       return loadPhpSettings(iniVersion);
     }).catch(function (e) {
       if (e.status === 401) { signedOut(); return; }
@@ -746,7 +767,7 @@
     btn.disabled = true;
     api("POST", "/v1/php-versions/" + encodeURIComponent(iniVersion) + "/ioncube", { action: action }).then(function (r) {
       if (r.job) { watchJob(r.job, "ic", refreshIon); return; }
-      toast("ionCube Loader " + (action === "enable" ? "enabled." : "disabled.") + ((r.restarted || []).length ? " Pool " + r.restarted.join(", ") + " is restarting." : ""));
+      toast("ionCube Loader " + (action === "enable" ? "enabled." : "disabled.") + ((r.restarted || []).length ? " Pool " + r.restarted.join(", ") + " restarted." : ""));
       return refreshIon();
     }).catch(function (e) {
       if (e.status === 401) { signedOut(); return; }
@@ -770,7 +791,7 @@
           var b = el("button", "Restart", "btn btn-quiet");
           b.type = "button"; b.setAttribute("aria-label", "Restart the pool " + p.name);
           b.addEventListener("click", function () {
-            act_(b, api("POST", "/v1/php/" + encodeURIComponent(p.name) + "/restart"), "Pool " + p.name + " is restarting.", loadPHP);
+            act_(b, api("POST", "/v1/php/" + encodeURIComponent(p.name) + "/restart"), "Pool " + p.name + " restarted.", loadPHP);
           });
           act.appendChild(b);
         }
@@ -793,11 +814,23 @@
           del.addEventListener("click", function () { deletePool(p.name); });
           box.appendChild(edit); box.appendChild(del);
         }
-        return [p.name, p.command, p.processes, p.max_requests ? p.max_requests + " requests" : "never", p.timeout + " s", box];
+        var nameCell = el("span", p.name);
+        if (p.name === set.default) { nameCell.appendChild(document.createTextNode(" ")); nameCell.appendChild(el("span", "default", "pill ok")); }
+        else if (admin && set.editable) {
+          var mkdef = el("button", "Make default", "btn btn-quiet");
+          mkdef.type = "button"; mkdef.setAttribute("aria-label", "Make the pool " + p.name + " the default");
+          mkdef.addEventListener("click", function () { setDefaultPool(mkdef, p.name); });
+          box.insertBefore(mkdef, box.firstChild);
+        }
+        return [nameCell, p.command, p.processes, p.max_requests ? p.max_requests + " requests" : "never", p.timeout + " s", box];
       }), 6, "No pools made here yet.");
     }).catch(failed);
   }
   $("php-refresh").addEventListener("click", function () { loadPHP(); });
+
+  function setDefaultPool(btn, name) {
+    act_(btn, api("PUT", "/v1/php-default", { name: name }), "The pool " + name + " is now the default for new PHP sites.", loadPHP);
+  }
 
   // Runs a request on a button, shows a toast, and calls then() when it worked.
   function act_(btn, request, okText, then) {

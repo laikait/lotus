@@ -76,7 +76,12 @@ The Sites page works on the files of the `sites.d` folder next to the main confi
 | PHP application | `.php` files run through the chosen `php_backend`; other URLs that are not files go to `/index.php` (front controller); PHP never runs in `/uploads/` |
 | WordPress | as PHP, with `/wp-content/uploads/` never executed |
 | Laravel | as PHP, serving the `public` folder inside the web directory |
+| Symfony, LPHP | as Laravel: the site root is the project folder, the web directory is its `public` folder |
+| Drupal | as WordPress, with `/sites/default/files/` never executed; the web directory holds Drupal's `index.php` (no sample page is written) |
+| Joomla | as WordPress, with `/images/` never executed; the web directory holds Joomla's `index.php` (no sample page is written) |
 | Reverse proxy | an `upstream "site-NAME"` with one backend (`http(s)://host:port`) and a route `/` that proxies to it; no web directory, no `root` line |
+
+**Default PHP.** The first pool made is the default (`default_php` in the server file's spec); the PHP page can change it (`PUT /v1/php-default`), and the Add site form starts with it. Deleting the default pool makes the first remaining pool the default. A restart of a pool (PHP settings saved, ionCube changed, the Restart button) waits up to 10 seconds until every process runs again, so "restarted" is true when it is shown; a process busy with a longer request is replaced when that request ends.
 
 **Advanced settings** (all optional): rate limit (requests per second, minute or hour per client, with burst), compression on/off (default: the server's), security headers (basic: nosniff, frame, referrer), symbolic links, dotfiles, `.htaccess`, error pages for 403, 404 and 500, access and error log files. Each is an enum or a strict pattern, and the whole configuration is checked before anything is kept.
 

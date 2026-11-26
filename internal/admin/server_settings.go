@@ -40,7 +40,7 @@ func (s *Server) phpPoolList(w http.ResponseWriter, r *http.Request, _ *session)
 	if pools == nil {
 		pools = []sitefile.PHPPoolSpec{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"pools": pools, "editable": editable, "can_restart": s.opts.PHPRestart != nil})
+	writeJSON(w, http.StatusOK, map[string]any{"pools": pools, "default": sp.DefaultPool(), "editable": editable, "can_restart": s.opts.PHPRestart != nil})
 }
 
 func (s *Server) phpPoolSave(w http.ResponseWriter, r *http.Request, sess *session) {
@@ -61,7 +61,7 @@ func (s *Server) phpPoolSave(w http.ResponseWriter, r *http.Request, sess *sessi
 		}
 	}
 	if !replaced {
-		sp.PHP = append(sp.PHP, body)
+		sp = sp.AddPool(body)
 	}
 	s.saveServer(w, r, sess, "php pool saved", name, sp, false)
 }
@@ -72,21 +72,39 @@ func (s *Server) phpPoolDelete(w http.ResponseWriter, r *http.Request, sess *ses
 	if !ok {
 		return
 	}
-	var keep []sitefile.PHPPoolSpec
 	found := false
 	for _, p := range sp.PHP {
-		if p.Name == name {
-			found = true
-			continue
-		}
-		keep = append(keep, p)
+		found = found || p.Name == name
 	}
 	if !found {
 		writeError(w, http.StatusNotFound, "there is no such pool in the server settings file (pools in main.conf are changed in the configuration editor)")
 		return
 	}
-	sp.PHP = keep
-	s.saveServer(w, r, sess, "php pool deleted", name, sp, false)
+	s.saveServer(w, r, sess, "php pool deleted", name, sp.WithoutPool(name), false)
+}
+
+// phpDefaultSet chooses the pool that new PHP sites start with.
+func (s *Server) phpDefaultSet(w http.ResponseWriter, r *http.Request, sess *session) {
+	var body struct {
+		Name string `json:"name"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	sp, ok := s.serverSpec(w)
+	if !ok {
+		return
+	}
+	found := false
+	for _, p := range sp.PHP {
+		found = found || p.Name == body.Name
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "there is no such pool in the server settings file")
+		return
+	}
+	sp.DefaultPHP = body.Name
+	s.saveServer(w, r, sess, "default php set", body.Name, sp, false)
 }
 
 func (s *Server) phpPoolRestart(w http.ResponseWriter, r *http.Request, sess *session) {

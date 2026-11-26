@@ -158,3 +158,32 @@ func TestHTTPSListenerAndPlainSites(t *testing.T) {
 		t.Error("a bad listener name was accepted")
 	}
 }
+
+func TestDefaultPHPPool(t *testing.T) {
+	var sp ServerSpec
+	pool := func(n string) PHPPoolSpec { return PHPPoolSpec{Name: n, Command: "php-cgi", Processes: 2, Timeout: 60} }
+	if sp.DefaultPool() != "" {
+		t.Error("no pools, no default")
+	}
+	sp = sp.AddPool(pool("php83"))
+	sp = sp.AddPool(pool("php84"))
+	if sp.DefaultPHP != "php83" || sp.DefaultPool() != "php83" {
+		t.Errorf("the first pool becomes the default: %+v", sp)
+	}
+	sp.DefaultPHP = "php84"
+	if err := ValidateServer(NormalizeServer(sp)); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := parseServer(RenderServer(NormalizeServer(sp))); !ok || got.DefaultPHP != "php84" {
+		t.Errorf("the default is kept in the file: %+v %v", got, ok)
+	}
+	bad := sp
+	bad.DefaultPHP = "nope"
+	if ValidateServer(NormalizeServer(bad)) == nil {
+		t.Error("a default that is not a pool must be refused")
+	}
+	sp = sp.WithoutPool("php84")
+	if sp.DefaultPHP != "" || sp.DefaultPool() != "php83" {
+		t.Errorf("deleting the default falls back to the first pool: %+v", sp)
+	}
+}

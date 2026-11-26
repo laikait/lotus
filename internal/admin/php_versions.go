@@ -94,7 +94,7 @@ func (s *Server) phpVersions(w http.ResponseWriter, r *http.Request, _ *session)
 		return
 	}
 	in := s.opts.PHPInstall
-	out := map[string]any{"kind": in.Kind(), "can_install": in.CanInstall(), "supported": in.Supported(), "runtime_ok": true, "runtime_message": "", "feed_error": "", "job": s.currentJob()}
+	out := map[string]any{"kind": in.Kind(), "can_install": in.CanInstall(), "supported": in.Supported(), "runtime_ok": true, "runtime_message": "", "feed_error": "", "job": s.currentJob(), "default_pool": s.defaultPool()}
 	if !in.Supported() {
 		out["installed"], out["available"] = []installedView{}, []availableView{}
 		writeJSON(w, http.StatusOK, out)
@@ -354,7 +354,7 @@ func (s *Server) phpMakePool(w http.ResponseWriter, r *http.Request, sess *sessi
 	if body.Processes == 0 {
 		body.Processes = 4
 	}
-	sp.PHP = append(sp.PHP, sitefile.PHPPoolSpec{
+	sp = sp.AddPool(sitefile.PHPPoolSpec{
 		Name: name, Command: filepath.ToSlash(v.Exe), Processes: body.Processes, MaxRequests: 500, PHPIni: filepath.ToSlash(v.Ini), Timeout: 60,
 	})
 	s.saveServer(w, r, sess, "php pool made for "+version, name, sp, false)
@@ -470,4 +470,16 @@ func (s *Server) recycle(v phpinstall.Installed) []string {
 		}
 	}
 	return restarted
+}
+
+// defaultPool is the pool new PHP sites start with ("" when there is no pool).
+func (s *Server) defaultPool() string {
+	if s.opts.Sites == nil {
+		return ""
+	}
+	sp, _, err := s.opts.Sites.Server()
+	if err != nil {
+		return ""
+	}
+	return sp.DefaultPool()
 }

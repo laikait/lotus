@@ -478,8 +478,8 @@ func makeRoot(sp Spec) {
 		return
 	}
 	if isPHP(sp.Template) {
-		if sp.Template == "wordpress" {
-			return // the person puts WordPress here
+		if oneOf(sp.Template, "wordpress", "drupal", "joomla") {
+			return // the person puts the application here
 		}
 		page := filepath.Join(dir, "index.php")
 		if _, err := os.Stat(page); err != nil {

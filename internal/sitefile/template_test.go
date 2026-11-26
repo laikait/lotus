@@ -81,6 +81,17 @@ func TestEveryTemplateIsValidAndRoundTrips(t *testing.T) {
 	if text := string(st.Read("laravel.test")); !strings.Contains(text, `/public"`) {
 		t.Errorf("laravel serves public/:\n%s", text)
 	}
+	for tmpl, want := range map[string]string{"symfony": `/public"`, "lphp": `/public"`, "drupal": `"/sites/default/files/"`, "joomla": `"/images/"`} {
+		text := string(st.Read(tmpl + ".test"))
+		if !strings.Contains(text, want) || !strings.Contains(text, `php "app"`) || !strings.Contains(text, "/index.php?{query}") {
+			t.Errorf("%s:\n%s", tmpl, text)
+		}
+	}
+	for _, tmpl := range []string{"drupal", "joomla"} { // the application goes there, so no sample page
+		if _, err := os.Stat(filepath.Join(dir, "www", tmpl+".test", "index.php")); err == nil {
+			t.Errorf("%s: a sample page would be in the way of the application", tmpl)
+		}
+	}
 	text := string(st.Read("proxy.test"))
 	if !strings.Contains(text, `upstream "site-proxy.test"`) || !strings.Contains(text, `backend "http://127.0.0.1:3000"`) || !strings.Contains(text, `proxy "site-proxy.test"`) {
 		t.Errorf("proxy:\n%s", text)

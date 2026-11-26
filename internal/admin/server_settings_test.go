@@ -127,3 +127,38 @@ func TestHTTPSWizard(t *testing.T) {
 		t.Errorf("viewer: %d", rec.Code)
 	}
 }
+
+func TestDefaultPHPPoolIsChosenAndOffered(t *testing.T) {
+	e, _, cookie, csrf := siteEnv(t)
+	for _, n := range []string{"one", "two"} {
+		if rec := e.do("PUT", "/v1/php-pools/"+n, `{"command":"php-cgi","processes":2,"timeout":60}`, csrf, cookie); rec.Code != 200 {
+			t.Fatalf("add %s: %d %s", n, rec.Code, rec.Body)
+		}
+	}
+	// The first pool is the default, and a new site form is told so.
+	if rec := e.do("GET", "/v1/php-pools", "", "", cookie); !strings.Contains(rec.Body.String(), `"default":"one"`) {
+		t.Errorf("first pool is the default: %s", rec.Body)
+	}
+	if rec := e.do("GET", "/v1/site-files", "", "", cookie); !strings.Contains(rec.Body.String(), `"default_php":"one"`) {
+		t.Errorf("site form default: %s", rec.Body)
+	}
+	if rec := e.do("PUT", "/v1/php-default", `{"name":"two"}`, csrf, cookie); rec.Code != 200 {
+		t.Fatalf("set default: %d %s", rec.Code, rec.Body)
+	}
+	if rec := e.do("GET", "/v1/site-files", "", "", cookie); !strings.Contains(rec.Body.String(), `"default_php":"two"`) {
+		t.Errorf("after change: %s", rec.Body)
+	}
+	if rec := e.do("PUT", "/v1/php-default", `{"name":"zzz"}`, csrf, cookie); rec.Code != 404 {
+		t.Errorf("unknown pool: %d", rec.Code)
+	}
+	// Deleting the default hands the role to the first pool left.
+	if rec := e.do("DELETE", "/v1/php-pools/two", "", "", cookie); rec.Code == 200 {
+		t.Log("delete without csrf should not work")
+	}
+	if rec := e.do("DELETE", "/v1/php-pools/two", "", csrf, cookie); rec.Code != 200 {
+		t.Fatalf("delete: %d %s", rec.Code, rec.Body)
+	}
+	if rec := e.do("GET", "/v1/php-pools", "", "", cookie); !strings.Contains(rec.Body.String(), `"default":"one"`) {
+		t.Errorf("after delete: %s", rec.Body)
+	}
+}

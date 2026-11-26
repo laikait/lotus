@@ -160,6 +160,7 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /v1/config/history", s.auth(RoleAdmin, s.configHistory))
 		mux.HandleFunc("GET /v1/config/version", s.auth(RoleAdmin, s.configVersion))
 		mux.HandleFunc("GET /v1/php-pools", s.auth(RoleViewer, s.phpPoolList))
+		mux.HandleFunc("PUT /v1/php-default", s.auth(RoleAdmin, s.phpDefaultSet))
 		mux.HandleFunc("PUT /v1/php-pools/{name}", s.auth(RoleAdmin, s.phpPoolSave))
 		mux.HandleFunc("DELETE /v1/php-pools/{name}", s.auth(RoleAdmin, s.phpPoolDelete))
 		mux.HandleFunc("GET /v1/https", s.auth(RoleAdmin, s.httpsStatus))

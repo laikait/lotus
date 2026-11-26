@@ -190,7 +190,7 @@ func TestTemplatesAndSettingsThroughTheAPI(t *testing.T) {
 	}
 	rec = e.do("GET", "/v1/site-files", "", "", cookie)
 	body := rec.Body.String()
-	for _, want := range []string{`"templates":["static","php","wordpress","laravel","proxy"]`, `"php_backends":[]`, `"template":"proxy"`, `"proxy_url":"http://127.0.0.1:3000"`, `"editable":true`} {
+	for _, want := range []string{`"templates":["static","php","wordpress","laravel","symfony","lphp","drupal","joomla","proxy"]`, `"php_backends":[]`, `"template":"proxy"`, `"proxy_url":"http://127.0.0.1:3000"`, `"editable":true`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %s in %s", want, body)
 		}

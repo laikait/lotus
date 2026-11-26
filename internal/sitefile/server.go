@@ -48,8 +48,46 @@ type HTTPSSpec struct {
 
 // ServerSpec is everything the managed server file says.
 type ServerSpec struct {
-	PHP   []PHPPoolSpec `json:"php,omitempty"`
-	HTTPS *HTTPSSpec    `json:"https,omitempty"`
+	PHP        []PHPPoolSpec `json:"php,omitempty"`
+	DefaultPHP string        `json:"default_php,omitempty"` // the pool new PHP sites use; one of PHP
+	HTTPS      *HTTPSSpec    `json:"https,omitempty"`
+}
+
+// DefaultPool is the pool a new PHP site gets: the chosen default, else the first pool. "" when there is none.
+func (sp ServerSpec) DefaultPool() string {
+	for _, p := range sp.PHP {
+		if p.Name == sp.DefaultPHP {
+			return p.Name
+		}
+	}
+	if len(sp.PHP) > 0 {
+		return sp.PHP[0].Name
+	}
+	return ""
+}
+
+// WithoutPool removes a pool and, if it was the default, the default.
+func (sp ServerSpec) WithoutPool(name string) ServerSpec {
+	var keep []PHPPoolSpec
+	for _, p := range sp.PHP {
+		if p.Name != name {
+			keep = append(keep, p)
+		}
+	}
+	sp.PHP = keep
+	if sp.DefaultPHP == name {
+		sp.DefaultPHP = ""
+	}
+	return sp
+}
+
+// AddPool adds a pool; the first pool ever added becomes the default.
+func (sp ServerSpec) AddPool(p PHPPoolSpec) ServerSpec {
+	if len(sp.PHP) == 0 && sp.DefaultPHP == "" {
+		sp.DefaultPHP = p.Name
+	}
+	sp.PHP = append(append([]PHPPoolSpec(nil), sp.PHP...), p)
+	return sp
 }
 
 var (
@@ -66,6 +104,7 @@ const (
 
 // NormalizeServer trims the text fields and fills the defaults.
 func NormalizeServer(sp ServerSpec) ServerSpec {
+	sp.DefaultPHP = strings.TrimSpace(sp.DefaultPHP)
 	for i := range sp.PHP {
 		p := &sp.PHP[i]
 		p.Name = strings.TrimSpace(p.Name)
@@ -134,6 +173,9 @@ func ValidateServer(sp ServerSpec) error {
 				return fmt.Errorf("pool %q, php.ini: %w", p.Name, err)
 			}
 		}
+	}
+	if sp.DefaultPHP != "" && !seen[sp.DefaultPHP] {
+		return fmt.Errorf("the default PHP pool %q is not one of the pools here", sp.DefaultPHP)
 	}
 	if h := sp.HTTPS; h != nil {
 		if len(h.Email) > 254 || !emailRe.MatchString(h.Email) {
